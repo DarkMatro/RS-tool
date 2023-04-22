@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" viewBox="0 0 6000.000000 2684.360190">
+<title>pyqtgraph SVG export</title>
+<desc>Generated with Qt and pyqtgraph</desc>
+<style>
+    image {
+        image-rendering: crisp-edges;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: pixelated;
+    }
+</style>
+<defs>
+</defs>
+<g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="PlotItem_1">
+    <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="ViewBox_1">
+        <g fill="none" stroke="none" font-family="Segoe UI" font-size="12" font-weight="400" font-style="normal">
+            <path vector-effect="non-scaling-stroke" fill-rule="evenodd" d="M58.4,31.0 L1054.0,31.0 L1054.0,428.6 L58.4,428.6 L58.4,31.0 "/>
+        </g>
+        <clipPath id="ViewBox_1_clip">
+            <path vector-effect="none" fill-rule="evenodd" d="M58.4,31.0 L1054.0,31.0 L1054.0,428.6 L58.4,428.6 L58.4,31.0 " stroke-width="1.0"/>
+        </clipPath>
+        <g clip-path="url(#ViewBox_1_clip)">
+            <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="QGraphicsRectItem_1">
+                
+
+
+                <g fill="none" stroke="none" transform="matrix(1,0,0,1,58.4,31)" font-family="Segoe UI" font-size="12" font-weight="400" font-style="normal">
+                    
+
+                    <rect vector-effect="non-scaling-stroke" x="0" y="0" width="995.6" height="397.6"/>
+                    
+
+                </g>
+                
+
+            </g>
+        </g>
+    </g>
+    <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="LabelItem_1">
+        <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="QGraphicsTextItem_1">
+            
+
+
+            
+
+
+            
+
+
+            <g fill="none" stroke="#656565" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,447.2,1)" font-family="Segoe UI" font-size="12" font-weight="400" font-style="normal">
+                <text fill="#656565" fill-opacity="1" stroke="none" xml:space="preserve" x="4" y="21.2031" font-family="AbletonSans" font-size="18.6667" font-weight="400" font-style="normal">Imported Raman spectra</text>
+            </g>
+            
+
+
+            
+
+        </g>
+    </g>
+    <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="AxisItem_1">
+        <g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="58.4,428.6 1054.0,428.6"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="0.74902" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="58.4,31.0 58.4,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,31.0 1054.0,428.6"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="0.372549" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="257.52,31.0 257.52,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="456.64,31.0 456.64,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="655.76,31.0 655.76,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="854.88,31.0 854.88,428.6"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="0.247059" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="157.96,31.0 157.96,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="357.08,31.0 357.08,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="556.2,31.0 556.2,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="755.3199999999999,31.0 755.3199999999999,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="954.4399999999999,31.0 954.4399999999999,428.6"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,58.4,428.6)" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="188.109" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.2</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="387.234" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.4</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="586.359" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.6</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="785.469" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.8</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="88.5469" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.1</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="287.672" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.3</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="486.797" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.5</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="685.906" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.7</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="885.031" y="16.9688" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.9</text>
+        </g>
+        <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="QGraphicsTextItem_2">
+            
+
+
+            
+
+
+            
+
+
+            <g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,491.4,447.6)" font-family="Segoe UI" font-size="12" font-weight="400" font-style="normal">
+                <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="4" y="19.3906" font-family="AbletonSans" font-size="17.3333" font-weight="400" font-style="normal">Wavelength, nm </text>
+            </g>
+            
+
+
+            
+
+        </g>
+    </g>
+    <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="AxisItem_2">
+        <g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="58.4,31.0 58.4,428.6"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="0.74902" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,428.6 58.4,428.6"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,31.0 58.4,31.0"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="0.372549" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,349.08 58.4,349.08"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,269.56 58.4,269.56"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,190.04 58.4,190.04"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,110.52 58.4,110.52"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="0.247059" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,388.84 58.4,388.84"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,309.32 58.4,309.32"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,229.8 58.4,229.8"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,150.28 58.4,150.28"/>
+            <polyline fill="none" vector-effect="non-scaling-stroke" points="1054.0,70.75999999999999 58.4,70.75999999999999"/>
+        </g>
+        <g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(1,0,0,1,1,31)" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="324.109" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.2</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="244.578" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.4</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="165.063" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.6</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="85.5469" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.8</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="363.859" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.1</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="284.344" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.3</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="204.828" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.5</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="125.297" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.7</text>
+            <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="30.3906" y="45.7813" font-family="AbletonSans" font-size="16" font-weight="400" font-style="normal">0.9</text>
+        </g>
+        <g fill="none" stroke="black" stroke-width="1" fill-rule="evenodd" stroke-linecap="square" stroke-linejoin="bevel" id="QGraphicsTextItem_3">
+            
+
+
+            
+
+
+            
+
+
+            <g fill="none" stroke="#000000" stroke-opacity="1" stroke-width="1" stroke-linecap="square" stroke-linejoin="bevel" transform="matrix(0,-1,1,0,-4,296)" font-family="Segoe UI" font-size="12" font-weight="400" font-style="normal">
+                <text fill="#000000" fill-opacity="1" stroke="none" xml:space="preserve" x="4" y="19.3906" font-family="AbletonSans" font-size="17.3333" font-weight="400" font-style="normal">Intensity, rel. un. </text>
+            </g>
+            
+
+
+            
+
+        </g>
+    </g>
+</g>
+
+</svg>

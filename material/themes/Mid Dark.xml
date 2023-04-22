@@ -1,0 +1,26 @@
+<!--?xml version="1.0" encoding="UTF-8"?-->
+<resources>
+  <color name="primaryTextColor">#efefef</color>
+  <color name="secondaryTextColor">#ffffff</color>
+  <color name="inverseTextColor">#000000</color>
+  <color name="selectionTextColor">#5f5f5f</color>
+  <color name="backgroundMainColor">#3c3c3c</color>
+  <color name="backgroundInputFieldColor">#333333</color>
+  <color name="backgroundInsideColor">#4f4f4f</color>
+  <color name="borderInputsColor">#000000</color>
+  <color name="borderInputsSelectedColor">#a0a0a0</color>
+  <color name="borderColor">#1e1e1e</color>
+  <color name="borderMainColor">#2d2d2d</color>
+  <color name="selectedBtn">#646464</color>
+  <color name="scrollBar">#474747</color>
+  <color name="scrollLineHovered">#323232</color>
+  <color name="focusedInTable">#484848</color>
+  <color name="pushButtonBackground">#3c3c3c</color>
+  <color name="pushButtonDisabled">#959595</color>
+  <color name="plotBackground">#141414</color>
+  <color name="inversePlotBackground">#ffffff</color>
+  <color name="plotText">#656565</color>
+  <color name="inversePlotText">#000000</color>
+  <color name="plotButtonBackground">#969696</color>
+  <color name="progressBarBackground">#282828</color>
+</resources>
