@@ -4600,6 +4600,11 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
                 self.executor_stop()
             case Qt.Key.Key_F1:
                 self.action_help()
+            case Qt.Key.Key_F11:
+                if not self.isFullScreen():
+                    self.showFullScreen()
+                else:
+                    self.showMaximized()
 
     def undo(self) -> None:
         self.ui.input_table.setCurrentIndex(QModelIndex())
