@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyperclip
 import shap
+import os
 import winsound
 from asyncqtpy import asyncSlot, QEventLoop
 from lmfit import Parameters, Model
@@ -212,9 +213,8 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
         self.plot_background_color = QColor(self.theme_colors['plotBackground'])
         self.plot_background_color_web = QColor(self.theme_colors['backgroundMainColor'])
         self.update_icons()
-        basicConfig(level=DEBUG, filename='log.log', filemode='w',
-                    format="%(asctime)s %(levelname)s %(message)s")
-        info('Logging started.')
+        path = os.getenv('APPDATA') + '/RS-tool/log.log'
+
         self.initial_ui_definitions()
         try:
             check_recent_files()
@@ -261,6 +261,8 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
             check_rs_tool_folder()
         except Exception as err:
             self.show_error(err)
+        basicConfig(level=DEBUG, filename=path, filemode='w', format="%(asctime)s %(levelname)s %(message)s")
+        info('Logging started.')
         self.set_modified(False)
         self.ui.statusBar.showMessage('Ready', 2000)
         splash.showMessage('ver. 1.0.00 ' + '\n' + 'Initializing finished', Qt.AlignmentFlag.AlignBottom,
@@ -1507,8 +1509,7 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
 
     def web_view_print_pdf(self, page):
         fd = QFileDialog()
-        file_path = fd.getSaveFileName(self, 'Print page to PDF',
-                                       '/users/' + str(environ.get('USERNAME')) + '/Documents/RS-tool', "PDF (*.pdf)")
+        file_path = fd.getSaveFileName(self, 'Print page to PDF', os.getenv('APPDATA') + '/RS-tool', "PDF (*.pdf)")
         if file_path[0] == '':
             return
         ps = QPageSize(QPageSize.A4)
@@ -4427,12 +4428,10 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
         4. using ThreadPoolExecutor add arrays to self.ImportedArray and new row to input_table
         5. update plot
         """
-
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
         file_path = fd.getOpenFileNames(parent=self, caption='Select files with Raman data',
-                                        directory='/users/' + str(username) + '/Documents/RS-tool',
-                                        filter="Text files (*.txt *.asc)")
+                                        directory=path, filter="Text files (*.txt *.asc)")
         for i in reversed(file_path[0]):
             if Path(i).name in self.ImportedArray:
                 file_path[0].remove(i)  # exclude filename existing in ImportedArray
@@ -4886,10 +4885,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
     # region ACTIONS FILE MENU
 
     def action_new_project(self) -> None:
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        file_path = fd.getSaveFileName(self, 'Create Project File',
-                                       '/users/' + str(username) + '/Documents/RS-tool', "ZIP (*.zip)")
+        file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
             try:
                 f = shelve_open(file_path[0], 'n')
@@ -4899,16 +4897,14 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
                 raise
 
     def action_open_project(self) -> None:
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        file_path = fd.getOpenFileName(self, 'Select RS-tool project file to open',
-                                       '/users/' + str(username) + '/Documents/RS-tool', "(*.zip)")
+        file_path = fd.getOpenFileName(self, 'Select RS-tool project file to open', path, "(*.zip)")
         if file_path[0] != '':
             if not self.ask_before_close_project():
                 return
             self.open_project(file_path[0])
             self.load_params(file_path[0])
-
 
     def ask_before_close_project(self):
         if self.modified:
@@ -4948,10 +4944,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
 
     def action_save_project(self) -> None:
         if self.project_path == '' or self.project_path is None:
-            username = environ.get('USERNAME')
+            path = os.getenv('APPDATA') + '/RS-tool'
             fd = QFileDialog()
-            file_path = fd.getSaveFileName(self, 'Create Project File',
-                                           '/users/' + str(username) + '/Documents/RS-tool', "ZIP (*.zip)")
+            file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
             if file_path[0] != '':
                 self.save_by_shelve(file_path[0])
                 self.ui.projectLabel.setText(file_path[0])
@@ -4964,19 +4959,17 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def action_save_production_project(self) -> None:
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        file_path = fd.getSaveFileName(self, 'Create Production Project File',
-                                       '/users/' + str(username) + '/Documents/RS-tool', "ZIP (*.zip)")
+        file_path = fd.getSaveFileName(self, 'Create Production Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
             self.save_by_shelve(file_path[0], True)
 
     @asyncSlot()
     async def action_save_as(self) -> None:
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        file_path = fd.getSaveFileName(self, 'Create Project File',
-                                       '/users/' + str(username) + '/Documents/RS-tool', "ZIP (*.zip)")
+        file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
             self.save_by_shelve(file_path[0])
             self.project_path = file_path[0]
@@ -5167,10 +5160,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in nm',
-                                              '/users/' + str(username) + '/Documents/RS-tool')
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in nm', path)
         if folder_path:
             self.ui.statusBar.showMessage('Exporting files...')
             self.close_progress_bar()
@@ -5200,11 +5192,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
-
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1',
-                                              '/users/' + str(username) + '/Documents/RS-tool')
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', path)
         if folder_path:
             self.ui.statusBar.showMessage('Exporting files...')
             self.close_progress_bar()
@@ -5234,11 +5224,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
-
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1',
-                                              '/users/' + str(username) + '/Documents/RS-tool')
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', path)
         if folder_path:
             self.ui.statusBar.showMessage('Exporting files...')
             self.close_progress_bar()
@@ -5266,10 +5254,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to save excel file', '/users/'
-                                              + str(username) + '/Documents/RS-tool')
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to save excel file', path)
         if not folder_path:
             return
         self.ui.statusBar.showMessage('Saving file...')
@@ -6041,10 +6028,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def action_import_fit_template(self):
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        file_path = fd.getOpenFileName(self, 'Open fit template file',
-                                       '/users/' + str(username) + '/Documents/RS-tool', "ZIP (*.zip)")
+        file_path = fd.getOpenFileName(self, 'Open fit template file', path, "ZIP (*.zip)")
         if not file_path[0]:
             return
         path = file_path[0]
@@ -6099,10 +6085,9 @@ class RuntimeStylesheets(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
-        username = environ.get('USERNAME')
+        path = os.getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog()
-        file_path = fd.getSaveFileName(self, 'Save fit template file',
-                                       '/users/' + str(username) + '/Documents/RS-tool', "ZIP (*.zip)")
+        file_path = fd.getSaveFileName(self, 'Save fit template file', path, "ZIP (*.zip)")
         if not file_path[0]:
             return
         self.ui.statusBar.showMessage('Saving file...')

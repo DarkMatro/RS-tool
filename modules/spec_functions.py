@@ -1,8 +1,8 @@
 import copy
 from logging import info, debug
 from math import ceil as ceil
-from os import environ
-from os import getpid
+from os import environ, getpid
+import os
 from pathlib import Path
 from re import findall
 from typing import Any
@@ -99,8 +99,7 @@ def random_line_style() -> dict:
 
 
 def check_rs_tool_folder() -> None:
-    username = environ.get('USERNAME')
-    path = '/users/' + str(username) + '/Documents/RS-tool'
+    path = os.getenv('APPDATA') + '/RS-tool'
     if not Path(path).exists():
         Path(path).mkdir()
 
