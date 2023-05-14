@@ -6,11 +6,11 @@ from pathlib import Path
 from xml.dom.minidom import parse
 
 import jinja2
-from qtpy.QtCore import QDir
+from qtpy.QtCore import QDir, Qt
 from qtpy.QtGui import QFontDatabase
 from qtpy.QtWidgets import QApplication, QComboBox
-
-from modules.generate import ResourseGenerator
+from modules.default_values import program_version
+from modules.resourse_generator import ResourseGenerator
 
 
 def update_svg_colors(theme: dict) -> None:
@@ -48,10 +48,9 @@ def update_svg_colors(theme: dict) -> None:
                 file.writelines(data)
 
 
-def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', None), invert_secondary: bool = False, extra=None,
+def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', None), invert_secondary: bool = False,
                      parent: str = 'theme') -> str:
-    if extra is None:
-        extra = {}
+
     try:
         add_fonts()
     except Exception as e:
@@ -81,8 +80,6 @@ def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', N
     theme.setdefault('success', '#17a2b8')
     theme.setdefault('density_scale', '0')
     theme.setdefault('button_shape', 'default')
-
-    theme.update(extra)
 
     update_svg_colors(theme)
 
@@ -151,15 +148,11 @@ def add_fonts() -> None:
                 QFontDatabase.addApplicationFont(str(font))
 
 
-def apply_stylesheet(app: QApplication, theme: tuple[str, str, dict] = ('Mid Dark', 'Default'),
-                     invert_secondary: bool = False, extra=None, parent: str = 'theme') -> None:
-    if extra is None:
-        extra = {}
-    stylesheet = build_stylesheet(theme, invert_secondary, extra, parent)
-
+def apply_stylesheet(app: QApplication, theme: tuple[str, str, dict] = ('Mid Dark', 'Default', {}),
+                     invert_secondary: bool = False, parent: str = 'theme') -> None:
+    stylesheet = build_stylesheet(theme, invert_secondary, parent)
     if stylesheet is None:
         return
-
     try:
         app.setStyleSheet(stylesheet)
     except:
@@ -219,13 +212,13 @@ def list_themes(background: bool = True):
     return result
 
 
+def splash_show_message(splash, text) -> None:
+    splash_color = Qt.GlobalColor.black if environ['splash_color'] == 'black' else Qt.GlobalColor.white
+    splash.showMessage(program_version() + '\n' + text, Qt.AlignmentFlag.AlignBottom, splash_color)
+
+
 class QtStyleTools:
     """"""
-    extra_values = {}
-
-    def set_extra(self, extra: dict[str, str]) -> None:
-        """"""
-        self.extra_values = extra
 
     @staticmethod
     def add_menu_combobox(combobox_ref: QComboBox, background: bool = True):
@@ -235,11 +228,9 @@ class QtStyleTools:
             combobox_ref.addItem(i)
 
     @staticmethod
-    def apply_stylesheet(parent, theme, invert_secondary=False, extra=None, callable_=None):
+    def apply_stylesheet(parent, theme, invert_secondary=False, callable_=None):
         """"""
-        if extra is None:
-            extra = {}
-        apply_stylesheet(parent, theme=theme, invert_secondary=invert_secondary, extra=extra)
+        apply_stylesheet(parent, theme=theme, invert_secondary=invert_secondary)
 
         if callable_:
             callable_()
@@ -247,5 +238,4 @@ class QtStyleTools:
     def update_theme_event(self, parent, theme_bckgrnd: str = 'Dark', theme_color: str = 'Amber',
                            theme_colors: dict = None) -> None:
         invert = 'Light' in theme_bckgrnd and 'Dark' not in theme_bckgrnd
-        self.apply_stylesheet(parent, theme=(theme_bckgrnd, theme_color, theme_colors), invert_secondary=invert,
-                              extra=self.extra_values)
+        self.apply_stylesheet(parent, theme=(theme_bckgrnd, theme_color, theme_colors), invert_secondary=invert)

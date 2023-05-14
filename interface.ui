@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1377</width>
+    <width>1446</width>
     <height>884</height>
    </rect>
   </property>
@@ -903,7 +903,7 @@ border: 1px;}</string>
                    <number>0</number>
                   </property>
                   <property name="rightMargin">
-                   <number>240</number>
+                   <number>0</number>
                   </property>
                   <property name="bottomMargin">
                    <number>0</number>
@@ -3119,7 +3119,7 @@ border: 1px;}</string>
                     <property name="maximumSize">
                      <size>
                       <width>16777215</width>
-                      <height>200</height>
+                      <height>225</height>
                      </size>
                     </property>
                     <property name="frameShape">
@@ -3262,6 +3262,18 @@ border: 1px;}</string>
                          </layout>
                         </widget>
                        </item>
+                       <item row="1" column="0">
+                        <widget class="QLabel" name="fit_opt_method_label">
+                         <property name="font">
+                          <font>
+                           <pointsize>9</pointsize>
+                          </font>
+                         </property>
+                         <property name="text">
+                          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Opt. method:&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                         </property>
+                        </widget>
+                       </item>
                        <item row="1" column="1">
                         <widget class="QComboBox" name="fit_opt_method_comboBox">
                          <property name="maximumSize">
@@ -3289,15 +3301,15 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="1" column="0">
-                        <widget class="QLabel" name="fit_opt_method_label">
+                       <item row="2" column="0">
+                        <widget class="QLabel" name="guess_method_label">
                          <property name="font">
                           <font>
                            <pointsize>9</pointsize>
                           </font>
                          </property>
                          <property name="text">
-                          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Opt. method:&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                          <string>Guess method:</string>
                          </property>
                         </widget>
                        </item>
@@ -3316,15 +3328,18 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="2" column="0">
-                        <widget class="QLabel" name="guess_method_label">
+                       <item row="3" column="0">
+                        <widget class="QLabel" name="max_dx_label">
                          <property name="font">
                           <font>
                            <pointsize>9</pointsize>
                           </font>
                          </property>
+                         <property name="toolTip">
+                          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Maximal peak HWHM in cm-1 during auto guess peaks procedure.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                         </property>
                          <property name="text">
-                          <string>Guess method:</string>
+                          <string>Max peak HWHM:</string>
                          </property>
                         </widget>
                        </item>
@@ -3350,21 +3365,6 @@ border: 1px;}</string>
                          </property>
                          <property name="value">
                           <double>12.000000000000000</double>
-                         </property>
-                        </widget>
-                       </item>
-                       <item row="3" column="0">
-                        <widget class="QLabel" name="max_dx_label">
-                         <property name="font">
-                          <font>
-                           <pointsize>9</pointsize>
-                          </font>
-                         </property>
-                         <property name="toolTip">
-                          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Maximal peak HWHM in cm-1 during auto guess peaks procedure.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                         </property>
-                         <property name="text">
-                          <string>Max peak HWHM:</string>
                          </property>
                         </widget>
                        </item>
@@ -3461,6 +3461,18 @@ border: 1px;}</string>
                          </property>
                          <property name="value">
                           <double>0.250000000000000</double>
+                         </property>
+                        </widget>
+                       </item>
+                       <item row="7" column="0">
+                        <widget class="QCheckBox" name="include_x0_checkBox">
+                         <property name="font">
+                          <font>
+                           <pointsize>9</pointsize>
+                          </font>
+                         </property>
+                         <property name="text">
+                          <string>Include x0</string>
                          </property>
                         </widget>
                        </item>
@@ -3565,7 +3577,7 @@ border: 1px;}</string>
                    <pointsize>9</pointsize>
                   </font>
                  </property>
-                 <layout class="QVBoxLayout" name="verticalLayout_32">
+                 <layout class="QVBoxLayout" name="verticalLayout_93">
                   <property name="spacing">
                    <number>0</number>
                   </property>
@@ -3582,197 +3594,457 @@ border: 1px;}</string>
                    <number>0</number>
                   </property>
                   <item>
-                   <widget class="QGroupBox" name="classific_groupBox">
-                    <property name="maximumSize">
-                     <size>
-                      <width>16777215</width>
-                      <height>500</height>
-                     </size>
+                   <widget class="QSplitter" name="splitter_92">
+                    <property name="orientation">
+                     <enum>Qt::Vertical</enum>
                     </property>
-                    <property name="title">
-                     <string>Classification parameters</string>
-                    </property>
-                    <property name="flat">
-                     <bool>false</bool>
-                    </property>
-                    <layout class="QFormLayout" name="formLayout_2">
-                     <property name="horizontalSpacing">
-                      <number>0</number>
+                    <widget class="QFrame" name="frame_class_params">
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>410</height>
+                      </size>
                      </property>
-                     <property name="verticalSpacing">
-                      <number>7</number>
+                     <property name="maximumSize">
+                      <size>
+                       <width>16777215</width>
+                       <height>1000</height>
+                      </size>
                      </property>
-                     <property name="leftMargin">
-                      <number>3</number>
+                     <property name="frameShape">
+                      <enum>QFrame::StyledPanel</enum>
                      </property>
-                     <property name="topMargin">
-                      <number>23</number>
+                     <property name="frameShadow">
+                      <enum>QFrame::Raised</enum>
                      </property>
-                     <property name="rightMargin">
-                      <number>3</number>
+                     <layout class="QVBoxLayout" name="verticalLayout_32">
+                      <property name="spacing">
+                       <number>0</number>
+                      </property>
+                      <property name="leftMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="topMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="rightMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="bottomMargin">
+                       <number>0</number>
+                      </property>
+                      <item>
+                       <widget class="QGroupBox" name="classific_groupBox">
+                        <property name="minimumSize">
+                         <size>
+                          <width>0</width>
+                          <height>280</height>
+                         </size>
+                        </property>
+                        <property name="maximumSize">
+                         <size>
+                          <width>16777215</width>
+                          <height>1000</height>
+                         </size>
+                        </property>
+                        <property name="title">
+                         <string>Classification parameters</string>
+                        </property>
+                        <property name="flat">
+                         <bool>false</bool>
+                        </property>
+                        <layout class="QFormLayout" name="formLayout_2">
+                         <property name="horizontalSpacing">
+                          <number>0</number>
+                         </property>
+                         <property name="verticalSpacing">
+                          <number>7</number>
+                         </property>
+                         <property name="leftMargin">
+                          <number>3</number>
+                         </property>
+                         <property name="topMargin">
+                          <number>23</number>
+                         </property>
+                         <property name="rightMargin">
+                          <number>3</number>
+                         </property>
+                         <property name="bottomMargin">
+                          <number>0</number>
+                         </property>
+                         <item row="0" column="0">
+                          <widget class="QLabel" name="classes_label">
+                           <property name="toolTip">
+                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Ex: '1, 3' for analyze only classes 1 and 3&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+                           </property>
+                           <property name="text">
+                            <string>Classes to fit:</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="0" column="1">
+                          <widget class="QLineEdit" name="classes_lineEdit">
+                           <property name="minimumSize">
+                            <size>
+                             <width>0</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="1" column="0">
+                          <widget class="QLabel" name="test_data_ratio_label">
+                           <property name="text">
+                            <string>Test data ratio, %:</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="1" column="1">
+                          <widget class="QSpinBox" name="test_data_ratio_spinBox">
+                           <property name="minimumSize">
+                            <size>
+                             <width>0</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="buttonSymbols">
+                            <enum>QAbstractSpinBox::UpDownArrows</enum>
+                           </property>
+                           <property name="minimum">
+                            <number>10</number>
+                           </property>
+                           <property name="maximum">
+                            <number>50</number>
+                           </property>
+                           <property name="value">
+                            <number>25</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="2" column="0">
+                          <widget class="QCheckBox" name="random_state_cb">
+                           <property name="text">
+                            <string>Fixed random state</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="2" column="1">
+                          <widget class="QSpinBox" name="random_state_sb">
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="maximum">
+                            <number>999999</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="3" column="0">
+                          <widget class="QCheckBox" name="use_shapley_cb">
+                           <property name="text">
+                            <string>Use Shapley</string>
+                           </property>
+                           <property name="checked">
+                            <bool>true</bool>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="4" column="0">
+                          <widget class="QLabel" name="current_group_shap_label">
+                           <property name="text">
+                            <string>Current group (shap):</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="4" column="1">
+                          <widget class="QComboBox" name="current_group_shap_comboBox">
+                           <property name="minimumSize">
+                            <size>
+                             <width>25</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="5" column="0">
+                          <widget class="QLabel" name="current_feature_label">
+                           <property name="text">
+                            <string>Current feature (shap):</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="5" column="1">
+                          <widget class="QComboBox" name="current_feature_comboBox">
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="6" column="0">
+                          <widget class="QLabel" name="coloring_feature_label">
+                           <property name="text">
+                            <string>Coloring feature:</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="6" column="1">
+                          <widget class="QComboBox" name="coloring_feature_comboBox">
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="7" column="0">
+                          <widget class="QLabel" name="current_instance_label">
+                           <property name="text">
+                            <string>Current instance:</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="7" column="1">
+                          <widget class="QComboBox" name="current_instance_combo_box">
+                           <property name="maximumSize">
+                            <size>
+                             <width>16777215</width>
+                             <height>25</height>
+                            </size>
+                           </property>
+                           <property name="maxVisibleItems">
+                            <number>50</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="8" column="0">
+                          <widget class="QLabel" name="current_tree_label">
+                           <property name="text">
+                            <string>Current tree:</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="8" column="1">
+                          <widget class="QSpinBox" name="current_tree_spinBox">
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="maximum">
+                            <number>100</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="9" column="0">
+                          <widget class="QCheckBox" name="feature_display_max_checkBox">
+                           <property name="text">
+                            <string>feature display max</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="9" column="1">
+                          <widget class="QSpinBox" name="feature_display_max_spinBox">
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="minimum">
+                            <number>1</number>
+                           </property>
+                           <property name="maximum">
+                            <number>1000</number>
+                           </property>
+                           <property name="value">
+                            <number>50</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="3" column="1">
+                          <widget class="QCheckBox" name="use_pca_checkBox">
+                           <property name="text">
+                            <string>PLS-DA dimensional reduction</string>
+                           </property>
+                          </widget>
+                         </item>
+                        </layout>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QGroupBox" name="groupBox_mlp">
+                        <property name="minimumSize">
+                         <size>
+                          <width>0</width>
+                          <height>130</height>
+                         </size>
+                        </property>
+                        <property name="maximumSize">
+                         <size>
+                          <width>16777215</width>
+                          <height>1000</height>
+                         </size>
+                        </property>
+                        <property name="title">
+                         <string>MLP parameters</string>
+                        </property>
+                        <property name="checkable">
+                         <bool>true</bool>
+                        </property>
+                        <layout class="QFormLayout" name="formLayout_4">
+                         <property name="horizontalSpacing">
+                          <number>0</number>
+                         </property>
+                         <property name="leftMargin">
+                          <number>0</number>
+                         </property>
+                         <property name="topMargin">
+                          <number>24</number>
+                         </property>
+                         <property name="rightMargin">
+                          <number>0</number>
+                         </property>
+                         <property name="bottomMargin">
+                          <number>0</number>
+                         </property>
+                         <item row="0" column="0">
+                          <widget class="QLabel" name="activation_label">
+                           <property name="text">
+                            <string>Activation</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="0" column="1">
+                          <widget class="QComboBox" name="activation_comboBox"/>
+                         </item>
+                         <item row="1" column="0">
+                          <widget class="QLabel" name="solver_mlp_label">
+                           <property name="text">
+                            <string>Solver</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="1" column="1">
+                          <widget class="QComboBox" name="solver_mlp_combo_box"/>
+                         </item>
+                         <item row="2" column="0">
+                          <widget class="QLabel" name="mlp_layer_size_label">
+                           <property name="text">
+                            <string>Hidden layer sizes</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="2" column="1">
+                          <widget class="QSpinBox" name="mlp_layer_size_spinBox">
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="maximum">
+                            <number>100000</number>
+                           </property>
+                           <property name="value">
+                            <number>100</number>
+                           </property>
+                          </widget>
+                         </item>
+                        </layout>
+                       </widget>
+                      </item>
+                     </layout>
+                    </widget>
+                    <widget class="QFrame" name="frame_report_text_edit">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
                      </property>
-                     <property name="bottomMargin">
-                      <number>0</number>
+                     <property name="frameShape">
+                      <enum>QFrame::StyledPanel</enum>
                      </property>
-                     <item row="0" column="0">
-                      <widget class="QLabel" name="classes_label">
-                       <property name="toolTip">
-                        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Ex: '1, 3' for analyze only classes 1 and 3&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                       </property>
-                       <property name="text">
-                        <string>Classes to fit:</string>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="0" column="1">
-                      <widget class="QLineEdit" name="classes_lineEdit">
-                       <property name="minimumSize">
-                        <size>
-                         <width>0</width>
-                         <height>25</height>
-                        </size>
-                       </property>
-                       <property name="alignment">
-                        <set>Qt::AlignCenter</set>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="1" column="0">
-                      <widget class="QLabel" name="test_data_ratio_label">
-                       <property name="text">
-                        <string>Test data ratio, %:</string>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="1" column="1">
-                      <widget class="QSpinBox" name="test_data_ratio_spinBox">
-                       <property name="minimumSize">
-                        <size>
-                         <width>0</width>
-                         <height>25</height>
-                        </size>
-                       </property>
-                       <property name="alignment">
-                        <set>Qt::AlignCenter</set>
-                       </property>
-                       <property name="buttonSymbols">
-                        <enum>QAbstractSpinBox::UpDownArrows</enum>
-                       </property>
-                       <property name="minimum">
-                        <number>10</number>
-                       </property>
-                       <property name="maximum">
-                        <number>50</number>
-                       </property>
-                       <property name="value">
-                        <number>25</number>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="2" column="0">
-                      <widget class="QLabel" name="current_group_shap_label">
-                       <property name="text">
-                        <string>Current group (shap):</string>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="2" column="1">
-                      <widget class="QComboBox" name="current_group_shap_comboBox">
-                       <property name="minimumSize">
-                        <size>
-                         <width>25</width>
-                         <height>25</height>
-                        </size>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="3" column="0">
-                      <widget class="QLabel" name="current_feature_label">
-                       <property name="text">
-                        <string>Current feature (shap):</string>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="3" column="1">
-                      <widget class="QComboBox" name="current_feature_comboBox"/>
-                     </item>
-                     <item row="4" column="0">
-                      <widget class="QLabel" name="coloring_feature_label">
-                       <property name="text">
-                        <string>Coloring feature:</string>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="4" column="1">
-                      <widget class="QComboBox" name="coloring_feature_comboBox"/>
-                     </item>
-                     <item row="5" column="0">
-                      <widget class="QLabel" name="current_instance_label">
-                       <property name="text">
-                        <string>Current instance:</string>
-                       </property>
-                      </widget>
-                     </item>
-                     <item row="5" column="1">
-                      <widget class="QComboBox" name="current_instance_combo_box">
-                       <property name="maxVisibleItems">
-                        <number>50</number>
-                       </property>
-                      </widget>
-                     </item>
-                    </layout>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QFrame" name="frame_report_text_edit">
-                    <property name="frameShape">
-                     <enum>QFrame::StyledPanel</enum>
-                    </property>
-                    <property name="frameShadow">
-                     <enum>QFrame::Raised</enum>
-                    </property>
-                    <layout class="QVBoxLayout" name="verticalLayout_35">
-                     <property name="leftMargin">
-                      <number>1</number>
+                     <property name="frameShadow">
+                      <enum>QFrame::Raised</enum>
                      </property>
-                     <property name="topMargin">
-                      <number>1</number>
-                     </property>
-                     <property name="rightMargin">
-                      <number>1</number>
-                     </property>
-                     <property name="bottomMargin">
-                      <number>1</number>
-                     </property>
-                     <item>
-                      <widget class="QTextEdit" name="stat_report_text_edit">
-                       <property name="layoutDirection">
-                        <enum>Qt::LeftToRight</enum>
-                       </property>
-                       <property name="autoFormatting">
-                        <set>QTextEdit::AutoNone</set>
-                       </property>
-                       <property name="undoRedoEnabled">
-                        <bool>true</bool>
-                       </property>
-                       <property name="lineWrapMode">
-                        <enum>QTextEdit::WidgetWidth</enum>
-                       </property>
-                       <property name="readOnly">
-                        <bool>true</bool>
-                       </property>
-                       <property name="overwriteMode">
-                        <bool>true</bool>
-                       </property>
-                       <property name="tabStopWidth">
-                        <number>0</number>
-                       </property>
-                       <property name="acceptRichText">
-                        <bool>true</bool>
-                       </property>
-                      </widget>
-                     </item>
-                    </layout>
+                     <layout class="QVBoxLayout" name="verticalLayout_35">
+                      <property name="spacing">
+                       <number>0</number>
+                      </property>
+                      <property name="leftMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="topMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="rightMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="bottomMargin">
+                       <number>0</number>
+                      </property>
+                      <item>
+                       <widget class="QTextEdit" name="stat_report_text_edit">
+                        <property name="maximumSize">
+                         <size>
+                          <width>1000</width>
+                          <height>1000</height>
+                         </size>
+                        </property>
+                        <property name="layoutDirection">
+                         <enum>Qt::LeftToRight</enum>
+                        </property>
+                        <property name="autoFormatting">
+                         <set>QTextEdit::AutoNone</set>
+                        </property>
+                        <property name="undoRedoEnabled">
+                         <bool>true</bool>
+                        </property>
+                        <property name="lineWrapMode">
+                         <enum>QTextEdit::WidgetWidth</enum>
+                        </property>
+                        <property name="readOnly">
+                         <bool>true</bool>
+                        </property>
+                        <property name="overwriteMode">
+                         <bool>true</bool>
+                        </property>
+                        <property name="tabStopWidth">
+                         <number>0</number>
+                        </property>
+                        <property name="acceptRichText">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </widget>
                    </widget>
                   </item>
                  </layout>
@@ -5035,7 +5307,7 @@ border: 1px;}</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>955</width>
+                           <width>98</width>
                            <height>4000</height>
                           </rect>
                          </property>
@@ -5544,7 +5816,7 @@ border: 1px;}</string>
                                  <property name="minimumSize">
                                   <size>
                                    <width>0</width>
-                                   <height>1000</height>
+                                   <height>0</height>
                                   </size>
                                  </property>
                                  <property name="baseSize">
@@ -5968,7 +6240,7 @@ border: 1px;}</string>
                                  <property name="minimumSize">
                                   <size>
                                    <width>0</width>
-                                   <height>1000</height>
+                                   <height>0</height>
                                   </size>
                                  </property>
                                  <property name="frameShape">
@@ -6519,7 +6791,7 @@ border: 1px;}</string>
                                  <property name="minimumSize">
                                   <size>
                                    <width>0</width>
-                                   <height>1000</height>
+                                   <height>0</height>
                                   </size>
                                  </property>
                                  <property name="baseSize">
@@ -7035,6 +7307,12 @@ border: 1px;}</string>
                                  </layout>
                                 </widget>
                                 <widget class="QFrame" name="frame_svc_shapley_4">
+                                 <property name="minimumSize">
+                                  <size>
+                                   <width>0</width>
+                                   <height>0</height>
+                                  </size>
+                                 </property>
                                  <property name="frameShape">
                                   <enum>QFrame::StyledPanel</enum>
                                  </property>
@@ -7531,6 +7809,12 @@ border: 1px;}</string>
                                  </layout>
                                 </widget>
                                 <widget class="QFrame" name="frame_nearest_shapley_4">
+                                 <property name="minimumSize">
+                                  <size>
+                                   <width>0</width>
+                                   <height>0</height>
+                                  </size>
+                                 </property>
                                  <property name="frameShape">
                                   <enum>QFrame::StyledPanel</enum>
                                  </property>
@@ -8021,6 +8305,12 @@ border: 1px;}</string>
                                  </layout>
                                 </widget>
                                 <widget class="QFrame" name="frame_gpc_shapley_4">
+                                 <property name="minimumSize">
+                                  <size>
+                                   <width>0</width>
+                                   <height>500</height>
+                                  </size>
+                                 </property>
                                  <property name="frameShape">
                                   <enum>QFrame::StyledPanel</enum>
                                  </property>
@@ -8231,6 +8521,14 @@ border: 1px;}</string>
                                      <enum>Qt::Horizontal</enum>
                                     </property>
                                     <widget class="MplWidget" name="dt_scores_plot_widget" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="dt_tree_plot_widget" native="true">
                                      <property name="sizePolicy">
                                       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                                        <horstretch>0</horstretch>
@@ -9226,6 +9524,14 @@ border: 1px;}</string>
                                       </sizepolicy>
                                      </property>
                                     </widget>
+                                    <widget class="MplWidget" name="rf_tree_plot_widget" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
                                     <widget class="MplWidget" name="rf_features_plot_widget" native="true">
                                      <property name="sizePolicy">
                                       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -9717,6 +10023,14 @@ border: 1px;}</string>
                                      <enum>Qt::Horizontal</enum>
                                     </property>
                                     <widget class="MplWidget" name="ab_scores_plot_widget" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="ab_tree_plot_widget" native="true">
                                      <property name="sizePolicy">
                                       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                                        <horstretch>0</horstretch>
@@ -10584,6 +10898,512 @@ border: 1px;}</string>
                       </item>
                      </layout>
                     </widget>
+                    <widget class="QWidget" name="tab_xgboost">
+                     <attribute name="title">
+                      <string>XGBoost</string>
+                     </attribute>
+                     <layout class="QVBoxLayout" name="verticalLayout_94">
+                      <property name="spacing">
+                       <number>0</number>
+                      </property>
+                      <property name="leftMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="topMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="rightMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="bottomMargin">
+                       <number>0</number>
+                      </property>
+                      <item>
+                       <widget class="QScrollArea" name="scrollArea_xgboost">
+                        <property name="verticalScrollBarPolicy">
+                         <enum>Qt::ScrollBarAlwaysOff</enum>
+                        </property>
+                        <property name="widgetResizable">
+                         <bool>true</bool>
+                        </property>
+                        <widget class="QWidget" name="scrollAreaWidgetContents_xgboost">
+                         <property name="geometry">
+                          <rect>
+                           <x>0</x>
+                           <y>0</y>
+                           <width>98</width>
+                           <height>4000</height>
+                          </rect>
+                         </property>
+                         <property name="minimumSize">
+                          <size>
+                           <width>0</width>
+                           <height>4000</height>
+                          </size>
+                         </property>
+                         <layout class="QVBoxLayout" name="verticalLayout_95">
+                          <property name="spacing">
+                           <number>0</number>
+                          </property>
+                          <property name="leftMargin">
+                           <number>0</number>
+                          </property>
+                          <property name="topMargin">
+                           <number>0</number>
+                          </property>
+                          <property name="rightMargin">
+                           <number>0</number>
+                          </property>
+                          <property name="bottomMargin">
+                           <number>0</number>
+                          </property>
+                          <item>
+                           <widget class="QSplitter" name="splitter_93">
+                            <property name="orientation">
+                             <enum>Qt::Vertical</enum>
+                            </property>
+                            <widget class="QFrame" name="frame_xgboost_plots">
+                             <property name="frameShape">
+                              <enum>QFrame::StyledPanel</enum>
+                             </property>
+                             <property name="frameShadow">
+                              <enum>QFrame::Raised</enum>
+                             </property>
+                             <layout class="QVBoxLayout" name="verticalLayout_96">
+                              <property name="spacing">
+                               <number>0</number>
+                              </property>
+                              <property name="leftMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="topMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="rightMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="bottomMargin">
+                               <number>0</number>
+                              </property>
+                              <item>
+                               <widget class="QSplitter" name="splitter_94">
+                                <property name="orientation">
+                                 <enum>Qt::Vertical</enum>
+                                </property>
+                                <widget class="QFrame" name="frame_xgboost_plots1">
+                                 <property name="frameShape">
+                                  <enum>QFrame::StyledPanel</enum>
+                                 </property>
+                                 <property name="frameShadow">
+                                  <enum>QFrame::Raised</enum>
+                                 </property>
+                                 <layout class="QHBoxLayout" name="horizontalLayout_89">
+                                  <property name="spacing">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QSplitter" name="splitter_96">
+                                    <property name="orientation">
+                                     <enum>Qt::Horizontal</enum>
+                                    </property>
+                                    <widget class="MplWidget" name="xgboost_scores_plot_widget" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_tree_plot_widget" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_features_plot_widget" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                                <widget class="QFrame" name="frame_xgboost_plots2">
+                                 <property name="frameShape">
+                                  <enum>QFrame::StyledPanel</enum>
+                                 </property>
+                                 <property name="frameShadow">
+                                  <enum>QFrame::Raised</enum>
+                                 </property>
+                                 <layout class="QHBoxLayout" name="horizontalLayout_90">
+                                  <property name="spacing">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QSplitter" name="splitter_97">
+                                    <property name="orientation">
+                                     <enum>Qt::Horizontal</enum>
+                                    </property>
+                                    <widget class="MplWidget" name="xgboost_dm_plot" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_roc_plot" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_pr_plot" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                    </widget>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                               </widget>
+                              </item>
+                             </layout>
+                            </widget>
+                            <widget class="QFrame" name="frame_xgboost_shapley">
+                             <property name="frameShape">
+                              <enum>QFrame::StyledPanel</enum>
+                             </property>
+                             <property name="frameShadow">
+                              <enum>QFrame::Raised</enum>
+                             </property>
+                             <layout class="QVBoxLayout" name="verticalLayout_97">
+                              <property name="spacing">
+                               <number>0</number>
+                              </property>
+                              <property name="leftMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="topMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="rightMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="bottomMargin">
+                               <number>0</number>
+                              </property>
+                              <item>
+                               <widget class="QSplitter" name="splitter_95">
+                                <property name="orientation">
+                                 <enum>Qt::Vertical</enum>
+                                </property>
+                                <widget class="QFrame" name="frame_xgboost_shapley_1">
+                                 <property name="frameShape">
+                                  <enum>QFrame::StyledPanel</enum>
+                                 </property>
+                                 <property name="frameShadow">
+                                  <enum>QFrame::Raised</enum>
+                                 </property>
+                                 <layout class="QHBoxLayout" name="horizontalLayout_91">
+                                  <property name="spacing">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QSplitter" name="splitter_98">
+                                    <property name="orientation">
+                                     <enum>Qt::Horizontal</enum>
+                                    </property>
+                                    <widget class="MplWidget" name="xgboost_shap_beeswarm" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>0</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_shap_means" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>0</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                                <widget class="QFrame" name="frame_xgboost_shapley_2">
+                                 <property name="frameShape">
+                                  <enum>QFrame::StyledPanel</enum>
+                                 </property>
+                                 <property name="frameShadow">
+                                  <enum>QFrame::Raised</enum>
+                                 </property>
+                                 <layout class="QHBoxLayout" name="horizontalLayout_92">
+                                  <property name="spacing">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QSplitter" name="splitter_99">
+                                    <property name="orientation">
+                                     <enum>Qt::Horizontal</enum>
+                                    </property>
+                                    <widget class="MplWidget" name="xgboost_shap_heatmap" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>0</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_shap_scatter" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>0</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                                <widget class="QFrame" name="frame_xgboost_shapley_3">
+                                 <property name="frameShape">
+                                  <enum>QFrame::StyledPanel</enum>
+                                 </property>
+                                 <property name="frameShadow">
+                                  <enum>QFrame::Raised</enum>
+                                 </property>
+                                 <layout class="QVBoxLayout" name="verticalLayout_98">
+                                  <property name="spacing">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QSplitter" name="splitter_100">
+                                    <property name="orientation">
+                                     <enum>Qt::Vertical</enum>
+                                    </property>
+                                    <widget class="QWebEngineView" name="xgboost_force_single" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>150</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                    <widget class="QWebEngineView" name="xgboost_force_full" native="true">
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>300</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                                <widget class="QFrame" name="frame_xgboost_shapley_4">
+                                 <property name="frameShape">
+                                  <enum>QFrame::StyledPanel</enum>
+                                 </property>
+                                 <property name="frameShadow">
+                                  <enum>QFrame::Raised</enum>
+                                 </property>
+                                 <layout class="QHBoxLayout" name="horizontalLayout_93">
+                                  <property name="spacing">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>0</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QSplitter" name="splitter_101">
+                                    <property name="orientation">
+                                     <enum>Qt::Horizontal</enum>
+                                    </property>
+                                    <widget class="MplWidget" name="xgboost_shap_waterfall" native="true">
+                                     <property name="enabled">
+                                      <bool>true</bool>
+                                     </property>
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>500</height>
+                                      </size>
+                                     </property>
+                                     <property name="baseSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>2000</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                    <widget class="MplWidget" name="xgboost_shap_decision" native="true">
+                                     <property name="enabled">
+                                      <bool>true</bool>
+                                     </property>
+                                     <property name="sizePolicy">
+                                      <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
+                                       <horstretch>0</horstretch>
+                                       <verstretch>0</verstretch>
+                                      </sizepolicy>
+                                     </property>
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>500</height>
+                                      </size>
+                                     </property>
+                                     <property name="baseSize">
+                                      <size>
+                                       <width>0</width>
+                                       <height>2000</height>
+                                      </size>
+                                     </property>
+                                    </widget>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                               </widget>
+                              </item>
+                             </layout>
+                            </widget>
+                           </widget>
+                          </item>
+                         </layout>
+                        </widget>
+                       </widget>
+                      </item>
+                     </layout>
+                    </widget>
                     <widget class="QWidget" name="tab_pca">
                      <attribute name="title">
                       <string>PCA</string>
@@ -10713,7 +11533,7 @@ border: 1px;}</string>
                              <item>
                               <widget class="QTableView" name="pca_features_table_view">
                                <property name="verticalScrollBarPolicy">
-                                <enum>Qt::ScrollBarAlwaysOff</enum>
+                                <enum>Qt::ScrollBarAsNeeded</enum>
                                </property>
                               </widget>
                              </item>
@@ -10834,7 +11654,7 @@ border: 1px;}</string>
                              <item>
                               <widget class="QTableView" name="plsda_vip_table_view">
                                <property name="verticalScrollBarPolicy">
-                                <enum>Qt::ScrollBarAlwaysOff</enum>
+                                <enum>Qt::ScrollBarAsNeeded</enum>
                                </property>
                               </widget>
                              </item>
@@ -11619,8 +12439,6 @@ border: 1px;}</string>
    <container>1</container>
   </customwidget>
  </customwidgets>
- <resources>
-  <include location="images/feather icons/icons.qrc"/>
- </resources>
+ <resources/>
  <connections/>
 </ui>

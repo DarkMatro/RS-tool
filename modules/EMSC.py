@@ -111,13 +111,13 @@ def reference_spectrum_fit_function(wn, p, c, g):
 def apparent_spectrum_fit_function_Bassan(wn, Z_ref, p, c, m, h, g):
     """
     Function used to fit the apparent spectrum in Bassan's algorithm
-    :param wn: wavenumbers
+    :param wn: wave numbers
     :param Z_ref: reference spectrum
-    :param p: principal componetns of the extinction matrix
+    :param p: principal components of the extinction matrix
     :param c: offset
     :param m: linear baseline
     :param h: reference's linear factor
-    :param g: PCA scores to be fitted
+    :param g: PCA scores to be fit
     :return: fitting of the apparent spectrum
     """
     A = c + m * wn + h * Z_ref + np.dot(g, p)
@@ -155,7 +155,7 @@ def correct_reference(m, wn, a, d, w_regions):
     pca.fit(Q_ext)
     p_i = pca.components_  # Get the principal components of the extinction matrix
 
-    # Get the weighted regions of the wavenumbers, the reference spectrum and the principal components
+    # Get the weighted regions of the wave numbers, the reference spectrum and the principal components
     w_indexes = []
     for pair in w_regions:
         min_pair = min(pair)
@@ -244,193 +244,3 @@ def Kohler(x_axis: np.ndarray, y_axis: np.ndarray, ref_array: np.ndarray, n_comp
         z_corr[i] = (y_axis[i] - c - sum1) / b
 
     return z_corr  # Return the correction in reverse order for compatibility
-
-#
-# def Bassan(wavenumbers, App, m0, n_components=8, iterations=1, w_regions=None):
-#     """
-#     Correct scattered spectra using Bassan's algorithm.
-#     :param wavenumbers: array of wavenumbers
-#     :param App: apparent spectrum
-#     :param m0: reference spectrum
-#     :param n_components: number of principal components to be calculated for the extinction matrix
-#     :param iterations: number of iterations of the algorithm
-#     :param w_regions: the regions to be taken into account for the fitting
-#     :return: corrected apparent spectrum
-#     """
-#     # Copy the input data
-#     wn = np.copy(wavenumbers)
-#     A_app = np.copy(App)
-#     m_0 = np.copy(m0)
-#     ii = np.argsort(wn)  # Sort the wavenumbers
-#     # Apply the sorting to the input variables
-#     wn = wn[ii]
-#     A_app = A_app[ii]
-#     m_0 = m_0[ii]
-#
-#     # Define the weighted regions:
-#     if w_regions is not None:
-#         m_0 = correct_reference(np.copy(m_0), wn, a, d, w_regions)  # Correct the reference spectrum as in Kohler method
-#         w_indexes = []
-#         # Get the indexes of the regions to be taken into account
-#         for pair in w_regions:
-#             min_pair = min(pair)
-#             max_pair = max(pair)
-#             ii1 = find_nearest_number_index(wn, min_pair)
-#             ii2 = find_nearest_number_index(wn, max_pair)
-#             w_indexes.extend(np.arange(ii1, ii2))
-#         # Take the weighted regions of wavenumbers, apparent and reference spectrum
-#         wn_w = np.copy(wn[w_indexes])
-#         A_app_w = np.copy(A_app[w_indexes])
-#         m_0_w = np.copy(m_0[w_indexes])
-#
-#     n_loadings = 10  # Number of values to be computed for each parameter (a, b, d)
-#     a = np.linspace(1.1, 1.5, n_loadings)  # Average refractive index
-#     d = np.linspace(2.0, 8.0, n_loadings) * 1.0e-4  # Cell diameter
-#     Q = np.zeros((n_loadings ** 3, len(wn)))  # Initialize the extinction matrix
-#     m_n = np.copy(m_0)  # Initialize the reference spectrum, that will be updated after each iteration
-#     for iteration in range(iterations):
-#         # Compute the scaled real part of the refractive index by Kramers-Kronig transform:
-#         nkk = -1.0 * np.imag(hilbert(m_n))
-#         # Build the extinction matrix
-#         n_row = 0
-#         for i in range(n_loadings):
-#             b = np.linspace(0.0, a[i] - 1.0, 10)  # Range of amplification factors of nkk
-#             for j in range(n_loadings):
-#                 for k in range(n_loadings):
-#                     n = a[i] + b[j] * nkk  # Compute the real refractive index
-#                     alpha = 2.0 * np.pi * d[k] * (n - 1.0)
-#                     rho = alpha * wn
-#                     #  Compute the extinction coefficients for each combination of a, b and d:
-#                     Q[n_row] = 2.0 - np.divide(4.0, rho) * np.sin(rho) + \
-#                                np.divide(4.0, rho ** 2.0) * (1.0 - np.cos(rho))
-#                     n_row += 1
-#
-#         # Orthogonalization of th extinction matrix with respect to the reference spectrum:
-#         for i in range(n_loadings ** 3):
-#             Q[i] -= np.dot(Q[i], m_0) / np.linalg.norm(m_0) ** 2.0 * m_0
-#
-#         # Perform PCA of the extinction matrix
-#         pca = _incremental_pca.IncrementalPCA(n_components=n_components)
-#         pca.fit(Q)
-#         p_i = pca.components_  # Get the principal components
-#
-#         if w_regions is None:  # If all regions have to be taken into account:
-#             def min_fun(x):
-#                 """
-#                 Function to be minimized for the fitting
-#                 :param x: fitting parameters (offset, baseline, reference's linear factor, PCA scores)
-#                 :return: squared norm of the difference between the apparent spectrum and its fitting
-#                 """
-#                 cc, mm, hh, g = x[0], x[1], x[2], x[3:]
-#                 return np.linalg.norm(A_app - apparent_spectrum_fit_function_Bassan(wn, m_0, p_i, cc, mm, hh, g)) ** 2.0
-#         else:  # If only the specified regions have to be taken into account:
-#             # Take the indexes of the specified regions
-#             w_indexes = []
-#             for pair in w_regions:
-#                 min_pair = min(pair)
-#                 max_pair = max(pair)
-#                 ii1 = find_nearest_number_index(wn, min_pair)
-#                 ii2 = find_nearest_number_index(wn, max_pair)
-#                 w_indexes.extend(np.arange(ii1, ii2))
-#             p_i_w = np.copy(p_i[:, w_indexes])  # Get the principal components of the extinction matrix at the
-#
-#             # specified regions
-#
-#             def min_fun(x):
-#                 """
-#                 Function to be minimized for the fitting
-#                 :param x: fitting parameters (offset, baseline, reference's linear factor, PCA scores)
-#                 :return: squared norm of the difference between the apparent spectrum and its fitting
-#                 """
-#                 cc, mm, hh, g = x[0], x[1], x[2], x[3:]
-#                 return np.linalg.norm(A_app_w -
-#                                       apparent_spectrum_fit_function_Bassan(wn_w, m_0_w, p_i_w, cc, mm, hh, g)) ** 2.0
-#
-#         p0 = np.append([1.0, 0.0005, 0.9], np.ones(n_components))  # Initial guess for the fitting
-#         res = scipy.optimize.minimize(min_fun, p0, method='Powell')  # Perform the fitting
-#
-#         # print(res)  # Print the result of the minimization
-#         # assert(res.success) # Raise AssertionError if res.success == False
-#
-#         c, m, h, g_i = res.x[0], res.x[1], res.x[2], res.x[3:]  # Take the fitted parameters
-#
-#         Z_corr = (A_app - c - m * wn - np.dot(g_i, p_i)) / h  # Apply the correction
-#
-#         m_n = np.copy(Z_corr)  # Take the corrected spectrum as the reference for the next iteration
-#
-#     return Z_corr
-#     # np.copy(Z_corr[::-1])  # Return the corrected spectrum in inverted order for compatibility
-
-#
-# def Konevskikh(wavenumbers, App, m0, n_components=8, iterations=1):
-#     """
-#     Correct scattered spectra using Konevskikh algorithm
-#     :param wavenumbers: array of wavenumbers
-#     :param App: apparent spectrum
-#     :param m0: reference spectrum
-#     :param n_components: number of components
-#     :param iterations: number of iterations
-#     :return: corrected spectrum
-#     """
-#     # Copy the input variables
-#     wn = np.copy(wavenumbers)
-#     A_app = np.copy(App)
-#     m_0 = np.copy(m0)
-#     ii = np.argsort(wn)  # Sort the wavenumbers
-#     wn = wn[ii]
-#     A_app = A_app[ii]
-#     m_0 = m_0[ii]
-#
-#     # Initialize parameters range:
-#     alpha_0, gamma = np.array([np.logspace(np.log10(0.1), np.log10(2.2), num=10) * 4.0e-4 * np.pi,
-#                                np.logspace(np.log10(0.05e4), np.log10(0.05e5), num=10) * 1.0e-2])
-#     p0 = np.ones(2 + n_components)
-#     Q_ext = np.zeros((len(alpha_0) * len(gamma), len(wn)))  # Initialize extinction matrix
-#
-#     m_n = np.copy(m_0)  # Copy the reference spectrum
-#     for n_iteration in range(iterations):
-#         ns_im = np.divide(m_n, wn)  # Compute the imaginary part of the refractive index
-#         # Compute the real part of the refractive index by Kramers-Kronig transform
-#         ns_re = -1.0 * np.imag(hilbert(ns_im))
-#
-#         # Compute the extinction matrix
-#         n_index = 0
-#         for i in range(len(alpha_0)):
-#             for j in range(len(gamma)):
-#                 for k in range(len(A_app)):
-#                     rho = alpha_0[i] * (1.0 + gamma[j] * ns_re[k]) * wn[k]
-#                     beta = np.arctan(ns_im[k] / (1.0 / gamma[j] + ns_re[k]))
-#                     Q_ext[n_index][k] = 2.0 - 4.0 * np.exp(-1.0 * rho * np.tan(beta)) * (np.cos(beta) / rho) * \
-#                                         np.sin(rho - beta) - 4.0 * np.exp(-1.0 * rho * np.tan(beta)) * (
-#                                                     np.cos(beta) / rho) ** 2.0 * \
-#                                         np.cos(rho - 2.0 * beta) + 4.0 * (np.cos(beta) / rho) ** 2.0 * np.cos(
-#                         2.0 * beta)
-#                     # TODO: rewrite this in a simpler way
-#
-#                 n_index += 1
-#
-#         # Orthogonalize the extinction matrix with respect to the reference:
-#         for i in range(n_index):
-#             Q_ext[i][:] -= np.dot(Q_ext[i][:], m_0) / np.linalg.norm(m_0) ** 2.0 * m_0
-#         # Q_ext = GramSchmidt(np.copy(Q_ext))  # Apply Gram-Schmidt othogonalization to Q_ext (don't uncomment this)
-#
-#         # Compute PCA of the extinction matrix
-#         pca = _incremental_pca.IncrementalPCA(n_components=n_components)
-#         pca.fit(Q_ext)
-#         p_i = pca.components_  # Get the principal components
-#
-#         def min_fun(x):
-#             bb, cc, g = x[0], x[1], x[2:]
-#             return np.linalg.norm(A_app - apparent_spectrum_fit_function(wn, m_0, p_i, bb, cc, g)) ** 2.0
-#
-#         res = scipy.optimize.minimize(min_fun, p0, method='Powell')
-#         # print(res)  # Print the minimization results
-#         # assert(res.success) # Raise AssertionError if res.success == False
-#
-#         b, c, g_i = res.x[0], res.x[1], res.x[2:]  # Get the fitted parameters
-#
-#         Z_corr = (A_app - c - np.dot(g_i, p_i)) / b  # Apply the correction
-#
-#         m_n = np.copy(Z_corr)  # Update te reference with the correction
-#
-#     return Z_corr  # Return the corrected spectrum

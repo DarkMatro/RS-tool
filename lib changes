@@ -1506,3 +1506,185 @@ def waterfall(shap_values, max_display=10, show=True, ax=None, fig=None):
     #     plt.show()
     # else:
     #     return plt.gcf()
+
+
+
+def force(base_value, shap_values=None, features=None, feature_names=None, out_names=None, link="identity",
+          plot_cmap="RdBu", matplotlib=False, show=True, figsize=(20,3), ordering_keys=None, ordering_keys_time_format=None,
+          text_rotation=0, contribution_threshold=0.05):
+    """ Visualize the given SHAP values with an additive force layout.
+
+    Parameters
+    ----------
+    base_value : float
+        This is the reference value that the feature contributions start from. For SHAP values it should
+        be the value of explainer.expected_value.
+
+    shap_values : numpy.array
+        Matrix of SHAP values (# features) or (# samples x # features). If this is a 1D array then a single
+        force plot will be drawn, if it is a 2D array then a stacked force plot will be drawn.
+
+    features : numpy.array
+        Matrix of feature values (# features) or (# samples x # features). This provides the values of all the
+        features, and should be the same shape as the shap_values argument.
+
+    feature_names : list
+        List of feature names (# features).
+
+    out_names : str
+        The name of the output of the model (plural to support multi-output plotting in the future).
+
+    link : "identity" or "logit"
+        The transformation used when drawing the tick mark labels. Using logit will change log-odds numbers
+        into probabilities.
+
+    matplotlib : bool
+        Whether to use the default Javascript output, or the (less developed) matplotlib output. Using matplotlib
+        can be helpful in scenarios where rendering Javascript/HTML is inconvenient.
+
+    contribution_threshold : float
+        Controls the feature names/values that are displayed on force plot.
+        Only features that the magnitude of their shap value is larger than min_perc * (sum of all abs shap values)
+        will be displayed.
+    """
+
+    # support passing an explanation object
+    if str(type(base_value)).endswith("Explanation'>"):
+        shap_exp = base_value
+        base_value = shap_exp.base_values
+        shap_values = shap_exp.values
+        if features is None:
+            if shap_exp.display_data is None:
+                features = shap_exp.data
+            else:
+                features = shap_exp.display_data
+        if sp.sparse.issparse(features):
+            features = features.toarray().flatten()
+        if feature_names is None:
+            feature_names = shap_exp.feature_names
+        # if out_names is None: # TODO: waiting for slicer support of this
+        #     out_names = shap_exp.output_names
+
+    # auto unwrap the base_value
+    if isinstance(base_value, np.ndarray):
+        if len(base_value) == 1:
+            base_value = base_value[0]
+        elif len(base_value) > 1 and np.all(base_value == base_value[0]):
+            base_value = base_value[0]
+
+    if (isinstance(base_value, np.ndarray) or type(base_value) == list):
+        if not isinstance(shap_values, list) or len(shap_values) != len(base_value):
+            raise Exception("In v0.20 force_plot now requires the base value as the first parameter! " \
+                            "Try shap.force_plot(explainer.expected_value, shap_values) or " \
+                            "for multi-output models try " \
+                            "shap.force_plot(explainer.expected_value[0], shap_values[0]).")
+
+
+    assert not type(shap_values) == list, "The shap_values arg looks multi output, try shap_values[i]."
+
+    link = convert_to_link(link)
+
+    if type(shap_values) != np.ndarray:
+        return visualize(shap_values)
+
+    # convert from a DataFrame or other types
+    if str(type(features)) == "<class 'pandas.core.frame.DataFrame'>":
+        if feature_names is None:
+            feature_names = list(features.columns)
+        features = features.values
+    elif str(type(features)) == "<class 'pandas.core.series.Series'>":
+        if feature_names is None:
+            feature_names = list(features.index)
+        features = features.values
+    elif isinstance(features, list):
+        if feature_names is None:
+            feature_names = features
+        features = None
+    elif features is not None and len(features.shape) == 1 and feature_names is None:
+        feature_names = features
+        features = None
+
+    if len(shap_values.shape) == 1:
+        shap_values = np.reshape(shap_values, (1, len(shap_values)))
+
+    if out_names is None:
+        out_names = ["f(x)"]
+    elif type(out_names) == str:
+        out_names = [out_names]
+
+    if shap_values.shape[0] == 1:
+        if feature_names is None:
+            feature_names = [labels['FEATURE'] % str(i) for i in range(shap_values.shape[1])]
+        if features is None:
+            features = ["" for _ in range(len(feature_names))]
+        if type(features) == np.ndarray:
+            features = features.flatten()
+
+        # check that the shape of the shap_values and features match
+        if len(features) != shap_values.shape[1]:
+            msg = "Length of features is not equal to the length of shap_values!"
+            if len(features) == shap_values.shape[1] - 1:
+                msg += " You might be using an old format shap_values array with the base value " \
+                       "as the last column. In this case just pass the array without the last column."
+            raise Exception(msg)
+
+        instance = Instance(np.zeros((1, len(feature_names))), features)
+        e = AdditiveExplanation(
+            base_value,
+            np.sum(shap_values[0, :]) + base_value,
+            shap_values[0, :],
+            None,
+            instance,
+            link,
+            Model(None, out_names),
+            DenseData(np.zeros((1, len(feature_names))), list(feature_names))
+        )
+        return visualize(e,
+                         plot_cmap,
+                         matplotlib,
+                         figsize=figsize,
+                         show=show,
+                         text_rotation=text_rotation,
+                         min_perc=contribution_threshold)
+
+    else:
+        if matplotlib:
+            raise NotImplementedError("matplotlib = True is not yet supported for force plots with multiple samples!")
+
+        if shap_values.shape[0] > 3000:
+            warnings.warn("shap.plots.force is slow for many thousands of rows, try subsampling your data.")
+
+        exps = []
+        for k in range(features.shape[0]):
+            if feature_names is None:
+                feature_names = [labels['FEATURE'] % str(i) for i in range(features.shape[1])]
+            if features is None:
+                display_features = ["" for i in range(len(feature_names))]
+            else:
+                if len(features.shape) > 1:
+                    display_features = features[k, :]
+                else:
+                    display_features = features
+
+
+
+            instance = Instance(np.ones((1, len(feature_names))), display_features)
+            e = AdditiveExplanation(
+                base_value,
+                np.sum(shap_values[k, :]) + base_value,
+                shap_values[k, :],
+                None,
+                instance,
+                link,
+                Model(None, out_names),
+                DenseData(np.ones((1, len(feature_names))), list(feature_names))
+            )
+            exps.append(e)
+
+        return visualize(
+                    exps,
+                    plot_cmap=plot_cmap,
+                    ordering_keys=ordering_keys,
+                    ordering_keys_time_format=ordering_keys_time_format,
+                    text_rotation=text_rotation
+                )

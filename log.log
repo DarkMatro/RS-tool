@@ -1,6 +1,0 @@
-2023-04-23 01:05:55,485 INFO Logging started.
-2023-04-23 01:06:09,987 INFO init CommandStartIntervalChanged Change start-interval value, new - 403.94246, old - 310.0
-2023-04-23 01:06:09,988 INFO init CommandEndIntervalChanged Change end-interval value, new - 1903.12874, old - 2000.0
-2023-04-23 01:06:11,448 INFO redo CommandStartIntervalChanged, value 403.94246
-2023-04-23 01:06:11,448 INFO redo CommandEndIntervalChanged, value 1903.12874
-2023-04-23 01:06:11,827 ERROR failed to disconnect currentTextChanged self.current_instance_combo_box)

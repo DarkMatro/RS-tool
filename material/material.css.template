@@ -1975,7 +1975,7 @@ QSizeGrip {
 }
 
 #frame_lda_scores, #frame_qda_scores, #frame_lr_scores, #frame_svc_scores, #frame_nearest_scores, #frame_gpc_scores,
-#frame_dt_scores, #frame_nb_scores, #frame_rf_scores, #frame_ab_scores, #frame_mlp_scores,
+#frame_dt_scores, #frame_nb_scores, #frame_rf_scores, #frame_ab_scores, #frame_mlp_scores, #frame_xgboost_scores,
 #frame_lda_features,
 #frame_lda_plots1,
 #frame_lda_plots2,
@@ -1989,7 +1989,7 @@ QSizeGrip {
 #splitter_3,
 #frame_lr_plots1,
 #frame_lr_plots2,
-#tab_lr, #tab_svc, #tab_nearest, #tab_gpc, #tab_dt, #tab_nb, #tab_rf, #tab_ab, #tab_mlp,
+#tab_lr, #tab_svc, #tab_nearest, #tab_gpc, #tab_dt, #tab_nb, #tab_rf, #tab_ab, #tab_mlp, #tab_xgboost,
 #splitter_7, #splitter_6, #splitter_8, #splitter_11, #splitter_16, #splitter_17, #splitter_20, #splitter_25,
 #splitter_10, #splitter_26, #splitter_29, #splitter_30, #splitter_31, #splitter_32, #splitter_33, #splitter_34,
 #splitter_35, #splitter_36, #splitter_37, #splitter_38, #splitter_39, #splitter_40, #splitter_41, #splitter_42,
@@ -1998,9 +1998,10 @@ QSizeGrip {
 #splitter_59, #splitter_60, #splitter_61, #splitter_62, #splitter_63, #splitter_64, #splitter_65, #splitter_66,
 #splitter_67, #splitter_68, #splitter_69, #splitter_70, #splitter_71, #splitter_72, #splitter_73, #splitter_74,
 #splitter_75, #splitter_76, #splitter_77, #splitter_78, #splitter_79, #splitter_80, #splitter_81, #splitter_82,
-#splitter_83, #splitter_84, #splitter_85, #splitter_86, #splitter_87,
+#splitter_83, #splitter_84, #splitter_85, #splitter_86, #splitter_87, #splitter_93, #splitter_94, #splitter_95,
+#splitter_96, #splitter_97, #splitter_98, #splitter_99, #splitter_100, #splitter_101,
 #scrollArea_nearest, #scrollArea_lda, #scrollArea_qda, #scrollArea_lr, #scrollArea_svc, #scrollArea_gpc, #scrollArea_dt,
-#scrollArea_nb, #scrollArea_rf, #scrollArea_ab, #scrollArea_mlp
+#scrollArea_nb, #scrollArea_rf, #scrollArea_ab, #scrollArea_mlp, #scrollArea_xgboost
 {
      background-color: {{borderColor}};
      border: none;
