@@ -5461,6 +5461,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.statusBar().removeWidget(self.progressBar)
         if self.taskbar_progress is not None:
             self.taskbar_progress.hide()
+            self.taskbar_progress.stop()
 
     def set_buttons_ability(self) -> None:
         self.action_despike.setDisabled(len(self.ImportedArray) == 0)
@@ -5848,7 +5849,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         """
         current_dataset = self.ui.dataset_type_cb.currentText()
         if current_dataset == 'Smoothed' and self.ui.smoothed_dataset_table_view.model().rowCount() == 0 \
-                or current_dataset == 'Baselined corrected' \
+                or current_dataset == 'Baseline corrected' \
                 and self.ui.baselined_dataset_table_view.model().rowCount() == 0 \
                 or current_dataset == 'Deconvoluted' \
                 and self.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:

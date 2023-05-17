@@ -1,7 +1,6 @@
 import ctypes
 import sys
 from asyncio import set_event_loop
-from multiprocessing import freeze_support
 from os import environ
 from traceback import format_exception
 
@@ -24,7 +23,7 @@ def start_program() -> None:
     environ['CANCEL'] = '0'
     environ['splash_color'] = 'white'
     environ['logo'] = 'images/logo.ico'
-    freeze_support()
+
     splash_png = 'images/splash_sized.png'
     check_preferences_file()
     read_prefs = read_preferences()

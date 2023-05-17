@@ -3772,6 +3772,13 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
+                         <item row="3" column="1">
+                          <widget class="QCheckBox" name="use_pca_checkBox">
+                           <property name="text">
+                            <string>PLS-DA dimensional reduction</string>
+                           </property>
+                          </widget>
+                         </item>
                          <item row="4" column="0">
                           <widget class="QLabel" name="current_group_shap_label">
                            <property name="text">
@@ -3886,13 +3893,6 @@ border: 1px;}</string>
                            </property>
                            <property name="value">
                             <number>50</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="1">
-                          <widget class="QCheckBox" name="use_pca_checkBox">
-                           <property name="text">
-                            <string>PLS-DA dimensional reduction</string>
                            </property>
                           </widget>
                          </item>

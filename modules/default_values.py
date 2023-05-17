@@ -304,4 +304,4 @@ def classificator_funcs() -> dict[str, callable]:
 
 
 def program_version() -> str:
-    return 'ver. 1.0.02 '
+    return 'ver. 1.0.03 '

@@ -1,9 +1,11 @@
+import os
 import re
 from asyncio import gather
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from datetime import datetime
 from logging import error, warning
 from os import environ
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -125,7 +127,7 @@ class StatAnalysisLogic:
         ros = RandomOverSampler(random_state=rng)
         X, Y = ros.fit_resample(X, Y)
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rng)
-        executor = ThreadPoolExecutor()
+        executor = ProcessPoolExecutor()
         func = self.classificator_funcs[cl_type]
         # Для БОльших датасетов возможно лучше будет ProcessPoolExecutor. Но таких пока нет
         main_window.current_executor = executor
@@ -142,6 +144,7 @@ class StatAnalysisLogic:
                       'use_pca': use_pca}
         elif cl_type in cl_types_using_pca_plsda:
             params = {'use_pca': use_pca}
+
         with executor:
             if params is not None:
                 main_window.current_futures = [
@@ -1144,7 +1147,6 @@ class StatAnalysisLogic:
                 continue
             if 'shap_html' in self.latest_stat_result[cl_type]:
                 shap_html = self.latest_stat_result[cl_type]['shap_html']
-                print(cl_type)
                 if self.parent.ui.sun_Btn.isChecked():
                     shap_html = re.sub(r'#ffe', "#000", shap_html)
                     shap_html = re.sub(r'#001', "#fff", shap_html)
