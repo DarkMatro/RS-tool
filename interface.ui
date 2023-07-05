@@ -2541,10 +2541,10 @@ border: 1px;}</string>
                             <set>Qt::AlignCenter</set>
                            </property>
                            <property name="decimals">
-                            <number>6</number>
+                            <number>9</number>
                            </property>
                            <property name="minimum">
-                            <double>0.000001000000000</double>
+                            <double>0.000000000000000</double>
                            </property>
                            <property name="maximum">
                             <double>1.000000000000000</double>
@@ -2553,7 +2553,7 @@ border: 1px;}</string>
                             <double>0.000001000000000</double>
                            </property>
                            <property name="value">
-                            <double>0.001000000000000</double>
+                            <double>0.000001000000000</double>
                            </property>
                           </widget>
                          </item>
@@ -3369,36 +3369,6 @@ border: 1px;}</string>
                         </widget>
                        </item>
                        <item row="4" column="0">
-                        <widget class="QLabel" name="n_lines_detect_method_label">
-                         <property name="font">
-                          <font>
-                           <pointsize>9</pointsize>
-                          </font>
-                         </property>
-                         <property name="toolTip">
-                          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;После определения состава линий автоматическим Guess по каждому спектру формируется список x0. По каждому интервалу количество линий может для разных спектров может быть разным. Выбор метода влияет на количество линий в итоговой модели. Это количество дальше используется в k-means.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Пример для одного интервала из 5 спектров: [5, 5, 6, 6, 7]&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Min - будет выбрано минимальное количество линий (5).&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Max - максимальное из всех (7).&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Mean - 5.8, округляется до 6&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:9pt;&quot;&gt;Median - 6&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                         </property>
-                         <property name="text">
-                          <string>N lines method:</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item row="4" column="1">
-                        <widget class="QComboBox" name="n_lines_detect_method_cb">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>25</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <pointsize>9</pointsize>
-                          </font>
-                         </property>
-                        </widget>
-                       </item>
-                       <item row="5" column="0">
                         <widget class="QLabel" name="max_noise_level_label">
                          <property name="font">
                           <font>
@@ -3410,7 +3380,7 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="5" column="1">
+                       <item row="4" column="1">
                         <widget class="QDoubleSpinBox" name="max_noise_level_dsb">
                          <property name="font">
                           <font>
@@ -3420,8 +3390,11 @@ border: 1px;}</string>
                          <property name="alignment">
                           <set>Qt::AlignCenter</set>
                          </property>
+                         <property name="decimals">
+                          <number>3</number>
+                         </property>
                          <property name="minimum">
-                          <double>0.000000000000000</double>
+                          <double>0.001000000000000</double>
                          </property>
                          <property name="maximum">
                           <double>9999.000000000000000</double>
@@ -3431,7 +3404,7 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="6" column="0">
+                       <item row="5" column="0">
                         <widget class="QLabel" name="label">
                          <property name="font">
                           <font>
@@ -3439,11 +3412,11 @@ border: 1px;}</string>
                           </font>
                          </property>
                          <property name="text">
-                          <string>L_ratio limit</string>
+                          <string>Lorenz_ratio limit</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="6" column="1">
+                       <item row="5" column="1">
                         <widget class="QDoubleSpinBox" name="l_ratio_doubleSpinBox">
                          <property name="font">
                           <font>
@@ -3464,7 +3437,7 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="7" column="0">
+                       <item row="6" column="0">
                         <widget class="QCheckBox" name="include_x0_checkBox">
                          <property name="font">
                           <font>
@@ -3762,7 +3735,7 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="3" column="0">
+                         <item row="4" column="0">
                           <widget class="QCheckBox" name="use_shapley_cb">
                            <property name="text">
                             <string>Use Shapley</string>
@@ -3772,21 +3745,21 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="3" column="1">
+                         <item row="4" column="1">
                           <widget class="QCheckBox" name="use_pca_checkBox">
                            <property name="text">
                             <string>PLS-DA dimensional reduction</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="4" column="0">
+                         <item row="6" column="0">
                           <widget class="QLabel" name="current_group_shap_label">
                            <property name="text">
                             <string>Current group (shap):</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="4" column="1">
+                         <item row="6" column="1">
                           <widget class="QComboBox" name="current_group_shap_comboBox">
                            <property name="minimumSize">
                             <size>
@@ -3802,14 +3775,14 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="5" column="0">
+                         <item row="7" column="0">
                           <widget class="QLabel" name="current_feature_label">
                            <property name="text">
                             <string>Current feature (shap):</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="5" column="1">
+                         <item row="7" column="1">
                           <widget class="QComboBox" name="current_feature_comboBox">
                            <property name="maximumSize">
                             <size>
@@ -3819,14 +3792,14 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="6" column="0">
+                         <item row="8" column="0">
                           <widget class="QLabel" name="coloring_feature_label">
                            <property name="text">
                             <string>Coloring feature:</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="6" column="1">
+                         <item row="8" column="1">
                           <widget class="QComboBox" name="coloring_feature_comboBox">
                            <property name="maximumSize">
                             <size>
@@ -3836,14 +3809,14 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="7" column="0">
+                         <item row="9" column="0">
                           <widget class="QLabel" name="current_instance_label">
                            <property name="text">
                             <string>Current instance:</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="7" column="1">
+                         <item row="9" column="1">
                           <widget class="QComboBox" name="current_instance_combo_box">
                            <property name="maximumSize">
                             <size>
@@ -3856,14 +3829,14 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="8" column="0">
+                         <item row="10" column="0">
                           <widget class="QLabel" name="current_tree_label">
                            <property name="text">
                             <string>Current tree:</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="8" column="1">
+                         <item row="10" column="1">
                           <widget class="QSpinBox" name="current_tree_spinBox">
                            <property name="alignment">
                             <set>Qt::AlignCenter</set>
@@ -3873,14 +3846,14 @@ border: 1px;}</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="9" column="0">
+                         <item row="11" column="0">
                           <widget class="QCheckBox" name="feature_display_max_checkBox">
                            <property name="text">
                             <string>feature display max</string>
                            </property>
                           </widget>
                          </item>
-                         <item row="9" column="1">
+                         <item row="11" column="1">
                           <widget class="QSpinBox" name="feature_display_max_spinBox">
                            <property name="alignment">
                             <set>Qt::AlignCenter</set>
@@ -3893,6 +3866,28 @@ border: 1px;}</string>
                            </property>
                            <property name="value">
                             <number>50</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="3" column="0">
+                          <widget class="QLabel" name="label_2">
+                           <property name="font">
+                            <font>
+                             <pointsize>9</pointsize>
+                            </font>
+                           </property>
+                           <property name="text">
+                            <string>Refit score:</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="3" column="1">
+                          <widget class="QComboBox" name="refit_score"/>
+                         </item>
+                         <item row="5" column="0" colspan="2">
+                          <widget class="Line" name="line">
+                           <property name="orientation">
+                            <enum>Qt::Horizontal</enum>
                            </property>
                           </widget>
                          </item>

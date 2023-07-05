@@ -3,7 +3,7 @@ import sys
 from asyncio import set_event_loop
 from os import environ
 from traceback import format_exception
-
+import yappi
 import pyperclip
 from asyncqtpy import QEventLoop
 from qtpy.QtCore import Qt
@@ -55,7 +55,7 @@ def start_program() -> None:
     app.setWindowIcon(win_icon)
 
     frame = MainWindow(loop, (theme_bckgrnd, theme_color, None), read_prefs, splash)
-    splash_show_message(splash, 'Initializing CSS')
+    splash_show_message(splash, 'Initializing stylesheets')
     # Set theme on initialization
     apply_stylesheet(app, (theme_bckgrnd, theme_color, frame.theme_colors), invert)
     frame.showMaximized()

@@ -1,17 +1,22 @@
 import scipy.special as sc
-from numba import njit, float64, int64
-from numpy import ndarray, exp, sqrt, log, pi, concatenate, real, log1p, arctan, cos
+from numba import njit, float64, int64, complex128
+import numpy as np
+from lmfit.lineshapes import voigt
+from modules.functions_for_arrays import nearest_idx
+import numba_scipy
+from datetime import datetime
 
-from modules.static_functions import find_nearest_idx
 
-s2 = sqrt(2.0)
-ln2 = log(2)
-s2ln2 = sqrt(2 * ln2)
-s2pi = sqrt(2 * pi)
+s2 = np.sqrt(2.0)
+ln2 = np.log(2)
+s2ln2 = np.sqrt(2 * ln2)
+s2ln2div1 = 1. / s2ln2
+s2pi = np.sqrt(2 * np.pi)
+tiny = 1.0e-15
 
 
 @njit(float64[::](float64[::], float64, float64, float64), fastmath=True)
-def gaussian(x: ndarray, a: float, x0: float, dx: float) -> ndarray:
+def gaussian(x: np.ndarray, a: float, x0: float, dx: float) -> np.ndarray:
     """compute a Gaussian peak
 
     Inputs
@@ -34,13 +39,13 @@ def gaussian(x: ndarray, a: float, x0: float, dx: float) -> ndarray:
     -------
     Formula is a*np.exp(-np.log(2)*((x-x0)/dx)**2)
     """
-    return a * exp(-ln2 * ((x - x0) / dx) ** 2)
+    return a * np.exp(-ln2 * ((x - x0) / dx) ** 2)
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64),
       locals={'x0_idx': int64, 'x_left': float64[::], 'x_right': float64[::], 'y_left': float64[::],
               'y_right': float64[::]}, fastmath=True)
-def split_gaussian(x: ndarray, a: float, x0: float, dx: float, dx_left: float) -> ndarray:
+def split_gaussian(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float) -> np.ndarray:
     """Return a 1-dimensional piecewise gaussian function.
 
     Split means that width of the function is different between
@@ -62,15 +67,15 @@ def split_gaussian(x: ndarray, a: float, x0: float, dx: float, dx_left: float) -
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = gaussian(x_left, a, x0, dx_left)
     y_right = gaussian(x_right, a, x0, dx)
-    return concatenate((y_left, y_right), axis=0)
+    return np.concatenate((y_left, y_right), axis=0)
 
 
-def skewed_gaussian(x: ndarray, a: float, x0: float, dx: float, gamma: float) -> ndarray:
+def skewed_gaussian(x: np.ndarray, a: float, x0: float, dx: float, gamma: float) -> np.ndarray:
     """Return a Gaussian line shape, skewed with error function.
 
     Equal to: gaussian(x, center, sigma)*(1+erf(beta*(x-center)))
@@ -90,7 +95,7 @@ def skewed_gaussian(x: ndarray, a: float, x0: float, dx: float, gamma: float) ->
 
 
 @njit(float64[::](float64[::], float64, float64, float64), fastmath=True)
-def lorentzian(x: ndarray, a: float, x0: float, dx: float) -> ndarray:
+def lorentzian(x: np.ndarray, a: float, x0: float, dx: float) -> np.ndarray:
     """compute a Lorentzian peak
 
     Inputs
@@ -115,7 +120,7 @@ def lorentzian(x: ndarray, a: float, x0: float, dx: float) -> ndarray:
 @njit(float64[::](float64[::], float64, float64, float64, float64),
       locals={'x0_idx': int64, 'x_left': float64[::], 'x_right': float64[::], 'y_left': float64[::],
               'y_right': float64[::]}, fastmath=True)
-def split_lorentzian(x: ndarray, a: float, x0: float, dx: float, dx_left: float) -> ndarray:
+def split_lorentzian(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float) ->np.ndarray:
     """Return a 1-dimensional piecewise Lorentzian function.
 
     Split means that width of the function is different between
@@ -137,31 +142,66 @@ def split_lorentzian(x: ndarray, a: float, x0: float, dx: float, dx_left: float)
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = lorentzian(x_left, a, x0, dx_left)
     y_right = lorentzian(x_right, a, x0, dx)
-    return concatenate((y_left, y_right), axis=0)
+    return np.concatenate((y_left, y_right), axis=0)
 
 
-def voigt(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, gamma: float = 0.0) -> ndarray:
-    """Return a 1-dimensional Voigt function.
+def voigt(x: np.ndarray, a: float = 1., x0: float = 0., dx: float = 1., gamma: float = 0.) -> np.ndarray:
+    """
+    Return a 1-dimensional Voigt function.
 
-    voigt(x, amplitude, center, sigma, gamma) =
-        amplitude*wofz(z).real / (sigma*s2pi)
+    Parameters
+    ------
+    x : ndarray
+        the positions at which the signal should be sampled
+    a : float
+        target amplitude of peak
+    x0 : float
+        frequency/position of the peak
+    dx : float
+        half-width at half-maximum (left dx = right dx)
+    gamma: float
+
+    Returns
+    -------
+    out : ndarray
+        the signal
+
+    voigt(x, amplitude, center, sigma, gamma) = amplitude*wofz(z).real / (sigma*s2pi)
 
     For more information, see: https://en.wikipedia.org/wiki/Voigt_profile
 
     """
-    sigma = dx * s2ln2
-    if gamma is None:
-        gamma = sigma
-    z = (x - x0 + 1j * gamma) / sigma
-    return a * sc.wofz(z).real
+    sigma = voigt_sigma(dx, gamma)
+    z_norm = voigt_z_norm(gamma, sigma)
+    _norm_factor = sc.wofz(z_norm).real / (sigma * s2pi)
+    z = voigt_z(x - x0, gamma, sigma)
+    y = sc.wofz(z).real / (sigma * s2pi)
+    return a * y / _norm_factor
 
 
-def split_voigt(x: ndarray, a: float, x0: float, dx: float, dx_left: float, gamma: float) -> ndarray:
+@njit(float64(float64, float64), fastmath=True)
+def voigt_sigma(dx, gamma) -> float:
+    sigma = dx**2 - 1.0692 * dx * gamma + .06919716 * gamma**2
+    sigma = np.sqrt(sigma) / s2ln2
+    return max(tiny, sigma)
+
+
+@njit(complex128(float64, float64), fastmath=True)
+def voigt_z_norm(gamma, sigma) -> np.ndarray:
+    return (1j * gamma) / (sigma * s2)
+
+
+@njit(complex128[::](float64[::], float64, float64), fastmath=True)
+def voigt_z(x, gamma, sigma) -> np.ndarray:
+    return (x + 1j * gamma) / (sigma * s2)
+
+
+def split_voigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, gamma: float) -> np.ndarray:
     """Return a 1-dimensional piecewise Lorentzian function.
 
     Split means that width of the function is different between
@@ -184,16 +224,16 @@ def split_voigt(x: ndarray, a: float, x0: float, dx: float, dx_left: float, gamm
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = voigt(x_left, a, x0, dx_left, gamma)
     y_right = voigt(x_right, a, x0, dx, gamma)
-    return concatenate((y_left, y_right), axis=0)
+    return np.concatenate((y_left, y_right), axis=0)
 
 
-def skewed_voigt(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, gamma: float = 0.0, skew: float = 0.0) \
-        -> ndarray:
+def skewed_voigt(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, gamma: float = 0.0, skew: float = 0.0) \
+        -> np.ndarray:
     """Return a Voigt line shape, skewed with error function.
 
     Equal to: voigt(x, center, sigma, gamma)*(1+erf(beta*(x-center)))
@@ -214,7 +254,7 @@ def skewed_voigt(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, g
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-def pseudovoigt(x: ndarray, a: float, x0: float, dx: float, l_ratio: float) -> ndarray:
+def pseudovoigt(x: np.ndarray, a: float, x0: float, dx: float, l_ratio: float) -> np.ndarray:
     """compute a pseudo-Voigt peak
     Inputs
     ------
@@ -240,7 +280,7 @@ def pseudovoigt(x: ndarray, a: float, x0: float, dx: float, l_ratio: float) -> n
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64, float64), fastmath=True)
-def split_pseudovoigt(x: ndarray, a: float, x0: float, dx: float, dx_left: float, l_ratio: float) -> ndarray:
+def split_pseudovoigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, l_ratio: float) -> np.ndarray:
     """Return a 1-dimensional piecewise Pseudo-Voigt function.
 
     Split means that width of the function is different between
@@ -263,16 +303,16 @@ def split_pseudovoigt(x: ndarray, a: float, x0: float, dx: float, dx_left: float
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = pseudovoigt(x_left, a, x0, dx_left, l_ratio)
     y_right = pseudovoigt(x_right, a, x0, dx, l_ratio)
-    return concatenate((y_left, y_right), axis=0)
+    return np.concatenate((y_left, y_right), axis=0)
 
 
-def pearson4(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon: float = 1.0, skew: float = 0.0) \
-        -> ndarray:
+def pearson4(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon: float = 1.0, skew: float = 0.0) \
+        -> np.ndarray:
     """Return a Pearson4 line shape.
 
     Using the Wikipedia definition:
@@ -287,12 +327,12 @@ def pearson4(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon
 
     """
     arg = (x - x0) / dx
-    log_pre_factor = 2 * (real(sc.loggamma(expon + skew * 0.5j)) - sc.loggamma(expon)) - sc.betaln(expon - 0.5, 0.5)
-    return (a * pi / expon) * exp(log_pre_factor - expon * log1p(arg * arg) - skew * arctan(arg))
+    log_pre_factor = 2 * (np.real(sc.loggamma(expon + skew * 0.5j)) - sc.loggamma(expon)) - sc.betaln(expon - 0.5, 0.5)
+    return (a * np.pi / expon) * np.exp(log_pre_factor - expon * np.log1p(arg * arg) - skew * np.arctan(arg))
 
 
-def split_pearson4(x: ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float, skew: float = 0.0) \
-        -> ndarray:
+def split_pearson4(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float, skew: float = 0.0) \
+        -> np.ndarray:
     """Return a 1-dimensional piecewise Pearson7 function.
 
     Split means that width of the function is different between
@@ -316,17 +356,17 @@ def split_pearson4(x: ndarray, a: float, x0: float, dx: float, dx_left: float, e
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = pearson4(x_left, a, x0, dx_left, expon, skew)
     y_right = pearson4(x_right, a, x0, dx, expon, skew)
-    y = concatenate((y_left, y_right), axis=0)
+    y = np.concatenate((y_left, y_right), axis=0)
     return y
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-def pearson7(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon: float = 1.0) -> ndarray:
+def pearson7(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon: float = 1.0) -> np.ndarray:
     """Return a Pearson7 line shape.
 
     Using the Wikipedia definition:
@@ -346,7 +386,7 @@ def pearson7(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64, float64), fastmath=True)
-def split_pearson7(x: ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float) -> ndarray:
+def split_pearson7(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float) -> np.ndarray:
     """Return a 1-dimensional piecewise Pearson7 function.
 
     Split means that width of the function is different between
@@ -369,16 +409,16 @@ def split_pearson7(x: ndarray, a: float, x0: float, dx: float, dx_left: float, e
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = pearson7(x_left, a, x0, dx_left, expon)
     y_right = pearson7(x_right, a, x0, dx, expon)
-    return concatenate((y_left, y_right), axis=0)
+    return np.concatenate((y_left, y_right), axis=0)
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-def moffat(x: ndarray, a: float = 1.0, x0: float = 0., dx: float = 1.0, beta: float = 1.):
+def moffat(x: np.ndarray, a: float = 1.0, x0: float = 0., dx: float = 1.0, beta: float = 1.):
     """Return a 1-dimensional Moffat function.
 
     moffat(x, amplitude, center, sigma, beta) =
@@ -390,7 +430,7 @@ def moffat(x: ndarray, a: float = 1.0, x0: float = 0., dx: float = 1.0, beta: fl
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64, float64), fastmath=True)
-def split_moffat(x: ndarray, a: float, x0: float, dx: float, dx_left: float, beta: float) -> ndarray:
+def split_moffat(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, beta: float) -> np.ndarray:
     """Return a 1-dimensional Moffat function.
 
     Split means that width of the function is different between
@@ -413,17 +453,17 @@ def split_moffat(x: ndarray, a: float, x0: float, dx: float, dx_left: float, bet
     out : ndarray
         the signal
     """
-    x0_idx = find_nearest_idx(x, x0)
+    x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
     x_right = x[x0_idx:]
     y_left = moffat(x_left, a, x0, dx_left, beta)
     y_right = moffat(x_right, a, x0, dx, beta)
-    y = concatenate((y_left, y_right), axis=0)
+    y = np.concatenate((y_left, y_right), axis=0)
     return y
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-def doniach(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, alpha: float = 0.0) -> ndarray:
+def doniach(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, alpha: float = 0.0) -> np.ndarray:
     """Return a Doniach Sunjic asymmetric line shape.
 
     doniach(x, amplitude, center, sigma, gamma) =
@@ -438,11 +478,11 @@ def doniach(x: ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, alpha:
     """
     arg = (x - x0) / dx
     gm1 = (1.0 - alpha)
-    return a * cos(pi * alpha / 2 + gm1 * arctan(arg)) / (1 + arg ** 2) ** (gm1 / 2)
+    return a * np.cos(np.pi * alpha / 2 + gm1 * np.arctan(arg)) / (1 + arg ** 2) ** (gm1 / 2)
 
 
 @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-def bwf(x: ndarray, a: float, x0: float, dx: float, q: float) -> ndarray:
+def bwf(x: np.ndarray, a: float, x0: float, dx: float, q: float) -> np.ndarray:
     # Breit-Wigner-Fano line shape
     temp = (x - x0) / dx
     return a * (1 + temp * q)**2 / (1 + temp**2)

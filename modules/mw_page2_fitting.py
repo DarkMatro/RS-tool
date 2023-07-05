@@ -1,14 +1,16 @@
 import copy
 from asyncio import gather
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from multiprocessing import Manager
 from datetime import datetime
 from logging import info
-from os import environ
+from typing import Any
 
 import numpy as np
 from asyncqtpy import asyncSlot
 from lmfit import Parameters, Model
 from lmfit.model import ModelResult
+from numpy import ndarray
 from pandas import DataFrame, Series, MultiIndex, concat
 from pyqtgraph import PlotCurveItem, ROI, mkBrush, PlotDataItem
 from qtpy.QtCore import QTimer
@@ -16,18 +18,23 @@ from qtpy.QtGui import QMouseEvent, QColor
 from qtpy.QtWidgets import QMessageBox
 
 from modules.default_values import peak_shapes_params, peak_shape_params_limits, fitting_methods
-from modules.static_functions import cut_full_spectrum, find_nearest_idx, split_by_borders, fit_model, \
-    packed_current_line_parameters, models_params_splitted_batch, fit_model_batch, eval_uncert, \
-    models_params_splitted, legend_by_float, update_fit_parameters, guess_peaks, find_nearest, \
-    process_data_by_intervals, find_interval_key, process_wavenumbers_interval, fitting_model, cut_axis, \
-    get_curve_for_deconvolution, curve_pen_brush_by_style, set_roi_size, set_roi_size_pos, get_average_spectrum
+from modules.static_functions import packed_current_line_parameters, models_params_splitted_batch, fit_model_batch,\
+    eval_uncert, models_params_splitted, get_curve_for_deconvolution, curve_pen_brush_by_style, set_roi_size,\
+    set_roi_size_pos, get_average_spectrum
 from modules.undo_redo import CommandAfterBatchFitting, CommandAfterFitting, CommandAfterGuess, \
     CommandDeconvLineDragged, CommandDeconvLineTypeChanged
+from modules.functions_cut_trim import cut_full_spectrum, cut_axis
+from modules.functions_for_arrays import nearest_idx
+from modules.functions_guess_raman_lines import clustering_lines_intervals, intervals_by_borders, \
+    create_intervals_data, params_func_legend, legend_from_float, update_fit_parameters, guess_peaks
+from modules.functions_fitting import split_by_borders, fitting_model, fit_model
 
 
 class FittingLogic:
 
     def __init__(self, parent):
+        self.all_ranges_clustered_x0_sd = None
+        self.intervals_data = None
         self.timer_fill = None
         self.rad = None
         self.parent = parent
@@ -80,11 +87,12 @@ class FittingLogic:
         else:
             for key, arr in main_window.preprocessing.baseline_corrected_dict.items():
                 arrays[key] = [arr]
-        splitted_arrays = self.split_array_for_fitting(arrays)
+        splitted_arrays = self._split_array_for_fitting(arrays)
         idx_type_param_count_legend_func = self.prepare_data_fitting()
         list_params_full = self._fitting_params_batch(idx_type_param_count_legend_func, arrays)
         x_y_models_params = models_params_splitted_batch(splitted_arrays, list_params_full,
                                                          idx_type_param_count_legend_func)
+        info(x_y_models_params)
         method_full_name = main_window.ui.fit_opt_method_comboBox.currentText()
         method = self.fitting_methods[method_full_name]
         executor = ProcessPoolExecutor()
@@ -103,15 +111,14 @@ class FittingLogic:
             for future in main_window.current_futures:
                 future.add_done_callback(main_window.progress_indicator)
             result = await gather(*main_window.current_futures)
-        if main_window.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
-            main_window.close_progress_bar()
-            main_window.ui.statusBar.showMessage('Fitting cancelled.')
+        if main_window.cancelled_by_user():
             return
         main_window.close_progress_bar()
-        main_window.ui.statusBar.showMessage('Calculating uncertaintes...')
+        main_window.ui.statusBar.showMessage('Calculating uncertainties...')
         n_files = len(result)
         main_window.open_progress_bar(max_value=n_files if n_files > 1 else 0)
-        main_window.open_progress_dialog("Calculating uncertaintes...", "Cancel", maximum=n_files if n_files > 1 else 0)
+        main_window.open_progress_dialog("Calculating uncertainties...", "Cancel",
+                                         maximum=n_files if n_files > 1 else 0)
         executor = ProcessPoolExecutor()
         main_window.current_executor = executor
         with executor:
@@ -146,7 +153,7 @@ class FittingLogic:
 
         spec_name = self.current_spectrum_deconvolution_name
         arr = self.array_of_current_filename_in_deconvolution()
-        splitted_arrays = self.split_array_for_fitting({spec_name: [arr]})[spec_name]
+        splitted_arrays = self._split_array_for_fitting({spec_name: [arr]})[spec_name]
         intervals = len(splitted_arrays)
         main_window.open_progress_bar(max_value=intervals if intervals > 1 else 0)
         main_window.open_progress_dialog("Fitting...", "Cancel", maximum=intervals if intervals > 1 else 0)
@@ -165,9 +172,7 @@ class FittingLogic:
             for future in main_window.current_futures:
                 future.add_done_callback(main_window.progress_indicator)
             result = await gather(*main_window.current_futures)
-        if main_window.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
-            main_window.close_progress_bar()
-            main_window.ui.statusBar.showMessage('Fitting cancelled.')
+        if main_window.cancelled_by_user():
             return
         command = CommandAfterFitting(main_window, result, idx_type_param_count_legend_func, spec_name,
                                       "Fitted spectrum %s" % spec_name)
@@ -190,16 +195,8 @@ class FittingLogic:
             Если выбран 'All', то анализируются усредненные по всем спектрам из левой таблицы.
         Для 'Average groups' и 'All' собираются линии x0. По каждому интервалу анализируется количество линий.
         Итоговое количество линий для каждого интервала определяется методом кластеризации k-means.
-        Метод определения количества задается в N lines method
-        N lines method:
-            После определения состава линий автоматическим Guess по каждому спектру формируется список x0.
-             По каждому интервалу количество линий может для разных спектров может быть разным.
-              Выбор метода влияет на количество линий в итоговой модели. Это количество дальше используется в k-means.
-            Пример для одного интервала из 5 спектров: [5, 5, 6, 6, 7]
-            Min - будет выбрано минимальное количество линий (5).
-            Max - максимальное из всех (7).
-            Mean - 5.8, округляется до 6
-            Median - 6
+        На вход в алгоритм k-means подается количество линий
+
         После k-means полученный состав линий опять прогоняется через Fit и мы получаем итоговую модель.
 
         В процессе анализа на каждый параметр линий накладывается ряд ограничений.
@@ -213,68 +210,56 @@ class FittingLogic:
         @param line_type: str
         @return: None
         """
-        main_window = self.parent
-        main_window.time_start = datetime.now()
-        main_window.ui.statusBar.showMessage('Guessing peaks...')
-        main_window.close_progress_bar()
-        parameters_to_guess = self.parameters_to_guess(line_type)
-        mean_snr = parameters_to_guess['mean_snr']
-        noise_level = np.max(self.averaged_array[:, 1]) / mean_snr
-        noise_level = max(noise_level, main_window.ui.max_noise_level_dsb.value())
-        parameters_to_guess['noise_level'] = noise_level
-        arrays_for_guess = self.arrays_for_peak_guess().values()
-        splitted_arrays = []
-        for i in arrays_for_guess:
-            for j in i:
-                splitted_arrays.append(j)
-        n_files = len(splitted_arrays)
-        if n_files == 1:
-            n_files = 0
-        main_window.open_progress_bar(max_value=n_files)
-        main_window.open_progress_dialog("Analyze...", "Cancel", maximum=n_files)
-        executor = ProcessPoolExecutor()
-        main_window.current_executor = executor
-        with executor:
-            main_window.current_futures = [
-                main_window.loop.run_in_executor(main_window.current_executor, guess_peaks, arr, parameters_to_guess)
-                for arr in splitted_arrays]
-            for future in main_window.current_futures:
-                future.add_done_callback(main_window.progress_indicator)
-            result = await gather(*main_window.current_futures)
-        info('result {!s}'.format(result))
-        if main_window.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
-            main_window.close_progress_bar()
-            main_window.ui.statusBar.showMessage('Cancelled.')
-            info('Cancelled')
+        mw = self.parent
+        mw.time_start = datetime.now()
+        mw.ui.statusBar.showMessage('Guessing peaks...')
+        mw.close_progress_bar()
+        parameters_to_guess = self._parameters_to_guess(line_type)
+        sliced_arrays = self._arrays_for_peak_guess()
+        n_files = len(sliced_arrays)
+        n_files = 0 if n_files == 1 else n_files
+        mw.open_progress_bar(max_value=n_files)
+        mw.open_progress_dialog("Analyze...", "Cancel", maximum=n_files)
+        mw.current_executor = ProcessPoolExecutor()
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with mw.current_executor:
+                mw.current_futures = [mw.loop.run_in_executor(mw.current_executor, guess_peaks, arr,
+                                                              parameters_to_guess, mw.break_event)
+                                      for arr in sliced_arrays]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                latest_guess_result = await gather(*mw.current_futures)
+        print('guess_peaks done.')
+        info('guess_peaks done.')
+        if mw.cancelled_by_user():
             return
-        if main_window.ui.guess_method_cb.currentText() != 'Average':
-            x_y_models_params = main_window.analyze_guess_results(result, parameters_to_guess['param_names'], line_type)
-            main_window.close_progress_bar()
-            main_window.progressBar.setValue(0)
+        if mw.ui.guess_method_cb.currentText() != 'Average':
+            x_y_models_params = self._analyze_guess_results(latest_guess_result,
+                                                            parameters_to_guess['param_names'], line_type)
+            mw.close_progress_bar()
+            mw.progressBar.setValue(0)
             intervals = len(x_y_models_params)
-            main_window.open_progress_bar(max_value=intervals if intervals > 1 else 0)
-            main_window.open_progress_dialog("Fitting...", "Cancel", maximum=intervals if intervals > 1 else 0)
-            executor = ThreadPoolExecutor()
-            main_window.current_executor = executor
-            with executor:
-                main_window.current_futures = [
-                    main_window.loop.run_in_executor(executor, fit_model, i[2], i[1], i[3], i[0],
-                                                     parameters_to_guess['method'])
+            mw.open_progress_bar(max_value=intervals if intervals > 1 else 0)
+            mw.open_progress_dialog("Fitting...", "Cancel", maximum=intervals if intervals > 1 else 0)
+            mw.current_executor = ProcessPoolExecutor()
+            with mw.current_executor:
+                mw.current_futures = [
+                    mw.loop.run_in_executor(mw.current_executor, fit_model, i[2], i[1], i[3], i[0],
+                                            parameters_to_guess['method'])
                     for i in x_y_models_params]
-                for future in main_window.current_futures:
-                    future.add_done_callback(main_window.progress_indicator)
-                result = await gather(*main_window.current_futures)
-        if main_window.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
-            main_window.close_progress_bar()
-            main_window.ui.statusBar.showMessage('Cancelled.')
-            info('Cancelled')
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                result = await gather(*mw.current_futures)
+        else:
+            result = latest_guess_result
+        if mw.cancelled_by_user():
             return
-        main_window.progressBar.setMinimum(0)
-        main_window.progressBar.setMaximum(0)
-        info('to CommandAfterGuess')
-        command = CommandAfterGuess(main_window, result, line_type, parameters_to_guess['param_names'], "Auto guess")
-        main_window.undoStack.push(command)
-        main_window.close_progress_bar()
+        mw.progressBar.setMinimum(0)
+        mw.progressBar.setMaximum(0)
+        command = CommandAfterGuess(mw, result, line_type, len(parameters_to_guess['param_names']))
+        mw.undoStack.push(command)
+        mw.close_progress_bar()
 
     @asyncSlot()
     async def curve_type_changed(self, line_type_new: str, line_type_old: str, row: int) -> None:
@@ -292,18 +277,29 @@ class FittingLogic:
     async def switch_to_template(self, _: str = 'Average') -> None:
         self.update_single_deconvolution_plot(self.parent.ui.template_combo_box.currentText(), True, True)
         self.redraw_curves_for_filename()
+        self.show_all_roi()
         self.set_rows_visibility()
         self.show_current_report_result()
         self.draw_sum_curve()
         self.draw_residual_curve()
         self.update_sigma3_curves('')
 
-    def split_array_for_fitting(self, arrays: dict[str, list[np.ndarray]]) -> dict[str, list[np.ndarray]]:
+    def _split_array_for_fitting(self, arrays: dict[str, list[np.ndarray]]) -> dict[str, list[np.ndarray]]:
         """
-        На входе список массивов, на выходе порезанный на интервалы список массивов
-        @param arrays: dict[str, list[np.ndarray]] key | list[2D array x|y]
-        @return: dict[str, lis
-        t[np.ndarray]] key | splitted spectrum
+        The function cuts the spectra at intervals specified by the user.
+        If checked 'interval' cut all spectra by this range
+        elif 'Split by intervals': use intervals from table
+        else: not selected range use input arrays as out without changes.
+
+        Parameters
+        ----------
+        arrays: dict[str, list[np.ndarray]]
+            filename, spectrum array with x_axis and y_axis
+
+        Returns
+        -------
+        out: dict[str, list[np.ndarray]]
+            same arrays but sliced
         """
         split_arrays = {}
         if self.parent.ui.interval_checkBox.isChecked():
@@ -311,32 +307,14 @@ class FittingLogic:
                 split_arrays[key] = [cut_full_spectrum(arr[0], self.parent.ui.interval_start_dsb.value(),
                                                        self.parent.ui.interval_end_dsb.value())]
         elif self.parent.ui.intervals_gb.isChecked():
-            intervals = self.intervals_by_borders()
+            borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
+            x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
+            intervals_idx = intervals_by_borders(borders, x_axis, idx=True)
             for key, arr in arrays.items():
-                split_arrays[key] = split_by_borders(arr[0], intervals)
+                split_arrays[key] = split_by_borders(arr[0], intervals_idx)
         else:
             split_arrays = arrays
         return split_arrays
-
-    def intervals_by_borders(self) -> list[tuple[int, int]]:
-        """
-        Indexes of intervals in x_axis
-        @return:
-        list[tuple[int, int]]
-        Example: [(0, 57), (58, 191), (192, 257), (258, 435), (436, 575), (576, 799)]
-        """
-        borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
-        x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
-        idx_in_range = []
-        for i in borders:
-            if x_axis[0] < i < x_axis[-1]:
-                idx = find_nearest_idx(x_axis, i)
-                idx_in_range.append(idx)
-        intervals_by_borders = [(0, idx_in_range[0])]
-        for i in range(len(idx_in_range) - 1):
-            intervals_by_borders.append((idx_in_range[i], idx_in_range[i + 1]))
-        intervals_by_borders.append((idx_in_range[-1], x_axis.shape[0] - 1))
-        return intervals_by_borders
 
     def prepare_data_fitting(self) -> list[tuple[int, str, int, str, callable]]:
         """
@@ -387,8 +365,8 @@ class FittingLogic:
                 x0_max = this_key_params[par_splitted[0] + '_' + par_splitted[1] + '_x0'].max
                 x0_left = x0_min - dx_left_max
                 x0_right = x0_max + dx_right_max
-                arg_x0_left = find_nearest_idx(x_axis, x0_left)
-                arg_x0_right = find_nearest_idx(x_axis, x0_right)
+                arg_x0_left = nearest_idx(x_axis, x0_left)
+                arg_x0_right = nearest_idx(x_axis, x0_right)
                 y_max_in_range = np.amax(y_axis[arg_x0_left:arg_x0_right])
                 this_key_params[par].max = y_max_in_range
                 this_key_params[par].value = this_key_params[par].init_value = y_max_in_range / 2.
@@ -475,6 +453,8 @@ class FittingLogic:
         if filename is None:
             filename = "" if self.is_template or self.current_spectrum_deconvolution_name == '' \
                 else self.current_spectrum_deconvolution_name
+        if filename not in self.parent.ui.fit_params_table.model().filenames and not filename == "":
+            return None
         df_params = self.parent.ui.fit_params_table.model().get_df_by_multiindex((filename, index))
         line_type = self.parent.ui.deconv_lines_table.model().cell_data_by_idx_col_name(index, 'Type')
         if df_params.empty:
@@ -491,7 +471,8 @@ class FittingLogic:
             if self.parent.ui.template_combo_box.currentText() == 'Average':
                 arr = self.averaged_array
             elif self.parent.preprocessing.averaged_dict and self.parent.preprocessing.averaged_dict != {}:
-                arr = self.parent.preprocessing.averaged_dict[int(self.parent.ui.template_combo_box.currentText().split('.')[0])]
+                arr = self.parent.preprocessing.averaged_dict[
+                    int(self.parent.ui.template_combo_box.currentText().split('.')[0])]
         elif current_spectrum_name in self.parent.preprocessing.baseline_corrected_dict:
             arr = self.parent.preprocessing.baseline_corrected_dict[current_spectrum_name]
         else:
@@ -582,6 +563,10 @@ class FittingLogic:
         """
         current_index = self.parent.ui.dec_table.selectionModel().currentIndex()
         current_spectrum_name = self.parent.ui.dec_table.model().cell_data(current_index.row())
+        if current_spectrum_name not in self.parent.ui.fit_params_table.model().filenames:
+            self.hide_all_roi()
+        else:
+            self.show_all_roi()
         self.current_spectrum_deconvolution_name = current_spectrum_name
         self.update_single_deconvolution_plot(current_spectrum_name)
         self.redraw_curves_for_filename()
@@ -638,43 +623,196 @@ class FittingLogic:
         df_b.index = mi
         model.concat_df(df_b)
 
+    def create_deconvoluted_dataset_new(self) -> Any | None:
+        """
+        Создает датасет на основе данных разделенных линий.
+        Колонки - амплитуда и x0 (опционально)
+        Строки - значения для каждого спектра
+        Returns
+        -------
+
+        """
+        filenames = self.parent.ui.fit_params_table.model().filenames
+        line_legends = self.parent.ui.deconv_lines_table.model().column_data(0).sort_values()
+        line_indexes = list(line_legends.index)
+        line_legends = list(line_legends)
+        line_legends_a = []
+        line_legends_x0 = []
+        for i in line_legends:
+            line_legends_a.append(i + '_a')
+            if self.parent.ui.include_x0_checkBox.isChecked():
+                line_legends_x0.append(i + '_x0')
+        if self.parent.ui.include_x0_checkBox.isChecked():
+            line_legends = np.concatenate((line_legends_a, line_legends_x0))
+        else:
+            line_legends = line_legends_a
+        params = self.parent.ui.fit_params_table.model().column_data(1)
+        df = DataFrame(columns=line_legends)
+        class_ids = []
+        if self.parent.predict_logic.is_production_project:
+            for i in filenames:
+                class_ids.append(0)
+        filename_group = self.parent.ui.input_table.model().column_data(2)
+        for filename in filenames:
+            if not self.parent.predict_logic.is_production_project:
+                class_ids.append(filename_group.loc[filename])
+            values_a = []
+            for i in line_indexes:
+                v = params.loc[(filename, i, 'a')]
+                values_a.append(v)
+            values_x0 = []
+            if self.parent.ui.include_x0_checkBox.isChecked():
+                for i in line_indexes:
+                    v = params.loc[(filename, i, 'x0')]
+                    values_x0.append(v)
+                values = np.concatenate((values_a, values_x0))
+            else:
+                values = values_a
+            df2 = DataFrame(np.array(values).reshape(1, -1), columns=line_legends)
+            df = concat([df, df2], ignore_index=True)
+        df2 = DataFrame({'Class': class_ids, 'Filename': filenames})
+        df = concat([df2, df], axis=1)
+        if self.parent.predict_logic.is_production_project \
+                and self.parent.ui.deconvoluted_dataset_table_view.model().rowCount() != 0:
+            df_old = self.parent.ui.deconvoluted_dataset_table_view.model().dataframe()
+            df = concat([df_old, df])
+        df.reset_index(drop=True)
+        return df
+
     # region GUESS
-    def parameters_to_guess(self, line_type: str) -> dict:
+    def _parameters_to_guess(self, line_type: str) -> dict:
+        """
+        Prepare parameters for send to guess_peaks()
+
+        Parameters
+        ---------
+        line_type : str
+            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+             see peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        out :
+            dict with keys:
+            'func': callable; Function for peak shape calculation. Look peak_shapes_params() in default_values.py.
+            'param_names': list[str]; List of parameter names. Example: ['a', 'x0', 'dx'].
+            'init_model_params': list[float]; Initial values of parameters for a given spectrum and line type.
+            'min_fwhm': float; the minimum value FWHM, determined from the input table (the minimum of all).
+            'method': str; Optimization method, see fitting_methods() in default_values.py.
+            'params_limits': dict[str, tuple[float, float]]; see peak_shape_params_limits() in default_values.py.
+            'noise_level': float; limit for peak detection.
+                Peaks with amplitude less than noise_level will not be detected.
+            'max_dx': float; Maximal possible value for dx. For all peaks.
+            'gamma_factor: float;
+                 from 0. to 1. limit for max gamma value set by: max_v = min(dx_left, dx_right) * gamma_factor
+
+        # The following parameters are empty if there are no lines. If at the beginning of the analysis there are
+        # lines already created by the user, then the parameters will be filled.
+
+            'func_legend': list[tuple]; - (callable func, legend),
+                func - callable; Function for peak shape calculation. Look peak_shapes_params() in default_values.py.
+                legend - prefix for the line in the model. All lines in a heap. As a result,
+                    we select only those that belong to the current interval.
+            'params': Parameters(); parameters of existing lines.
+            'used_legends': list[str]; already used legends (used wave-numbers)
+                ['k977dot15_', 'k959dot68_', 'k917dot49_']. We control it because model cant have lines with duplicate
+                 legends (same x0 position lines)
+            'used_legends_dead_zone': dict; keys - used_legends, values - tuple (idx - left idx, right idx - idx).
+                dead zone size to set y_residual to 0.
+                {'k977dot15_': (1, 1), 'k959dot68_': (2, 1), 'k917dot49_': (3, 4)}
+        """
         func = self.peak_shapes_params[line_type]['func']
+        param_names = self._param_names(line_type)
+        init_model_params = self._init_model_params(line_type)
+        min_fwhm = self.parent.ui.input_table.model().min_fwhm()
+        mean_snr = np.mean(self.parent.ui.input_table.model().get_column('SNR').values)
+        noise_level = np.max(self.averaged_array[:, 1]) / mean_snr
+        noise_level = max(noise_level, self.parent.ui.max_noise_level_dsb.value())
+        method = self.fitting_methods[self.parent.ui.fit_opt_method_comboBox.currentText()]
+        max_dx = self.parent.ui.max_dx_dsb.value()
+        params_limits = self.peak_shape_params_limits
+        params_limits['l_ratio'] = (0., self.parent.ui.l_ratio_doubleSpinBox.value())
+        # The following parameters are empty if there are no lines. If at the beginning of the analysis there are
+        # lines already created by the user, then the parameters will be filled.
+        visible_lines = self.parent.ui.deconv_lines_table.model().get_visible_line_types()
+        func_legend = []
+        params = Parameters()
+        used_legends = []
+        used_legends_dead_zone = {}
+        if len(visible_lines) > 0 and not self.parent.ui.interval_checkBox.isChecked():
+            static_parameters = param_names, min_fwhm, self.peak_shape_params_limits,\
+                self.parent.ui.l_ratio_doubleSpinBox.value()
+            func_legend, params, used_legends, used_legends_dead_zone = self._initial_template(visible_lines, func,
+                                                                                               static_parameters,
+                                                                                               init_model_params)
+
+        return {'func': func, 'param_names': param_names, 'init_model_params': init_model_params, 'min_fwhm': min_fwhm,
+                'method': method, 'params_limits': params_limits, 'noise_level': noise_level, 'max_dx': max_dx,
+                'func_legend': func_legend, 'params': params, 'used_legends': used_legends,
+                'used_legends_dead_zone': used_legends_dead_zone}
+
+    def _param_names(self, line_type: str) -> list[str]:
+        """
+        Function returns list of peak shape parameters names
+
+        Parameters
+        ---------
+        line_type : str
+            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+             Look peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        out : list[str]
+            ['a', 'x0', 'dx' + 'add_params']
+        """
         param_names = ['a', 'x0', 'dx']
         if line_type in self.peak_shapes_params and 'add_params' in self.peak_shapes_params[line_type]:
             for i in self.peak_shapes_params[line_type]['add_params']:
                 param_names.append(i)
-        init_params = self.get_initial_parameters_for_line(line_type)
+        return param_names
+
+    def _init_model_params(self, line_type: str) -> list[float]:
+        """
+        Function returns list of initial parameter values.
+        For param names ['a', 'x0', 'dx'] will return [float, float, float]
+
+        Parameters
+        ---------
+        line_type : str
+            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+             Look peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        out : list[float]
+        """
+        init_params = self.initial_peak_parameters(line_type)
         init_model_params = []
         for i, j in init_params.items():
             if i != 'x_axis':
                 init_model_params.append(j)
-        min_fwhm = np.min(self.parent.ui.input_table.model().get_column('FWHM,'
-                                                                        ' cm\N{superscript minus}\N{superscript one}').values)
-        snr_df = self.parent.ui.input_table.model().get_column('SNR')
-        mean_snr = np.mean(snr_df.values)
-        method_full_name = self.parent.ui.fit_opt_method_comboBox.currentText()
-        method = self.fitting_methods[method_full_name]
-        max_dx = self.parent.ui.max_dx_dsb.value()
-        visible_lines = self.parent.ui.deconv_lines_table.model().get_visible_line_types()
-        func_legend = []
-        params = Parameters()
-        prev_k = []
-        zero_under_05_hwhm_curve_k = {}
-        if len(visible_lines) > 0 and not self.parent.ui.interval_checkBox.isChecked():
-            static_parameters = param_names, min_fwhm, self.peak_shape_params_limits
-            func_legend, params, prev_k, zero_under_05_hwhm_curve_k = self.initial_guess(visible_lines, func,
-                                                                                         static_parameters,
-                                                                                         init_model_params)
-        params_limits = self.peak_shape_params_limits
-        params_limits['l_ratio'] = (0., self.parent.ui.l_ratio_doubleSpinBox.value())
-        return {'func': func, 'param_names': param_names, 'init_model_params': init_model_params, 'min_fwhm': min_fwhm,
-                'method': method, 'params_limits': params_limits, 'mean_snr': mean_snr,
-                'max_dx': max_dx, 'func_legend': func_legend, 'params': params, 'prev_k': prev_k,
-                'zero_under_05_hwhm_curve_k': zero_under_05_hwhm_curve_k}
+        return init_model_params
 
-    def get_initial_parameters_for_line(self, line_type: str) -> dict[np.ndarray, float, float, float]:
+    def initial_peak_parameters(self, line_type: str) -> dict:
+        """
+        The function returns dict with initial parameters and x_axis.
+            'x_axis': np.ndarray, 'a': float, 'x0': float, 'dx': float, + additional parameters
+
+        Parameters
+        ----------
+        line_type: str
+            input array to slice
+
+        line_type: str
+            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+             Look peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        out : dict
+            'x_axis': np.ndarray, 'a': float, 'x0': float, 'dx': float, + additional parameters
+        """
         x_axis = np.array(range(920, 1080))
         a = 100.0
         x0 = 1000.0
@@ -685,10 +823,11 @@ class FittingLogic:
             dx = np.max(self.parent.ui.input_table.model().column_data(6)) * np.pi / 2
         elif self.current_spectrum_deconvolution_name != '':
             arr = self.parent.preprocessing.baseline_corrected_dict[self.current_spectrum_deconvolution_name]
-            row_data = self.ui.input_table.model().row_data_by_index(self.current_spectrum_deconvolution_name)
+            row_data = self.parent.ui.input_table.model().row_data_by_index(self.current_spectrum_deconvolution_name)
             dx = row_data['FWHM, cm\N{superscript minus}\N{superscript one}'] * np.pi / 2
-        elif self.current_spectrum_deconvolution_name == '' and self.parent.ui.template_combo_box.currentText() != 'Average':
-            array_id = int(self.ui.template_combo_box.currentText().split('.')[0])
+        elif self.current_spectrum_deconvolution_name == '' \
+                and self.parent.ui.template_combo_box.currentText() != 'Average':
+            array_id = int(self.parent.ui.template_combo_box.currentText().split('.')[0])
             arr = self.parent.preprocessing.averaged_dict[array_id]
             dx = np.max(self.parent.ui.input_table.model().column_data(6)) * np.pi / 2
 
@@ -703,6 +842,7 @@ class FittingLogic:
                   'dx': np.round(dx, 5)}
         if 'add_params' not in self.peak_shapes_params[line_type]:
             return result
+        # add additional parameters into result dict
         add_params = self.peak_shapes_params[line_type]['add_params']
         for param_name in add_params:
             match param_name:
@@ -720,19 +860,57 @@ class FittingLogic:
                     result[param_name] = 0.1
         return result
 
-    def initial_guess(self, visible_lines: DataFrame, func, static_parameters: tuple[list[str], float, dict],
-                      init_model_params: list[str]) -> tuple[list[tuple], Parameters, list[int], dict]:
+    def _initial_template(self, visible_lines: DataFrame, func, static_parameters: tuple[list[str], float, dict],
+                          init_model_params: list[float]) -> tuple[list[tuple], Parameters, list[str], dict]:
+        """
+        Prepare parameters of existing template lines. New lines will be guessed adding to this template.
+
+        Parameters
+        ---------
+        visible_lines : DataFrame
+            Raman lines table with columns: Legend, Type, Style.
+        func : callable
+            Function for peak shape calculation. Look peak_shapes_params() in default_values.py.
+        static_parameters : tuple[list[str], float, dict]
+            param_names : list[str]; List of parameter names. Example: ['a', 'x0', 'dx'].
+            min_fwhm, : float; the minimum value FWHM, determined from the input table (the minimum of all).
+            peak_shape_params_limits: dict[str, tuple[float, float]]; see peak_shape_params_limits()
+                in default_values.py.
+            gamma_factor: float; from 0. to 1. limit for max gamma value set by:
+                max_v = min(dx_left, dx_right) * gamma_factor
+        init_model_params: list[float]; Initial values of parameters for a given spectrum and line type.
+
+        Returns
+        -------
+        func_legend: list[tuple]; - (callable func, legend),
+            func - callable; Function for peak shape calculation. Look peak_shapes_params() in default_values.py.
+            legend - prefix for the line in the model. All lines in a heap.
+            As a result, we select only those that belong to the current interval;
+
+        params: Parameters();
+            parameters of existing lines.
+
+        used_legends: list[str];
+            already used legends (used wave-numbers)
+            ['k977dot15_', 'k959dot68_', 'k917dot49_']. We control it because model cant have lines with duplicate
+             legends (same x0 position lines)
+
+        used_legends_dead_zone: dict;
+            keys - used_legends, values - tuple (idx - left idx, right idx - idx).
+            dead zone size to set y_residual to 0.
+            {'k977dot15_': (1, 1), 'k959dot68_': (2, 1), 'k917dot49_': (3, 4)}
+        """
         func_legend = []
         params = Parameters()
-        prev_k = []
+        used_legends = []
         x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
         max_dx = self.parent.ui.max_dx_dsb.value()
-        zero_under_05_hwhm_curve_k = {}
+        used_legends_dead_zone = {}
         for i in visible_lines.index:
             x0_series = self.parent.ui.fit_params_table.model().get_df_by_multiindex(('', i, 'x0'))
             a_series = self.parent.ui.fit_params_table.model().get_df_by_multiindex(('', i, 'a'))
             dx_series = self.parent.ui.fit_params_table.model().get_df_by_multiindex(('', i, 'dx'))
-            legend = legend_by_float(x0_series.Value)
+            legend = legend_from_float(x0_series.Value)
             func_legend.append((func, legend))
             init_params = init_model_params.copy()
             init_params[0] = a_series.Value
@@ -743,17 +921,28 @@ class FittingLogic:
                 dx_left = min(dx_left_series.Value, max_dx)
             else:
                 dx_left = dx_right
-            prev_k.append(legend)
+            used_legends.append(legend)
             y_max_in_range = a_series['Max value']
-            x0_arg = find_nearest_idx(x_axis, x0_series.Value)
-            x0_arg_dx_l = find_nearest_idx(x_axis, x0_series.Value - dx_left / 2.)
-            x0_arg_dx_r = find_nearest_idx(x_axis, x0_series.Value + dx_right / 2.)
-            zero_under_05_hwhm_curve_k[legend] = (x0_arg - x0_arg_dx_l, x0_arg_dx_r - x0_arg)
+            x0_arg = nearest_idx(x_axis, x0_series.Value)
+            x0_arg_dx_l = nearest_idx(x_axis, x0_series.Value - dx_left / 2.)
+            x0_arg_dx_r = nearest_idx(x_axis, x0_series.Value + dx_right / 2.)
+            used_legends_dead_zone[legend] = (x0_arg - x0_arg_dx_l, x0_arg_dx_r - x0_arg)
             dynamic_parameters = legend, init_params, y_max_in_range, dx_left, dx_right
             params = update_fit_parameters(params, static_parameters, dynamic_parameters)
-        return func_legend, params, prev_k, zero_under_05_hwhm_curve_k
+        return func_legend, params, used_legends, used_legends_dead_zone
 
-    def arrays_for_peak_guess(self) -> dict[str, list[np.ndarray]]:
+    def _arrays_for_peak_guess(self) -> list[ndarray]:
+        """
+        The function return sliced spectra for guess peaks.
+        If Guess method == 'Average' return only Averaged spectrum
+        elif 'Average groups' - return spectra of average groups
+        elif 'All' - return all spectra
+
+        Returns
+        -------
+        out: list[ndarray]
+            sliced spectra for guess peaks
+        """
         guess_method = self.parent.ui.guess_method_cb.currentText()
         arrays = {'Average': [self.averaged_array]}
 
@@ -765,90 +954,110 @@ class FittingLogic:
             arrays = {}
             for key, arr in self.parent.preprocessing.baseline_corrected_dict.items():
                 arrays[key] = [arr]
-        splitted_arrays = self.split_array_for_fitting(arrays)
+        arrays_for_guess = self._split_array_for_fitting(arrays).values()
+        result = []
+        for i in arrays_for_guess:
+            for j in i:
+                result.append(j)
+        return result
 
-        return splitted_arrays
+    def _analyze_guess_results(self, result: list[ModelResult], param_names: list[str], line_type: str) -> list[tuple]:
+        """
+        The function creates structure for final fitting. After final fitting we have final template for deconvolution.
 
-    def analyze_guess_results(self, result: list[ModelResult], param_names: list[str], line_type: str) -> list[tuple]:
-        method = self.parent.ui.n_lines_detect_method_cb.currentText()
+        Parameters
+        ----------
+        result: list[ModelResult]
+            results of fitting for every spectrum and every interval range.
+
+        param_names: list[str]
+            Names of peak_shape parameters. Standard params are 'a', 'x0' and 'dx_right'. Other param names given from
+             peak_shapes_params() in default_values.py
+
+        line_type: str
+            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+             Look peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        x_y_models_params: list[tuple[np.ndarray, np.ndarray, Model, Parameters]]
+            result of self.models_params_after_guess()
+        """
+        self.intervals_data = self._create_intervals_data(result, len(param_names))
+        self.all_ranges_clustered_x0_sd = clustering_lines_intervals(self.intervals_data,
+                                                                     self.parent.ui.max_dx_dsb.value())
+        x_y_models_params = self._models_params_after_guess(self.all_ranges_clustered_x0_sd, param_names, line_type)
+        return x_y_models_params
+
+    def _create_intervals_data(self, result: list[ModelResult], peak_n_params: int) \
+            -> dict[str, dict[str, tuple[float, float] | list]]:
+        """
+        The function creates intervals range and create_intervals_data.
+
+        Parameters
+        ----------
+        result: list[ModelResult]
+            results of fitting for every spectrum and every interval range.
+
+        peak_n_params: int
+            number of parameters of peak shape. Look peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        data_by_intervals: dict[dict]
+            with keys 'interval': (start, end), 'x0': list, lines_count': []
+        """
+        # create intervals for create_intervals_data()
         if self.parent.ui.interval_checkBox.isChecked():
             intervals = [(self.parent.ui.interval_start_dsb.value(), self.parent.ui.interval_end_dsb.value())]
         else:
-            intervals = self.intervals_by_borders_values()
-        data_by_intervals = {}
-        for start, end in intervals:
-            key = str(round(start)) + '_' + str(round(end))
-            data_by_intervals[key] = {'interval': (start, end), 'x0': [], 'lines_count': []}
-        params_count = len(param_names)
-        for fit_result in result:
-            parameters = fit_result.params
-            lines_count = int(len(parameters) / params_count)
-            interval_key = None
-            for j, par in enumerate(parameters):
-                str_split = par.split('_', 1)
-                param_name = str_split[1]
-                if j == len(parameters) - 1 and interval_key is not None:
-                    data_by_intervals[interval_key]['lines_count'].append(lines_count)
-                if param_name != 'x0':
-                    continue
-                x0 = parameters[par].value
-                interval_key = find_interval_key(x0, data_by_intervals)
-                if interval_key is None:
-                    continue
-                data_by_intervals[interval_key]['x0'].append(x0)
-        key_clustered_x0 = process_data_by_intervals(data_by_intervals, method)
-        x_y_models_params = self.models_params_splitted_after_guess(key_clustered_x0, param_names, line_type)
-        return x_y_models_params
+            borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
+            x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
+            intervals = intervals_by_borders(borders, x_axis)
 
-    def intervals_by_borders_values(self) -> list[tuple[float, float]]:
-        """
-        Values of intervals in x_axis
-        @return:
-        list[tuple[float, float]]
-        Example:
-        [(0, 409.4864599363591), (409.4864599363591, 660.819089227205), (660.819089227205, 780.8823589338135),
-         (780.8823589338135, 1093.1046703298653), (1093.1046703298653, 1327.4528952748951),
-          (1327.4528952748951, 1683.4121245292645)]
-        """
-        borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
-        x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
-        v_in_range = []
-        for i in borders:
-            if x_axis[0] < i < x_axis[-1]:
-                v = find_nearest(x_axis, i)
-                v_in_range.append(v)
-        intervals_by_borders = [(0, v_in_range[0])]
-        for i in range(len(v_in_range) - 1):
-            intervals_by_borders.append((v_in_range[i], v_in_range[i + 1]))
-        intervals_by_borders.append((v_in_range[-1], x_axis[-1]))
-        return intervals_by_borders
+        data_by_intervals = create_intervals_data(result, peak_n_params, intervals)
+        return data_by_intervals
 
-    def models_params_splitted_after_guess(self, key_clustered_x0: list[tuple],
-                                           param_names: list[str], line_type: str) \
-            -> list[tuple[np.ndarray, np.ndarray, Model, Parameters]]:
+    def _models_params_after_guess(self, all_ranges_clustered_x0_sd: list[np.ndarray], param_names: list[str],
+                                   line_type: str) -> list[tuple[np.ndarray, np.ndarray, Model, Parameters]]:
         """
-        Подготовка порезанных x, y, fit model и параметров из списка волновых чисел, разделенных на диапазоны.
-        @param line_type: str
-        @param param_names: str - Ex: ['a', 'x0', 'dx', ...]
-        @param key_clustered_x0: list[tuple[np.ndarray, float]]
-        @return: x_y_model_params list[tuple[np.ndarray, np.ndarray, Model, Parameters]]
+        Preparation of sliced x_axis, y_axis of averaged spectrum, fit model and parameters from a list of wave numbers,
+         divided into ranges.
+
+        Parameters
+        ----------
+        all_ranges_clustered_x0_sd: list[ndarray]
+            result of estimate_n_lines_in_range(x0, hwhm) for each range
+            2D array with 2 columns: center of cluster x0 and standard deviation of each cluster
+
+        param_names: list[str]
+            Names of peak_shape parameters. Standard params are 'a', 'x0' and 'dx_right'. Other param names given from
+             peak_shapes_params() in default_values.py
+
+        line_type: str
+            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+             Look peak_shapes_params() in default_values.py
+
+        Returns
+        -------
+        x_y_models_params: list[tuple[np.ndarray, np.ndarray, Model, Parameters]]
+            tuples with x_axis, y_axis, fitting model, params for fitting model. For each cm-1 range.
         """
-        splitted_arrays = self.split_array_for_fitting({'Average': [self.averaged_array]})['Average']
-        x_y_model_params = []
-        init_params = self.get_initial_parameters_for_line(line_type)
-        func = self.peak_shapes_params[line_type]['func']
+        sliced_average_array_by_ranges = self._split_array_for_fitting({'Average': [self.averaged_array]})['Average']
+
+        # form static_params for all ranges
+        init_params = self.initial_peak_parameters(line_type)
         max_dx = self.parent.ui.max_dx_dsb.value()
-        min_fwhm = np.min(self.parent.ui.input_table.model().get_column('FWHM,'
-                                                                        ' cm\N{superscript minus}\N{superscript one}').values)
-        min_hwhm = min_fwhm / 2.
-        static_params = init_params, max_dx, min_hwhm, func, self.peak_shape_params_limits
-
-        for i, item in enumerate(key_clustered_x0):
-            wavenumbers, sd = item
-            n_array = splitted_arrays[i]
+        min_hwhm = self.parent.ui.input_table.model().min_fwhm() / 2.
+        func = self.peak_shapes_params[line_type]['func']
+        static_params = init_params, max_dx, min_hwhm, func, self.peak_shape_params_limits, param_names, \
+            self.parent.ui.l_ratio_doubleSpinBox.value()
+        x_y_model_params = []
+        for i, cur_range_clustered_x0_sd in enumerate(all_ranges_clustered_x0_sd):
+            n_array = sliced_average_array_by_ranges[i]
             x_axis = n_array[:, 0]
             y_axis = n_array[:, 1]
-            params, func_legend = process_wavenumbers_interval(wavenumbers, n_array, param_names, sd, static_params)
+            params, func_legend = params_func_legend(cur_range_clustered_x0_sd, n_array, static_params)
             model = fitting_model(func_legend)
             x_y_model_params.append((x_axis, y_axis, model, params))
         return x_y_model_params
@@ -945,7 +1154,8 @@ class FittingLogic:
         roi.sigRegionChanged.connect(lambda checked=None, index=idx: self.curve_roi_pos_changed(index, roi, curve))
 
     def curve_clicked(self, curve: PlotCurveItem, _event: QMouseEvent) -> None:
-        if self.updating_fill_curve_idx is not None:
+        if self.updating_fill_curve_idx is not None \
+                and self.updating_fill_curve_idx in self.parent.ui.deconv_lines_table.model().dataframe().index:
             curve_style = self.parent.ui.deconv_lines_table.model().cell_data_by_idx_col_name(
                 self.updating_fill_curve_idx,
                 'Style')
@@ -991,7 +1201,7 @@ class FittingLogic:
     def update_curve_fill_realtime(self):
         self.rad += 0.02
         idx = self.updating_fill_curve_idx
-        if idx not in list(self.parent.ui.deconv_lines_table.model().dataframe().index):
+        if idx not in list(self.parent.ui.deconv_lines_table.model().indexes):
             self.deselect_selected_line()
             return
         sin_v = np.abs(np.sin(self.rad))
@@ -1002,12 +1212,16 @@ class FittingLogic:
         fill_color.setAlphaF(sin_v)
         brush = mkBrush(fill_color)
         curve, _ = self.deconvolution_data_items_by_idx(idx)
+        if not curve:
+            self.deselect_selected_line()
+            return
         curve.setBrush(brush)
 
     def deselect_selected_line(self) -> None:
         if self.timer_fill is not None:
             self.timer_fill.stop()
-            if self.updating_fill_curve_idx is not None:
+            if self.updating_fill_curve_idx is not None \
+                    and self.updating_fill_curve_idx in list(self.parent.ui.deconv_lines_table.model().indexes):
                 curve_style = self.parent.ui.deconv_lines_table.model().cell_data_by_idx_col_name(
                     self.updating_fill_curve_idx,
                     'Style')
@@ -1190,7 +1404,7 @@ class FittingLogic:
         for i in data_items:
             if isinstance(i, PlotCurveItem) and i.isVisible():
                 x, y = i.getData()
-                idx = find_nearest_idx(x_axis, x[0])
+                idx = nearest_idx(x_axis, x[0])
                 y_z = np.zeros(x_axis.shape[0])
                 if x_axis.shape[0] < y.shape[0]:
                     idx_right = x_axis.shape[0] - idx - 1
@@ -1265,10 +1479,11 @@ class FittingLogic:
         if is_template and is_averaged_or_group:
             self.current_spectrum_deconvolution_name = ''
             if current_spectrum_name == 'Average':
-                arrays_list = [mw.preprocessing.baseline_corrected_dict[x] for x in mw.preprocessing.baseline_corrected_dict]
+                arrays_list = [mw.preprocessing.baseline_corrected_dict[x] for x in
+                               mw.preprocessing.baseline_corrected_dict]
                 arr = get_average_spectrum(arrays_list, mw.ui.average_method_cb.currentText())
                 self.averaged_array = arr
-                mw.ui.max_noise_level_dsb.setValue(np.max(arr[:, 1]) / 100.)
+                mw.ui.max_noise_level_dsb.setValue(np.max(arr[:, 1]) / 99.)
             elif mw.preprocessing.averaged_dict:
                 arr = mw.preprocessing.averaged_dict[int(current_spectrum_name.split('.')[0])]
         else:
@@ -1343,6 +1558,8 @@ class FittingLogic:
         if items is None or not items:
             return
         for i in line_indexes:
+            if i not in params or i not in items:
+                continue
             set_roi_size_pos((params[i]['a'], params[i]['x0'], params[i]['dx']), items[i][1], False)
             self.redraw_curve(params[i], items[i][0], line_types.loc[i], i)
 
@@ -1369,7 +1586,6 @@ class FittingLogic:
         self.parent.deconvolution_plotItem.addItem(self.parent.linearRegionDeconv)
         self.parent.deconvolution_plotItem.addItem(self.fill)
         self.parent.deconvolution_plotItem.getViewBox().updateAutoRange()
-
 
     async def draw_all_curves(self) -> None:
         """
@@ -1411,6 +1627,15 @@ class FittingLogic:
             parameters[idx] = result
         return parameters
 
+    def hide_all_roi(self):
+        for i in self.parent.deconvolution_plotItem.listDataItems():
+            if isinstance(i, PlotCurveItem):
+                i.parentItem().hide()
+
+    def show_all_roi(self):
+        for i in self.parent.deconvolution_plotItem.listDataItems():
+            if isinstance(i, PlotCurveItem):
+                i.parentItem().show()
     # endregion
 
     # region copy template
@@ -1464,3 +1689,5 @@ class FittingLogic:
                 for i in line_indexes]
             await gather(*self.parent.current_futures)
     # endregion
+
+

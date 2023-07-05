@@ -33,14 +33,14 @@ def default_values() -> dict[float | str]:
             'EEMD_trials': 10,
             'sigma': 4,
             'EMSC_N_PCA': 8,
-            'baseline_method_comboBox': 'iModPoly+',
+            'baseline_method_comboBox': 'ExModPoly',
             'guess_method_cb': 'Average',
             'lambda_spinBox': 100_000,
             'p_doubleSpinBox': 0.01,
             'eta': 0.5,
             'N_iterations': 1000,
-            'polynome_degree': 7,
-            'grad': 0.001,
+            'polynome_degree': 8,
+            'grad': 1e-7,
             'quantile': 0.05,
             'alpha_factor': 0.99,
             'cost_function': 'asymmetric_truncated_quadratic',
@@ -63,14 +63,15 @@ def default_values() -> dict[float | str]:
             'test_data_ratio_spinBox': 25,
             'random_state_sb': 0,
             'mlp_layer_size_spinBox': 100,
-            'feature_display_max_spinBox': 50
+            'feature_display_max_spinBox': 50,
+            'l_ratio': .25,
             }
 
 
-def peak_shapes_params() -> dict[dict]:
+def peak_shapes_params() -> dict:
     """
     Using in self.peak_shapes_params in RS
-    @return: dict[dict]
+    @return: dict
     """
     return {'Gaussian':
                 {'func': gaussian},
@@ -116,7 +117,7 @@ def peak_shape_params_limits() -> dict[str, tuple[float, float]]:
     Using in self.peak_shape_params_limits
     @return: dict[str, tuple[float, float]]
     """
-    return {'gamma': (-100., 100.), 'skew': (-100., 100.), 'l_ratio': (0., 1.), 'expon': (0.1, 100.),
+    return {'gamma': (0., 100.), 'skew': (-100., 100.), 'l_ratio': (0., 1.), 'expon': (0.1, 100.),
             'beta': (0.1, 100.), 'alpha': (-1., 1.), 'q': (-0.5, 0.5)}
 
 
@@ -127,16 +128,16 @@ def fitting_methods() -> dict[str]:
     """
     return {'Levenberg-Marquardt': 'leastsq',
             'Least-Squares, Trust Region Reflective method': 'least_squares',
-            'Differential evolution': 'differential_evolution',
+            # 'Differential evolution': 'differential_evolution',
             # 'Brute force method': 'brute',
-            'Basin-hopping': 'basinhopping',
-            'Adaptive Memory Programming for Global Optimization': 'ampgo',
+            # 'Basin-hopping': 'basinhopping',
+            # 'Adaptive Memory Programming for Global Optimization': 'ampgo',
             'Nelder-Mead': 'nelder',
             'L-BFGS-B': 'lbfgsb',
             'Powell': 'powell',
             'Conjugate-Gradient': 'cg',
             # 'Newton-CG': 'newton',
-            # 'Cobyla': 'cobyla',
+            'Cobyla': 'cobyla',
             'BFGS': 'bfgs',
             'Truncated Newton': 'tnc',
             # 'Newton-CG trust-region': 'trust-ncg',
@@ -145,9 +146,10 @@ def fitting_methods() -> dict[str]:
             'trust-region for constrained optimization': 'trust-constr',
             # 'Dog-leg trust-region': 'dogleg',
             'Sequential Linear Squares Programming': 'slsqp',
-            'Maximum likelihood via Monte-Carlo Markov Chain': 'emcee',
+            # 'Maximum likelihood via Monte-Carlo Markov Chain': 'emcee',
             # 'Simplicial Homology Global Optimization': 'shgo',
-            'Dual Annealing optimization': 'dual_annealing'}
+            # 'Dual Annealing optimization': 'dual_annealing'
+            }
 
 
 def baseline_methods() -> dict[tuple]:
@@ -160,9 +162,9 @@ def baseline_methods() -> dict[tuple]:
     return {
         # Polynomial methods
         'Poly': (baseline_poly, 10_000),
-        'ModPoly': (baseline_modpoly, 30),
-        'iModPoly': (baseline_imodpoly, 30),
-        'iModPoly+': (baseline_imodpoly_plus, 30),
+        'ModPoly': (baseline_modpoly, 1200),
+        'iModPoly': (baseline_imodpoly, 5000),
+        'ExModPoly': (ex_mod_poly, 2000),
         'Penalized poly': (baseline_penalized_poly, 10_000),
         # 'LOESS': (baseline_loess, 100),
         'Quantile regression': (baseline_quant_reg, 740),
@@ -214,9 +216,9 @@ def baseline_methods() -> dict[tuple]:
 
 def baseline_parameter_defaults() -> dict[dict[float | int]]:
     return {'Poly': {'poly_deg': 5},
-            'ModPoly': {'poly_deg': 5, 'grad': 1e-6, 'n_iter': 250},
-            'iModPoly': {'poly_deg': 6, 'grad': 1e-6, 'n_iter': 250},
-            'iModPoly+': {'poly_deg': 6, 'grad': 1e-6, 'n_iter': 250},
+            'ModPoly': {'poly_deg': 5, 'grad': 1e-3, 'n_iter': 250},
+            'iModPoly': {'poly_deg': 6, 'grad': 1e-3, 'n_iter': 250},
+            'ExModPoly': {'poly_deg': 7, 'grad': 1e-7, 'n_iter': 300},
             'Penalized poly': {'poly_deg': 2, 'grad': 1e-3, 'n_iter': 250, 'alpha_factor': 0.99},
             'LOESS': {'poly_deg': 1, 'grad': 1e-3, 'n_iter': 10, 'fraction': 0.2, 'scale': 3.0},
             'Quantile regression': {'poly_deg': 2, 'grad': 1e-6, 'n_iter': 250, 'quantile': 0.01},
@@ -250,7 +252,7 @@ def baseline_parameter_defaults() -> dict[dict[float | int]]:
 
 
 def optimize_extended_range_methods() -> list[str]:
-    return ['Poly', 'ModPoly', 'iModPoly', 'iModPoly+', 'Penalized_poly', 'Quant_Reg', 'Goldindec', 'AsLS', 'iAsLS',
+    return ['Poly', 'ModPoly', 'iModPoly', 'ExModPoly', 'Penalized_poly', 'Quant_Reg', 'Goldindec', 'AsLS', 'iAsLS',
             'airPLS', 'arPLS', 'drPLS', 'iarPLS', 'asPLS', 'psaLSA', 'DerPSALSA', 'MPLS', 'MPSpline', 'Mixture_model',
             'IRSQR', 'Dietrich', 'Golotvin', 'Std_distribution', 'FastChrom', 'CWT_BR', 'FABC']
 
@@ -304,4 +306,4 @@ def classificator_funcs() -> dict[str, callable]:
 
 
 def program_version() -> str:
-    return 'ver. 1.0.03 '
+    return 'ver. 1.0.04 '

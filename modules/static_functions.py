@@ -1,5 +1,3 @@
-import copy
-from logging import info, debug
 from math import ceil as ceil
 from os import environ, getpid, startfile
 import os
@@ -12,21 +10,20 @@ import numpy as np
 import pandas as pd
 from lmfit import Model, Parameters
 from lmfit.model import ModelResult
-from numba import njit, float64, int64
+from numba import njit, float64
 from numpy import ndarray
 from numpy.random import default_rng
 from psutil import Process
 from pyqtgraph import mkPen, PlotCurveItem, ROI, mkBrush
 from qtpy.QtCore import Qt, QPointF
 from qtpy.QtGui import QColor, QTextCursor
-from scipy.cluster.vq import kmeans
 from scipy.signal import peak_widths, peak_prominences, savgol_filter, argrelmin
-from scipy.stats import mode
-
 from modules.despike_fit_single_peak import ExpSpec, CalcPeak, fit_single_peak, moving_average_molification
-
+from modules.functions_for_arrays import nearest_idx
+from modules.functions_fitting import fitting_model
 
 # region RS
+
 
 def invert_color(color: str) -> str:
     rgb = QColor(color).getRgb()
@@ -215,12 +212,12 @@ def get_laser_peak_fwhm(array: np.ndarray, laser_wl: float, min_nm: float, max_n
     x_axis = array[:, 0]
     array_len = array.shape[0]
     dx = (max_nm - min_nm) / array_len
-    left_idx = find_nearest_idx(x_axis, left_nm)
-    right_idx = find_nearest_idx(x_axis, right_nm)
+    left_idx = nearest_idx(x_axis, left_nm)
+    right_idx = nearest_idx(x_axis, right_nm)
     laser_peak_array = array[left_idx:right_idx]
     # fit peak and find fwhm
     y_axis = laser_peak_array[:, 1]
-    max_idx = find_nearest_idx(y_axis, np.max(y_axis))
+    max_idx = nearest_idx(y_axis, np.max(y_axis))
     peaks = [max_idx]
     prominences = peak_prominences(y_axis, peaks)
     results_half = peak_widths(y_axis, peaks, prominence_data=prominences)
@@ -234,7 +231,7 @@ def convert_nm_to_cm(x_axis: np.ndarray, base_wave_length: float, laser_nm: floa
 
 
 def find_fluorescence_beginning(i: tuple[str, np.ndarray], factor: int = 1) -> int:
-    idx_100cm = find_nearest_idx(i[1][:, 0], 100)
+    idx_100cm = nearest_idx(i[1][:, 0], 100)
     part_of_y_axis = i[1][:, 1][idx_100cm:]
     grad = np.gradient(part_of_y_axis)
     grad_std = np.std(grad)
@@ -284,48 +281,6 @@ def get_args_by_value(array: np.ndarray, value: int) -> list[int]:
     return return_list
 
 
-@njit(int64(float64[:], float64), fastmath=True)
-def find_nearest_idx(array: np.ndarray, value: float) -> int:
-    """
-    find_nearest_idx(array: np.ndarray, value: float)
-
-    Return an index of value nearest to input value in array
-
-    Parameters
-    ---------
-    array : 1D ndarray
-        Search the nearest value in this array
-    value : float
-        Input value to compare with values in array
-
-    Returns
-    -------
-    out : int
-        Index of nearest value
-
-    Examples
-    --------
-    >>> ar = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    >>> find_nearest_idx(ar, 2.9)
-    2
-    """
-    idx = np.abs(array - value).argmin()
-    array_v = np.round(array[idx], 5)
-    value_r = np.round(value, 5)
-    if np.abs(array_v - value_r) > 1 and idx != 0:
-        return idx - 1
-    else:
-        return idx
-
-
-def find_nearest(array: np.ndarray, value: float, take_left_value: bool = False) -> float:
-    idx = np.abs(array - value).argmin()
-    if take_left_value and array[idx] > value and idx != 0:
-        return array[idx - 1]
-    else:
-        return array[idx]
-
-
 def find_nearest_by_idx(array: np.ndarray, idx: int, take_left_value: bool = False) -> float:
     value = array[idx]
     idx = np.abs(array - value).argmin()
@@ -371,7 +326,7 @@ def subtract_cosmic_spikes_moll(input_tuple: tuple[str, np.ndarray], laser_fwhm:
     # info(f"width in pixels = {width_in_pixels}")
     # info(f"mollification_width, pixels = {mollification_width}")
     # область возле лазерного пика не исследуем
-    idx = find_nearest_idx(x, laser_wl + 5)
+    idx = nearest_idx(x, laser_wl + 5)
     x_part1 = x[0:idx]
     x = x[idx:]
     y_part1 = y[0:idx]
@@ -510,33 +465,6 @@ def find_first_left_local_minimum(i: tuple[str, np.ndarray]) -> int:
 
 # endregion
 
-# region Cut / Trim
-@njit(cache=True, fastmath=True)
-def cut_spectrum(i: tuple[str, np.ndarray], value_start: int, value_end: int) -> tuple[str, np.ndarray]:
-    array = i[1]
-    name = i[0]
-    x_axis = array[:, 0]
-    idx_start = find_nearest_idx(x_axis, value_start)
-    idx_end = find_nearest_idx(x_axis, value_end)
-    return name, array[idx_start: idx_end + 1]
-
-
-def cut_full_spectrum(array: np.ndarray, value_start: float, value_end: float) -> np.ndarray:
-    x_axis = array[:, 0]
-    idx_start = find_nearest_idx(x_axis, value_start)
-    idx_end = find_nearest_idx(x_axis, value_end)
-    result = array[idx_start: idx_end + 1]
-    return result
-
-
-def cut_axis(axis: np.ndarray, value_start: float, value_end: float) -> tuple[Any, int, int]:
-    idx_start = find_nearest_idx(axis, value_start)
-    idx_end = find_nearest_idx(axis, value_end)
-    return axis[idx_start: idx_end + 1], idx_start, idx_end
-
-
-# endregion
-
 # region Average
 def get_average_spectrum(item: list[np.ndarray], method: str = 'Mean') -> np.ndarray:
     x_axis = item[0][:, 0]
@@ -619,255 +547,9 @@ def packed_current_line_parameters(df_params: pd.DataFrame, line_type: str, peak
 # region Fitting
 
 
-def fitting_model(func_legend: list[tuple]) -> Model:
-    """
-    Prepare fitting model. Final model is a sum of different line models.
-
-    Parameters
-    ---------
-    func_legend : list[tuple[func, str]]
-        using to create fit Model. func is a line function from spec_functions/ peak_shapes, str is curve legend
-
-    Returns
-    -------
-    out : Model()
-    """
-    model = None
-    for i, f_l in enumerate(func_legend):
-        if i == 0:
-            model = Model(f_l[0], prefix=f_l[1])
-            continue
-        model += Model(f_l[0], prefix=f_l[1])
-    return model
-
-
-def fit_model(model, y, params, x, method: str) -> ModelResult:
-    result = model.fit(y, params, x=x, method=method)
-    return result
-
-
 def fit_model_batch(model, y, params, x, method: str, key: str) -> tuple[str, ModelResult]:
-    result = model.fit(y, params, x=x, method=method)
+    result = model.fit(y, params, x=x, method=method, n_jobs=-1)
     return key, result
-
-
-def guess_peaks(n_array: np.ndarray, parameters_to_guess: dict) \
-        -> lmfit.model.ModelResult:
-    """
-    Итеративно подбирается состав линий, аппроксимирующий спектр n_array.
-    Если изначально есть линий, то начинается процесс не с 0, а с имеющихся уже линий.
-    Цикл заканчивается когда новая добавленная линий имеет амплитуду меньше noise_level.
-    noise_level определяется из отношения сигнал/шум SNR.
-    noise_level = y_max / SNR
-
-    @param n_array: 2D array x|y
-    @param parameters_to_guess: dict with keys:
-    'func': callable function for peak shape calculaction,
-    'param_names': список наименований параметров (например ['a', 'x0', 'dx']),
-    'init_model_params': list[float] начальные значения параметров для данного спектра и типа линии,
-    'min_fwhm': float - минимальное значение ширины линии, определяется из таблицы (берется минимальное из всех),
-    'method': str - optimization method,
-    'params_limits': dict[str, tuple[float, float]] - see self.peak_shape_params_limits,
-    'mean_snr': float - mean_snr,
-    'max_dx': float - max_dx,
-    Следующие параметры пустые если нет линий. Если на начало анализа есть уже созданные пользователем линии,
-     то параметры будут заполнены:
-    'func_legend': list[tuple] - callable func, legend, func - функция для вычисления линии,
-        legend - префикс для линии в модели
-    'params': Parameters() - параметры имеющихся линий,
-    'prev_k': list[int],
-    'zero_under_05_hwhm_curve_k': dict - (x0_arg - x0_arg_dx_l, x0_arg_dx_r - x0_arg)
-    @return: tuple[lmfit.model.ModelResult, Parameters, np.ndarray]
-    """
-    x_input = n_array[:, 0]
-    y_input = n_array[:, 1]
-    y_residual = n_array[:, 1].copy()
-    params_to_guess = copy.deepcopy(parameters_to_guess)
-    noise_level = params_to_guess['noise_level']
-    max_dx = params_to_guess['max_dx']
-    func = params_to_guess['func']
-    param_names = params_to_guess['param_names']
-    init_model_params = params_to_guess['init_model_params']
-    min_fwhm = params_to_guess['min_fwhm']
-    params_limits = params_to_guess['params_limits']
-    method = params_to_guess['method']
-    func_legend_from_params = params_to_guess['func_legend']
-    params_from_params = params_to_guess['params']
-    prev_k = params_to_guess['prev_k']
-    zero_under_05_hwhm_curve_k = params_to_guess['zero_under_05_hwhm_curve_k']
-    x_min = x_input[0]
-    x_max = x_input[-1]
-    func_legend = []
-    params = Parameters()
-    for func, legend in func_legend_from_params:
-        k = float(legend.replace('k', '').replace('_', '').replace('dot', '.'))
-        if x_min < k < x_max:
-            func_legend.append((func, legend))
-    for i in params_from_params:
-        k = float(i.split('_')[0].replace('k', '').replace('dot', '.'))
-        if x_min < k < x_max:
-            params.add(params_from_params[i])
-    fit_result = None
-    prev_arg = []
-    zero_under_05_hwhm_curve = {}
-    n_peaks = len(func_legend)
-    static_parameters = param_names, min_fwhm, params_limits
-    while y_residual.max() > noise_level:
-        n_peaks += 1
-        # select max x, y in residual
-        arg_max = np.argmax(y_residual)
-        x_arg_max = x_input[arg_max]
-        # print(arg_max, x_arg_max)
-        if arg_max in prev_arg:
-            # print('if arg_max in prev_arg', arg_max, prev_arg)
-            arg_l, arg_r = zero_under_05_hwhm_curve[arg_max]
-            y_residual[arg_l: arg_r] = 0.
-            continue
-        if legend_by_float(x_arg_max) in prev_k and legend_by_float(x_arg_max) in zero_under_05_hwhm_curve_k:
-            arg_l, arg_r = zero_under_05_hwhm_curve_k[legend_by_float(x_arg_max)]
-            arg_l = arg_max - arg_l
-            arg_r = arg_max + arg_r
-            y_residual[arg_l: arg_r] = 0.
-            continue
-        prev_arg.append(arg_max)
-        y_at_arg_max = y_input[arg_max]
-        # prepare model for n_peaks
-        legend = legend_by_float(x_arg_max)
-        func_legend.append((func, legend))
-        init_params = init_model_params.copy()
-        init_params[0] = y_at_arg_max
-        init_params[1] = x_arg_max
-        dx_left, dx_right, arg_left, arg_right, arg_left_4, arg_right_4 = find_dx_of_peak(n_array, arg_max)
-        zero_under_05_hwhm_curve[arg_max] = (arg_left_4, arg_right_4)
-        dx_left = min(dx_left, max_dx)
-        dx_right = min(dx_right, max_dx)
-
-        y_max_in_range = np.amax(y_input[arg_left:arg_right])
-        dynamic_parameters = legend, init_params, y_max_in_range, dx_left, dx_right
-        # fit
-        params = update_fit_parameters(params, static_parameters, dynamic_parameters)
-        model = fitting_model(func_legend)
-        fit_result = fit_model(model, y_input, params, x_input, method)
-        y_residual = y_input - fit_result.best_fit
-        y_residual[y_residual < 0] = 0
-        print('n_peaks ', n_peaks, ' np.max(y_residual) ', np.max(y_residual), ' x_arg_max ', x_arg_max)
-        info('interval {!s}, n_peaks: {!s},'
-             ' noise_level {!s}, max residual {!s}'.format((np.round(x_min, 1), np.round(x_max, 1)), n_peaks,
-                                                           np.round(noise_level, 1), np.round(np.max(y_residual), 1)))
-        if environ['CANCEL'] == '1':
-            print('break CANCEL')
-            break
-    return fit_result
-
-
-def update_fit_parameters(params: Parameters, static_parameters: tuple[list[str], float, dict],
-                          dynamic_parameters: tuple[str, list, float, float, float]) -> Parameters:
-    """
-    update parameters for fit. Set inital value and bounds
-    @param params: lmfit.Parameters() to update
-    @param static_parameters: param_names, min_fwhm, params_limits
-    @param dynamic_parameters: legend, init_params, y_max_in_range, dx_left, dx_right
-    @return: updated Parameters
-    """
-    param_names, min_fwhm, params_limits = static_parameters
-    legend, init_params, y_max_in_range, dx_left, dx_right = dynamic_parameters
-    for i, param_name in enumerate(param_names):
-        v = init_params[i]
-        min_v = None
-        max_v = None
-        if param_name == 'a':
-            min_v = 0
-            max_v = y_max_in_range
-        elif param_name == 'x0':
-            dx0 = (min_fwhm / 4.0) + 1
-            min_v = v - dx0
-            max_v = v + dx0
-        elif param_name == 'dx':
-            min_v = min_fwhm / 2.0
-            max_v = dx_right
-        elif param_name == 'dx_left':
-            min_v = min_fwhm / 2.0
-            max_v = dx_left
-        elif param_name in params_limits:
-            min_v = params_limits[param_name][0]
-            max_v = params_limits[param_name][1]
-        if min_v is None or max_v is None:
-            params.add(legend + param_name, v)
-        else:
-            if min_v == max_v:
-                max_v += 0.001
-            params.add(legend + param_name, v, min=min_v, max=max_v)
-
-    return params
-
-
-def find_dx_of_peak(n_array: np.ndarray, arg_max) -> tuple[float, float, int, int, int, int]:
-    """
-    @param n_array: 2D array x|y
-    @param arg_max: index of peak
-    @return: dx_left, dx_right, arg_left (HWHM), arg_right (HWHM), arg_left_4 (HWHM/2), arg_right_4 (HWHM/2)
-    """
-    x_input = n_array[:, 0]
-    y_input = n_array[:, 1]
-    x_arg_max = x_input[arg_max]
-    y_arg_max = y_input[arg_max]
-    arg_left_4 = arg_max
-    y = y_input[arg_left_4]
-    while y > y_arg_max * 0.75:
-        arg_left_4 -= 1
-        y = y_input[arg_left_4]
-        if arg_left_4 <= 0:
-            break
-    arg_left = arg_left_4
-    y = y_input[arg_left]
-    while y > y_arg_max / 2:
-        arg_left -= 1
-        y = y_input[arg_left]
-        if arg_left <= 0:
-            arg_left = 0
-            break
-
-    arg_right_4 = arg_max
-    y = y_input[arg_right_4]
-    while y > y_arg_max * 0.75:
-        arg_right_4 += 1
-        if arg_right_4 >= y_input.shape[0]:
-            arg_right_4 = y_input.shape[0] - 1
-            break
-        y = y_input[arg_right_4]
-
-    arg_right = arg_right_4
-    y = y_input[arg_right]
-    while y > y_arg_max / 2:
-        arg_right += 1
-        if arg_right >= y_input.shape[0]:
-            arg_right = y_input.shape[0] - 1
-            break
-        y = y_input[arg_right]
-
-    if arg_max == 0:
-        arg_left = 0
-        arg_left_4 = 0
-    if arg_max == y_input.shape[0]:
-        arg_right = y_input.shape[0]
-        arg_right_4 = y_input.shape[0]
-    dx_left = x_arg_max - x_input[arg_left]
-    dx_right = x_input[arg_right] - x_arg_max
-    if arg_max == 0:
-        dx_left = dx_right
-    if arg_max == y_input.shape[0]:
-        dx_right = dx_left
-    return dx_left, dx_right, arg_left, arg_right, arg_left_4, arg_right_4
-
-
-def split_by_borders(arr: np.ndarray, intervals: list[tuple[int, int]]) -> list[np.ndarray]:
-    x_axis = arr[:, 0]
-    y_axis = arr[:, 1]
-    arrays_splitted = []
-    for idx_start, idx_end in intervals:
-        arr = np.vstack((x_axis[idx_start:idx_end], y_axis[idx_start:idx_end])).T
-        arrays_splitted.append(arr)
-    return arrays_splitted
 
 
 def models_params_splitted(splitted_array: list[np.ndarray], params: Parameters,
@@ -902,7 +584,7 @@ def models_params_splitted(splitted_array: list[np.ndarray], params: Parameters,
             par_legend_splitted = par.split('_', 2)
             idx = int(par_legend_splitted[1])
             peak_param_name = par_legend_splitted[2]
-            if peak_param_name == 'x0' and x_min < params[par].value < x_max:
+            if peak_param_name == 'x0' and x_min <= params[par].value <= x_max:
                 indexes_of_this_interval.append(idx)
 
         for par in params:
@@ -931,101 +613,6 @@ def models_params_splitted_batch(splitted_arrays: dict, list_params_full: dict,
                                                         calculated_models)
         x_y_models_params[key] = res
     return x_y_models_params
-
-
-def find_interval_key(x0: float, data_by_intervals: dict) -> str | None:
-    result_key = None
-    for key, item in data_by_intervals.items():
-        start, end = item['interval']
-        if start <= x0 < end:
-            result_key = key
-            break
-    return result_key
-
-
-def process_data_by_intervals(data_by_intervals: dict, method: str) -> list[tuple]:
-    """
-    Определение итогового состава линий для каждого интервала. Результат функции дальше нужен для определения
-     параметров и модели
-    @param data_by_intervals: dict[] параметр 'x0' содержит список волновых чисел интервала
-    @param method: метод определения итогового числа линий интервала
-    @return: list[tuple], итоговый список x0 и sd - отклонение от центроида
-    """
-    key_clustered_x0 = []
-    for key, item in data_by_intervals.items():
-        x0_lines = item['x0']
-        lines_count = item['lines_count']
-        if method == 'Min':
-            k = np.min(lines_count)
-        elif method == 'Max':
-            k = np.max(lines_count)
-        elif method == 'Mean':
-            k = np.mean(lines_count)
-        elif method == 'Median':
-            k = np.median(lines_count)
-        else:
-            k = mode(lines_count).mode[0]
-        k = np.round(k)
-        clustered = kmeans(x0_lines, int(k), iter=100)
-        key_clustered_x0.append(clustered)
-    return key_clustered_x0
-
-
-def legend_by_float(x0: float) -> str:
-    """
-    @param x0: float. Ex: 575.31
-    @return: str. Ex: k575dot31_x0
-    """
-    return 'k%s_' % str(np.round(x0, 2)).replace('.', 'dot')
-
-
-def process_wavenumbers_interval(wavenumbers: list[float], n_array: np.ndarray, param_names: list[str], sd: float,
-                                 static_params: tuple[list[float], float, float, callable, dict]) \
-        -> tuple[Parameters, list[tuple[callable, str]]]:
-    """
-    Используется для создания параметров и модели после анализа линий найденных автоматически из разных спектров
-    @param wavenumbers: list[float] - массив волновых чисел после k-means
-    @param n_array: 2D ndarray x|y определенного интервала
-    @param param_names: ['a', 'x0', 'dx', ...]
-    @param sd: float - разброс от центра x0, используется для определения левой и правой границы x0
-    @param static_params: init_params, max_dx, min_hwhm, func, self.peak_shape_params_limits
-    @return: tuple[Parameters, list[tuple[callable, str]]] - Параметры и (функция, префикс) для модели
-    """
-    func_legend = []
-    params = Parameters()
-    x_axis = n_array[:, 0]
-    y_axis = n_array[:, 1]
-    init_params, max_dx, min_hwhm, func, peak_shape_params_limits = static_params
-    wavenumbers = np.unique(wavenumbers)
-    debug('process_wavenumbers_interval wavenumbers: {!s}'.format(wavenumbers))
-    for x0 in wavenumbers:
-        legend = legend_by_float(x0)
-        func_legend.append((func, legend))
-        arg_max = find_nearest_idx(x_axis, x0)
-        dx_left, dx_right, arg_left, arg_right, _, _ = find_dx_of_peak(n_array, arg_max)
-        a = np.amax(y_axis[arg_left:arg_right])
-        for j, param_name in enumerate(param_names):
-            if param_name == 'a':
-                v = max_v = a
-                min_v = 0.
-            elif param_name == 'x0':
-                v = x0
-                min_v = x0 - sd
-                max_v = x0 + sd
-            elif param_name == 'dx':
-                v = min(dx_right, max_dx)
-                min_v = min_hwhm
-                max_v = max_dx
-            elif param_name == 'dx_left':
-                v = min(dx_left, max_dx)
-                min_v = min_hwhm
-                max_v = max_dx
-            else:
-                v = init_params[param_names[j]]
-                min_v = peak_shape_params_limits[param_name][0]
-                max_v = peak_shape_params_limits[param_name][1]
-            params.add(legend + param_name, v, min=min_v, max=max_v)
-    return params, func_legend
 
 
 def eval_uncert(item: tuple[str, lmfit.model.ModelResult]) -> tuple[str, np.ndarray]:

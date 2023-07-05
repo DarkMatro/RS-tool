@@ -4,16 +4,16 @@ from asyncio import create_task, gather, sleep, wait, get_event_loop
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from datetime import datetime
 from gc import get_objects, collect
-from logging import basicConfig, critical, error, DEBUG, info
+from logging import basicConfig, critical, error, DEBUG, info, warning
 from os import environ
 from pathlib import Path
 from shelve import open as shelve_open
-from threading import Event
 from traceback import format_exc
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.signal
 import shap
 from asyncqtpy import asyncSlot
 from pandas import DataFrame, MultiIndex, ExcelWriter
@@ -45,8 +45,8 @@ from modules.mw_page5_predict import PredictLogic
 from modules.setting_window import SettingWindow
 from modules.start_program import splash_show_message
 from modules.static_functions import random_rgb, check_recent_files, \
-    get_memory_used, check_rs_tool_folder, import_spectrum, curve_pen_brush_by_style, find_nearest_idx, find_nearest, \
-    cut_full_spectrum, action_help, set_roi_size
+    get_memory_used, check_rs_tool_folder, import_spectrum, curve_pen_brush_by_style, \
+    action_help, set_roi_size
 from modules.ui_main_window import Ui_MainWindow
 from modules.undo_redo import CommandImportFiles, CommandAddGroup, CommandDeleteGroup, CommandChangeGroupCell, \
     CommandChangeGroupCellsBatch, CommandDeleteInputSpectrum, CommandChangeGroupStyle, CommandAddDeconvLine, \
@@ -54,6 +54,10 @@ from modules.undo_redo import CommandImportFiles, CommandAddGroup, CommandDelete
     CommandUpdateDataCurveStyle, \
     CommandClearAllDeconvLines, CommandStartIntervalChanged, CommandEndIntervalChanged, \
     CommandFitIntervalAdded, CommandFitIntervalDeleted
+from modules.functions_guess_raman_lines import show_distribution
+from modules.functions_cut_trim import cut_full_spectrum
+from modules.functions_for_arrays import nearest_idx, find_nearest, normalize_between_0_1
+from modules.functions_baseline_correction import ex_mod_poly, baseline_imodpoly, baseline_modpoly
 
 plt.style.use(['dark_background'])
 plt.set_loglevel("info")
@@ -74,7 +78,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.baseline_method = None
         self.smooth_method = None
         self.normalization_method = None
-
+        self.break_event = None
         self.auto_save_timer = None
         self.cpu_load = None
         self.timer_mem_update = None
@@ -308,7 +312,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.classes_lineEdit.setText('')
         self.ui.test_data_ratio_spinBox.setValue(self.default_values['test_data_ratio_spinBox'])
         self.ui.random_state_sb.setValue(self.default_values['random_state_sb'])
-        self.ui.n_lines_detect_method_cb.setCurrentText(self.default_values['n_lines_method'])
         self.ui.max_noise_level_dsb.setValue(self.default_values['max_noise_level'])
         self.ui.baseline_correction_method_comboBox.setCurrentText(self.default_values['baseline_method_comboBox'])
         self.ui.window_length_spinBox.setValue(self.default_values['window_length_spinBox'])
@@ -348,6 +351,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.max_dx_dsb.setValue(self.default_values['max_dx_guess'])
         self.ui.mlp_layer_size_spinBox.setValue(self.default_values['mlp_layer_size_spinBox'])
         self.ui.feature_display_max_spinBox.setValue(self.default_values['feature_display_max_spinBox'])
+        self.ui.l_ratio_doubleSpinBox.setValue(self.default_values['l_ratio'])
 
     # region plots
 
@@ -1052,7 +1056,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                       labelcolor=self.plot_text_color.name(), prop={'size': self.plot_font_size})
         try:
             canvas.draw()
-        except ValueError:
+        except ValueError | np.linalg.LinAlgError:
             pass
 
     def _initial_plots(self) -> None:
@@ -1441,11 +1445,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.clear_menu.addAction('Baseline corrected', lambda: self.clear_selected_step('Baseline'))
         self.clear_menu.addAction('Averaged', lambda: self.clear_selected_step('Averaged'))
         self.clear_menu.addSeparator()
-        self.clear_menu.addAction('Fit', self.clear_all_deconv_lines)
+        self.clear_menu.addAction('Fitting lines', self.clear_all_deconv_lines)
+        self.clear_menu.addAction('All fitting data', lambda: self.clear_selected_step('Deconvolution'))
         self.clear_menu.addSeparator()
         self.clear_menu.addAction('Smoothed dataset', self._initial_smoothed_dataset_table)
         self.clear_menu.addAction('Baseline corrected dataset', self._initial_baselined_dataset_table)
-        self.clear_menu.addAction('Deconvoluted dataset', self.clear_deconvoluted_dataset_table)
+        self.clear_menu.addAction('Deconvoluted dataset', self._initial_deconvoluted_dataset_table)
         self.clear_menu.addSeparator()
         self.clear_menu.addAction('LDA', lambda: self.clear_selected_step('LDA'))
         self.clear_menu.addAction('QDA', lambda: self.clear_selected_step('QDA'))
@@ -1558,15 +1563,16 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._init_fit_opt_method_combo_box()
         self._init_guess_method_cb()
         self._init_params_mouse_double_click_event()
-        self._init_n_lines_method()
         self._init_average_function_cb()
         self._init_dataset_type_cb()
+        self._init_refit_score()
         self._init_solver_mlp_combo_box()
         self._init_activation_combo_box()
         self._init_current_feature_cb()
         self._init_coloring_feature_cb()
         self._init_current_tree_sb()
         self._init_use_pca_cb()
+        self._init_include_x0_chb()
         self.ui.edit_template_btn.clicked.connect(lambda: self.fitting.switch_to_template())
         self.ui.template_combo_box.currentTextChanged.connect(lambda: self.fitting.switch_to_template())
         self.ui.current_group_shap_comboBox.currentTextChanged.connect(self.current_group_shap_changed)
@@ -1683,7 +1689,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.dataset_type_cb.currentTextChanged.connect(self.set_modified)
         self.ui.classes_lineEdit.textChanged.connect(self.set_modified)
         self.ui.test_data_ratio_spinBox.valueChanged.connect(self.set_modified)
-        self.ui.n_lines_detect_method_cb.currentTextChanged.connect(self.set_modified)
         self.ui.spline_degree_spinBox.valueChanged.connect(self.set_modified)
         self.ui.trim_start_cm.valueChanged.connect(self._trim_start_change_event)
         self.ui.trim_end_cm.valueChanged.connect(self._trim_end_change_event)
@@ -1702,16 +1707,15 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.guess_method_cb.addItem('Average groups')
         self.ui.guess_method_cb.addItem('All')
 
-    def _init_n_lines_method(self) -> None:
-        self.ui.n_lines_detect_method_cb.addItem('Min')
-        self.ui.n_lines_detect_method_cb.addItem('Max')
-        self.ui.n_lines_detect_method_cb.addItem('Mean')
-        self.ui.n_lines_detect_method_cb.addItem('Median')
-        self.ui.n_lines_detect_method_cb.addItem('Mode')
-
     def _init_average_function_cb(self) -> None:
         self.ui.average_method_cb.addItem('Mean')
         self.ui.average_method_cb.addItem('Median')
+
+    def _init_refit_score(self) -> None:
+        self.ui.refit_score.addItem('precision_score')
+        self.ui.refit_score.addItem('recall_score')
+        self.ui.refit_score.addItem('accuracy_score')
+        self.ui.refit_score.addItem('f1_score')
 
     def _init_dataset_type_cb(self) -> None:
         self.ui.dataset_type_cb.addItem('Smoothed')
@@ -1779,7 +1783,6 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.intervals_gb.setMaximumHeight(1)
 
     def guess_method_cb_changed(self, value: str) -> None:
-        self.ui.n_lines_detect_method_cb.setEnabled(value != 'Average')
         self.set_modified()
 
     @asyncSlot()
@@ -1815,6 +1818,12 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.use_pca_checkBox.setText('PCA dimensional reduction')
         else:
             self.ui.use_pca_checkBox.setText('PLS-DA dimensional reduction')
+
+    def _init_include_x0_chb(self) -> None:
+        self.ui.include_x0_checkBox.stateChanged.connect(self.include_x0_chb_changed)
+
+    def include_x0_chb_changed(self, b: bool):
+        self.set_deconvoluted_dataset()
 
     # region mouse double clicked
 
@@ -2259,6 +2268,14 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def delete_line_clicked(self) -> None:
+        if not self.fitting.is_template:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setText("Deleting lines is only possible in template mode.")
+            msg.setInformativeText('Press the Template button')
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+            return
         selected_indexes = self.ui.deconv_lines_table.selectionModel().selectedIndexes()
         if len(selected_indexes) == 0:
             return
@@ -2392,16 +2409,6 @@ class MainWindow(QMainWindow, QtStyleTools):
     # endregion
 
     # region deconvoluted dataset
-    def clear_deconvoluted_dataset_table(self) -> None:
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Icon.Question)
-        msg.setText('Точно удалить таблицу с разделенными линиями?')
-        msg.setInformativeText('На новое перезаполнение таблицы может уйти время.')
-        msg.setWindowTitle("Achtung!")
-        msg.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-        if msg.exec() == QMessageBox.StandardButton.Yes:
-            self._initial_deconvoluted_dataset_table()
 
     def _initial_deconvoluted_dataset_table(self) -> None:
         self._reset_deconvoluted_dataset_table()
@@ -2926,9 +2933,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         if self.ui.lr_showHideBtn.isChecked():
             self.converted_cm_widget_plot_item.addItem(self.linearRegionCmConverted)
             self.baseline_corrected_plotItem.addItem(self.linearRegionBaseline)
+            self.deconvolution_plotItem.addItem(self.linearRegionDeconv)
         else:
             self.converted_cm_widget_plot_item.removeItem(self.linearRegionCmConverted)
             self.baseline_corrected_plotItem.removeItem(self.linearRegionBaseline)
+            self.deconvolution_plotItem.removeItem(self.linearRegionDeconv)
 
     def crosshair_btn_clicked(self) -> None:
         """Add crosshair with coordinates at title."""
@@ -3019,12 +3028,12 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.smooth_plotItem.addItem(self.ui.smooth_plot_widget.horizontal_line,
                                          ignoreBounds=True)
         elif not self.ui.by_one_control_button.isChecked():
-            if len(self.preprocessing.SmoothedDict) > 0:
+            if len(self.preprocessing.smoothed_spectra) > 0:
                 text_for_title = "<span style=\"font-family: AbletonSans; color:" + self.theme_colors['plotText'] \
                                  + ";font-size:14pt\">Smoothed plots. Method " + self.smooth_method + "</span>"
                 self.ui.smooth_plot_widget.setTitle(text_for_title)
 
-            elif len(self.preprocessing.SmoothedDict) > 0:
+            elif len(self.preprocessing.smoothed_spectra) > 0:
                 self.ui.smooth_plot_widget.setTitle(
                     "<span style=\"font-family: AbletonSans; color:" + self.theme_colors[
                         'plotText'] + ";font-size:14pt\">Smoothed plots</span>")
@@ -3274,7 +3283,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.smooth_plot_widget.setTitle(new_title)
         for i in data_items_smooth_plot:
             i.setVisible(False)
-        arr = self.preprocessing.SmoothedDict[current_spectrum_name]
+        arr = self.preprocessing.smoothed_spectra[current_spectrum_name]
         if self.preprocessing.curveOneSmoothPlot:
             self.smooth_plotItem.removeItem(self.preprocessing.curveOneSmoothPlot)
         self.preprocessing.curveOneSmoothPlot = self.get_curve_plot_data_item(arr, group_number)
@@ -3520,11 +3529,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.normalize_plotItem.getViewBox().updateAutoRange()
 
     def update_all_smooth_plot(self) -> None:
-        if len(self.preprocessing.SmoothedDict) > 0:
+        if len(self.preprocessing.smoothed_spectra) > 0:
             self.ui.smooth_plot_widget.setTitle("<span style=\"font-family: AbletonSans; color:" + self.theme_colors[
                 'plotText'] + ";font-size:14pt\">Smoothed plots. Method " + self.smooth_method + "</span>")
         else:
-            if len(self.preprocessing.SmoothedDict) > 0:
+            if len(self.preprocessing.smoothed_spectra) > 0:
                 self.ui.smooth_plot_widget.setTitle(
                     "<span style=\"font-family: AbletonSans; color:" + self.theme_colors[
                         'plotText'] + ";font-size:14pt\">Smoothed plots</span>")
@@ -3632,7 +3641,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             text_peaks.append(i)
         list_peaks = [float(s) for s in text_peaks]
         for i in list_peaks:
-            idx = find_nearest_idx(arr[:, 0], i)
+            idx = nearest_idx(arr[:, 0], i)
             y_peak = arr[:, 1][idx]
             arrow = ArrowItem(pos=(i, y_peak), angle=-45)
             self.input_plot_widget_plot_item.addItem(arrow)
@@ -3978,13 +3987,160 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.executor_stop()
             case Qt.Key.Key_F1:
                 action_help()
+            case Qt.Key.Key_F7:
+                self.stat_analysis_logic.dataset_for_ml()
             case Qt.Key.Key_F2:
-                self.stat_analysis_logic.do_update_shap_plots_by_instance('Logistic regression')
+                if self.ui.stackedWidget_mainpages.currentIndex() != 1:
+                    return
+                if self.fitting.intervals_data is None:
+                    return
+                for i, v in enumerate(self.fitting.intervals_data.items()):
+                    key, item = v
+                    show_distribution(item['x0'], self.fitting.averaged_array,
+                                      self.fitting.all_ranges_clustered_x0_sd[i])
+            case Qt.Key.Key_F3:
+                return
+                from numpy.polynomial.polynomial import polyval
+                from modules.functions_baseline_correction import baseline_penalized_poly, baseline_loess, baseline_quant_reg, baseline_goldindec
+                from sklearn.metrics import mean_squared_error
+                coefs = [1.27321927e+04, -7.62029464e+01,  2.81669762e-01, -5.66507200e-04, 6.52691243e-07,
+                                  -4.38362720e-10,  1.66449516e-13, -3.21147214e-17]
+                x_axis, y_raman = self.fitting.sum_array()
+                baseline_test = polyval(x_axis, coefs)
+                baseline_and_raman = baseline_test + y_raman
+                test_arr = np.vstack((x_axis, baseline_and_raman)).T
+                _, _, corrected_plus = ex_mod_poly(('1', test_arr), [7., 1e-10, 1000.])
+                _, _, corrected_imod = baseline_imodpoly(('3', test_arr), [7, 1e-7, 1000])
+                _, _, corrected_modp = baseline_modpoly(('3', test_arr), [7, 1e-7, 1000])
+                _, _, corrected_quant = baseline_quant_reg(('3', test_arr), [7, 1e-7, 1000, 0.01])
+                _, _, corrected_goldin= baseline_goldindec(('3', test_arr), [7, 1e-7, 1000, 'asymmetric_truncated_quadratic', 0.5, .99])
+                corr_matrix_plus = np.corrcoef(y_raman, corrected_plus[:, 1])
+                corr1 = corr_matrix_plus[0, 1] ** 2
+                rms1 = mean_squared_error(corrected_plus[:, 1], y_raman, squared=False)
+                rms2 = mean_squared_error(corrected_imod[:, 1], y_raman, squared=False)
+                rms3 = mean_squared_error(corrected_modp[:, 1], y_raman, squared=False)
+                rms6 = mean_squared_error(corrected_quant[:, 1], y_raman, squared=False)
+                rms7 = mean_squared_error(corrected_goldin[:, 1], y_raman, squared=False)
+                print('r2 EX-Mod-Poly+ ', corr1,  'rms ', rms1)
+                corr_matrix_imod = np.corrcoef(y_raman, corrected_imod[:, 1])
+                corr2 = corr_matrix_imod[0, 1] ** 2
+                print('r2 I-Mod-Poly ', corr2 )
+                corr_matrix_modp = np.corrcoef(y_raman, corrected_modp[:, 1])
+                corr3 = corr_matrix_modp[0, 1] ** 2
+                print('r2 Mod-Poly ', corr3)
+                corr_matrix_quant = np.corrcoef(y_raman, corrected_quant[:, 1])
+                corr6 = corr_matrix_quant[0, 1] ** 2
+                print('r2 Quantile regression ', corr6)
+                corr_matrix_goldin= np.corrcoef(y_raman, corrected_goldin[:, 1])
+                corr7 = corr_matrix_goldin[0, 1] ** 2
+                print('r2 Goldindec ', corr7)
+                fig, ax = plt.subplots()
+                ax.plot(x_axis, y_raman, label='Synthesized spectrum', color = 'black')
+                ax.plot(x_axis, corrected_plus[:, 1], label='Ex-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr1*100, 3)) + '. RMSE=' + str(np.round(rms1, 2)), color = 'red')
+                ax.plot(x_axis, corrected_imod[:, 1], label='I-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr2*100, 3)) + '. RMSE=' + str(np.round(rms2, 2)), color = 'green')
+                ax.plot(x_axis, corrected_modp[:, 1], label='Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr3*100, 3)) + '. RMSE=' + str(np.round(rms3, 2)), color = 'blue', dashes=[6, 2])
+                ax.plot(x_axis, corrected_quant[:, 1], label='Quantile regression. $\mathregular{r^2}$=' + str(np.round(corr6*100, 3)) + '. RMSE=' + str(np.round(rms6, 2)), color = 'c', dashes=[8, 4])
+                ax.plot(x_axis, corrected_goldin[:, 1], label='Goldindec. $\mathregular{r^2}$=' + str(np.round(corr7*100, 3)) + '. RMSE=' + str(np.round(rms7, 2)), color = 'm', dashes=[8, 4])
+                ax.legend()
+                ax.grid()
+                plt.show()
+            case Qt.Key.Key_F4:
+                return
+                arr = self.preprocessing.smoothed_spectra['[1]_Здоровый (1).asc']
+                y = arr[:, 1]
+                keyarr = '[1]_Здоровый (1).asc', arr
+                before = datetime.now()
+                devs = []
+                fig, ax = plt.subplots()
+                for k, v in self.preprocessing.smoothed_spectra.items():
+                    _, baseline_plus_tru, corrected_tru, pitches = ex_mod_poly((k, v), [8., 1e-7, 1000.])
+
+                    # ax.plot(corrected_tru[:, 0], corrected_tru[:, 1])
+                    devs.append(pitches)
+                # _, baseline_plus_new, corrected_new1, work_my, dev, sc = baseline_imodpoly_plus(keyarr, [7, 1e-20, 250], True)
+                # _, baseline_plus_new, corrected_new2, work_my, dev, sc = baseline_imodpoly_plus(keyarr, [7, 1e-20, 250], False)
+                # info(devs[0])
+                print(datetime.now() - before)
+                # key, baseline_byimodpoly, corrected = baseline_imodpoly(keyarr, [8, 1e-6, 1000])
+                # key, _, corrected_md = baseline_modpoly(keyarr, [8, 1e-6, 1000])
+
+                # for i in sc_diffs:
+                #     ax.plot(i)
+                # ax.plot(arr[:, 0], arr[:, 1], label='original', color='b')
+                # ax.plot(corrected_tru[:, 0], corrected_tru[:, 1], label='tru', color='black')
+                # ax.legend()
+                # plt.show()
+                # ax.plot(work[:, 0], work[:, 1], label='Спектр без пиков I-ModPoly', dashes=[6, 2], color='b')
+                # ax.plot(work_my[:, 0], work_my[:, 1], label='Спектр без пиков предложенным методом', dashes=[4, 4], color='r')
+                #
+                # ax.plot(baseline_plus_new[:, 0], baseline_plus_new[:, 1], label='Базовая линия предложенным методом', color='r')
+                # ax.plot(baseline_byimodpoly[:, 0], baseline_byimodpoly[:, 1], label='Базовая линия I-ModPoly', color='b')
+
+                fig, ax = plt.subplots()
+                for i in devs:
+                    ax.plot(i)
+                ax.grid()
+                plt.show()
+            case Qt.Key.Key_F5:
+                return
+                self.arre()
+            case Qt.Key.Key_F6:
+                return
+                from modules.functions_peak_shapes import gaussian
+                from scipy.signal import deconvolve, convolve
+                signal = self.preprocessing.smoothed_spectra['[1]_Здоровый (1).asc']
+                x = signal[:, 0]
+                fig, ax = plt.subplots()
+                # ax.plot(signal[:, 0], signal[:, 1], label='original')
+                xx = np.zeros_like(x)
+                gauss = gaussian(x, 1, np.median(x), 60.)
+                gauss = gauss[gauss > 0.1]
+                conv = convolve(signal[:, 1], gauss, mode='same')
+                deconv, _ = deconvolve(conv, gauss)
+                # ns = len(signal[:, 0])
+                #
+                # n = ns - len(gauss) + 1
+                # # so we need to expand it by
+                # s = int((ns - n) / 2)
+                # # on both sides.
+                # deconv_res = np.zeros(ns)
+                # deconv_res[s:ns - s - 1] = deconv
+                # deconv = deconv_res
+                # now deconv contains the deconvolution
+                # expanded to the original shape (filled with zeros)
+                # ax.plot(gauss, label='recovered')
+                ax.plot(deconv, label='recovered')
+                ax.grid()
+                ax.legend()
+                plt.show()
             case Qt.Key.Key_F11:
                 if not self.isFullScreen():
                     self.showFullScreen()
                 else:
                     self.showMaximized()
+    @asyncSlot()
+    async def arre(self):
+        from itertools import islice
+        times = []
+
+        params = [9., 1e-7, 1000.]
+        for i in range(50, 1050, 50):
+            n_items = list(islice(self.preprocessing.smoothed_spectra.items(), i))
+            executor = ProcessPoolExecutor()
+            before = datetime.now()
+            with executor:
+                self.current_futures = [self.loop.run_in_executor(executor, ex_mod_poly, i, params) for i in
+                                        n_items]
+                for future in self.current_futures:
+                    future.add_done_callback(self.progress_indicator)
+                baseline_corrected = await gather(*self.current_futures)
+            after = datetime.now() - before
+            sec = after.total_seconds()
+            print(i)
+            print(sec)
+            times.append(sec)
+        info(times)
+        print(times)
 
     def undo(self) -> None:
         self.ui.input_table.setCurrentIndex(QModelIndex())
@@ -4171,14 +4327,14 @@ class MainWindow(QMainWindow, QtStyleTools):
             fd = QFileDialog(self)
             file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
             if file_path[0] != '':
-                self.save_by_shelve(file_path[0])
+                self.save_with_shelve(file_path[0])
                 self.ui.projectLabel.setText(file_path[0])
                 self.setWindowTitle(file_path[0])
                 self._add_path_to_recent(file_path[0])
                 self.update_recent_list()
                 self.project_path = file_path[0]
         else:
-            self.save_by_shelve(self.project_path)
+            self.save_with_shelve(self.project_path)
 
     @asyncSlot()
     async def action_save_production_project(self) -> None:
@@ -4186,7 +4342,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         fd = QFileDialog(self)
         file_path = fd.getSaveFileName(self, 'Create Production Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
-            self.save_by_shelve(file_path[0], True)
+            self.save_with_shelve(file_path[0], True)
 
     @asyncSlot()
     async def action_save_as(self) -> None:
@@ -4194,10 +4350,10 @@ class MainWindow(QMainWindow, QtStyleTools):
         fd = QFileDialog(self)
         file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
-            self.save_by_shelve(file_path[0])
+            self.save_with_shelve(file_path[0])
             self.project_path = file_path[0]
 
-    def save_by_shelve(self, path: str, production_export: bool = False) -> None:
+    def save_with_shelve(self, path: str, production_export: bool = False) -> None:
         self.ui.statusBar.showMessage('Saving file...')
         self.close_progress_bar()
         self.open_progress_bar()
@@ -4226,7 +4382,6 @@ class MainWindow(QMainWindow, QtStyleTools):
             db["dataset_type_cb"] = self.ui.dataset_type_cb.currentText()
             db["classes_lineEdit"] = self.ui.classes_lineEdit.text()
             db["test_data_ratio_spinBox"] = self.ui.test_data_ratio_spinBox.value()
-            db["n_lines_method"] = self.ui.n_lines_detect_method_cb.currentText()
             db["max_noise_level"] = self.ui.max_noise_level_dsb.value()
             db["l_ratio_doubleSpinBox"] = self.ui.l_ratio_doubleSpinBox.value()
             db["smooth_method"] = self.smooth_method
@@ -4279,6 +4434,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             db['baseline_corrected_dict'] = self.preprocessing.baseline_corrected_dict
             db['groupBox_mlp_checked'] = self.ui.groupBox_mlp.isChecked()
             db['activation_comboBox'] = self.ui.activation_comboBox.currentText()
+            db['refit_score'] = self.ui.refit_score.currentText()
             db['solver_mlp_combo_box'] = self.ui.solver_mlp_combo_box.currentText()
             db['feature_display_max_checkBox'] = self.ui.feature_display_max_checkBox.isChecked()
             db['include_x0_checkBox'] = self.ui.include_x0_checkBox.isChecked()
@@ -4286,7 +4442,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             db['old_Y'] = self.stat_analysis_logic.old_labels
             db['new_Y'] = self.stat_analysis_logic.new_labels
             db['use_pca_checkBox'] = self.ui.use_pca_checkBox.isChecked()
-
+            db['intervals_data'] = self.fitting.intervals_data
+            db['all_ranges_clustered_lines_x0'] = self.fitting.all_ranges_clustered_x0_sd
             if not self.predict_logic.is_production_project:
                 self.predict_logic.stat_models = {}
                 for key, v in self.stat_analysis_logic.latest_stat_result.items():
@@ -4306,7 +4463,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 db["BeforeDespike"] = self.preprocessing.BeforeDespike
                 db["NormalizedDict"] = self.preprocessing.NormalizedDict
                 db["CuttedFirstDict"] = self.preprocessing.CuttedFirstDict
-                db["SmoothedDict"] = self.preprocessing.SmoothedDict
+                db["SmoothedDict"] = self.preprocessing.smoothed_spectra
                 db['baseline_corrected_not_trimmed_dict'] = self.preprocessing.baseline_corrected_not_trimmed_dict
                 db["baseline_dict"] = self.preprocessing.baseline_dict
 
@@ -4547,7 +4704,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.normalize_plotItem.clear()
                 self._initial_normalize_plot()
             case 'Smoothed':
-                self.preprocessing.SmoothedDict.clear()
+                self.preprocessing.smoothed_spectra.clear()
                 self.preprocessing.curveOneSmoothPlot = None
                 self.smooth_plotItem.clear()
                 self._initial_smooth_plot()
@@ -4578,6 +4735,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                     error('failed to disconnect currentTextChanged self.switch_to_template)')
                 self.ui.template_combo_box.clear()
                 self.fitting.is_template = False
+                self.fitting.all_ranges_clustered_x0_sd = None
                 self.ui.data_checkBox.setChecked(True)
                 self.ui.sum_checkBox.setChecked(False)
                 self.ui.residual_checkBox.setChecked(False)
@@ -4604,7 +4762,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self._initial_pca_features_table()
                 self._initial_plsda_vip_table()
                 self.ui.groupBox_mlp.setChecked(True)
-
+                self.ui.refit_score.setCurrentText('recall_score')
             case 'LDA':
                 self._initial_lda_plots()
             case 'QDA':
@@ -4836,7 +4994,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             if "normalizing_method_used" in db:
                 self.read_normalizing_method_used(db["normalizing_method_used"])
             if "SmoothedDict" in db:
-                self.preprocessing.SmoothedDict = db["SmoothedDict"]
+                self.preprocessing.smoothed_spectra = db["SmoothedDict"]
             if "baseline_corrected_dict" in db:
                 self.preprocessing.baseline_corrected_dict = db["baseline_corrected_dict"]
             if "baseline_corrected_not_trimmed_dict" in db:
@@ -4853,8 +5011,6 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.classes_lineEdit.setText(db["classes_lineEdit"])
             if "test_data_ratio_spinBox" in db:
                 self.ui.test_data_ratio_spinBox.setValue(db["test_data_ratio_spinBox"])
-            if "n_lines_method" in db:
-                self.ui.n_lines_detect_method_cb.setCurrentText(db["n_lines_method"])
             if "max_noise_level" in db:
                 self.ui.max_noise_level_dsb.setValue(db["max_noise_level"])
             if "l_ratio_doubleSpinBox" in db:
@@ -4972,6 +5128,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.activation_comboBox.setCurrentText(db['activation_comboBox'])
             if 'solver_mlp_combo_box' in db:
                 self.ui.solver_mlp_combo_box.setCurrentText(db['solver_mlp_combo_box'])
+            if 'refit_score' in db:
+                self.ui.refit_score.setCurrentText(db['refit_score'])
             if 'feature_display_max_checkBox' in db:
                 self.ui.feature_display_max_checkBox.setChecked(db['feature_display_max_checkBox'])
             if 'include_x0_checkBox' in db:
@@ -4980,6 +5138,11 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.feature_display_max_spinBox.setValue(db['feature_display_max_spinBox'])
             if 'use_pca_checkBox' in db:
                 self.ui.use_pca_checkBox.setChecked(db['use_pca_checkBox'])
+            if 'intervals_data' in db:
+                self.fitting.intervals_data = db['intervals_data']
+            if 'all_ranges_clustered_lines_x0' in db:
+                self.fitting.all_ranges_clustered_x0_sd = db['all_ranges_clustered_lines_x0']
+
             if 'old_Y' in db:
                 self.stat_analysis_logic.old_labels = db['old_Y']
             if 'new_Y' in db:
@@ -5001,7 +5164,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def read_smoothing_method_used(self, method: str) -> None:
         self.smooth_method = method
-        if len(self.preprocessing.SmoothedDict) > 0:
+        if len(self.preprocessing.smoothed_spectra) > 0:
             text_for_title = "<span style=\"font-family: AbletonSans; color:" \
                              + self.theme_colors['plotText'] \
                              + ";font-size:14pt\">Smoothed plots. Method " \
@@ -5091,7 +5254,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             case 'Poly':
                 self.ui.polynome_degree_spinBox.setVisible(True)
                 self.ui.polynome_degree_label.setVisible(True)
-            case 'ModPoly' | 'iModPoly' | 'iModPoly+':
+            case 'ModPoly' | 'iModPoly' | 'ExModPoly':
                 self.ui.n_iterations_spinBox.setVisible(True)
                 self.ui.label_n_iterations.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
@@ -5389,12 +5552,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         critical(err)
         tb = format_exc()
         error(tb)
-        self.executor_stop()
         if self.currentProgress:
             self.currentProgress.setMaximum(1)
             self.currentProgress.setValue(1)
         self.close_progress_bar()
         modules.start_program.show_error(type(err), err, str(tb))
+        self.executor_stop()
 
     def get_curve_plot_data_item(self, n_array: np.ndarray, group_number: str = 0, color: QColor = None, name: str = '',
                                  style: Qt.PenStyle = Qt.PenStyle.SolidLine, width: int = 2) -> PlotDataItem:
@@ -5411,7 +5574,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         await self.preprocessing.update_plot_item(self.preprocessing.ConvertedDict.items(), 1)
         await self.preprocessing.update_plot_item(self.preprocessing.CuttedFirstDict.items(), 2)
         await self.preprocessing.update_plot_item(self.preprocessing.NormalizedDict.items(), 3)
-        await self.preprocessing.update_plot_item(self.preprocessing.SmoothedDict.items(), 4)
+        await self.preprocessing.update_plot_item(self.preprocessing.smoothed_spectra.items(), 4)
         await self.preprocessing.update_plot_item(self.preprocessing.baseline_corrected_dict.items(), 5)
         await self.preprocessing.update_plot_item(self.preprocessing.averaged_dict.items(), 6)
 
@@ -5426,16 +5589,19 @@ class MainWindow(QMainWindow, QtStyleTools):
         cancel_button.clicked.connect(self.executor_stop)
 
     def executor_stop(self) -> None:
-        if self.current_executor:
-            event = Event()
-            for f in self.current_futures:
-                if not f.done():
-                    f.cancel()
-            event.set()
-            environ['CANCEL'] = '1'
-            self.current_executor.shutdown(cancel_futures=True, wait=False)
-            self.close_progress_bar()
-            self.ui.statusBar.showMessage('Operation canceled by user ')
+        if not self.current_executor or self.break_event is None:
+            return
+        for f in self.current_futures:
+            if not f.done():
+                f.cancel()
+        try:
+            self.break_event.set()
+        except FileNotFoundError:
+            warning('FileNotFoundError self.break_event.set()')
+        environ['CANCEL'] = '1'
+        self.current_executor.shutdown(cancel_futures=True, wait=False)
+        self.close_progress_bar()
+        self.ui.statusBar.showMessage('Operation canceled by user ')
 
     def progress_indicator(self, _=None) -> None:
         current_value = self.progressBar.value() + 1
@@ -5454,6 +5620,23 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.taskbar_button.setWindow(self.windowHandle())
         self.taskbar_progress.show()
 
+    def cancelled_by_user(self) -> bool:
+        """
+        Cancel button was pressed by user?
+
+        Returns
+        -------
+        out: bool
+            True if Cancel button pressed
+        """
+        if self.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+            self.close_progress_bar()
+            self.ui.statusBar.showMessage('Cancelled by user.')
+            info('Cancelled by user')
+            return True
+        else:
+            return False
+
     def close_progress_bar(self) -> None:
         if self.currentProgress is not None:
             self.currentProgress.close()
@@ -5470,7 +5653,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.action_cut.setDisabled(len(self.preprocessing.ConvertedDict) == 0)
         self.action_normalize.setDisabled(len(self.preprocessing.CuttedFirstDict) == 0)
         self.action_smooth.setDisabled(len(self.preprocessing.NormalizedDict) == 0)
-        self.action_baseline_correction.setDisabled(len(self.preprocessing.SmoothedDict) == 0)
+        self.action_baseline_correction.setDisabled(len(self.preprocessing.smoothed_spectra) == 0)
         self.action_trim.setDisabled(len(self.preprocessing.baseline_corrected_not_trimmed_dict) == 0)
         self.action_average.setDisabled(len(self.preprocessing.baseline_corrected_not_trimmed_dict) == 0)
 
@@ -5496,7 +5679,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def auto_save(self) -> None:
         if self.modified and self.project_path and self.project_path != '':
-            self.save_by_shelve(self.project_path)
+            self.save_with_shelve(self.project_path)
 
     def disable_buttons(self, b: bool) -> None:
         self.set_buttons_ability()
@@ -5701,6 +5884,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         except Exception as err:
             self.show_error(err)
 
+    def set_deconvoluted_dataset(self) -> None:
+        if self.ui.input_table.model().rowCount() == 0:
+            return
+        df = self.fitting.create_deconvoluted_dataset_new()
+        self.ui.deconvoluted_dataset_table_view.model().set_dataframe(df)
+
     @asyncSlot()
     async def fit(self):
         """
@@ -5887,7 +6076,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             model = model_results['model']
             update_plot_tree(model.best_estimator_.estimators_[idx], self.ui.rf_tree_plot_widget,
                              model_results['feature_names'], model_results['target_names'])
-        elif self.ui.stat_tab_widget.currentIndex() == 11 and\
+        elif self.ui.stat_tab_widget.currentIndex() == 11 and \
                 'XGBoost' in self.stat_analysis_logic.latest_stat_result:
             model_results = self.stat_analysis_logic.latest_stat_result['XGBoost']
             model = model_results['model']

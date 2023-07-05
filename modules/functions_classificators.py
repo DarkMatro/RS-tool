@@ -9,7 +9,7 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, fbeta_score, \
-    hamming_loss, jaccard_score, classification_report
+    hamming_loss, jaccard_score, classification_report, make_scorer
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
@@ -22,7 +22,15 @@ from xgboost import XGBClassifier
 from joblib import parallel_backend
 
 
-def do_lda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int]) -> dict:
+def _scorers() -> dict:
+    return {'precision_score': make_scorer(precision_score),
+            'recall_score': make_scorer(recall_score),
+            'accuracy_score': make_scorer(accuracy_score),
+            'f1_score': make_scorer(f1_score)
+            }
+
+
+def do_lda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int], params: dict) -> dict:
     """
     @param y_test:
     @param x_train: x: array-like of shape (n_samples, n_features)
@@ -36,9 +44,13 @@ def do_lda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
 
     parameters = [{'solver': ['svd']},
                   {'solver': ['eigen'], 'shrinkage': np.arange(0, 1, 0.02)}]
+    n_classes = len(y_train)
     model = LinearDiscriminantAnalysis(store_covariance=True)
     with parallel_backend('multiprocessing', n_jobs=-1):
-        model = GridSearchCV(model, parameters, n_jobs=-1)
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d = model.transform(x_train)
         if transformed_2d.shape[1] > 1:
@@ -51,7 +63,8 @@ def do_lda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
         y_pred = np.concatenate((y_pred, y_pred_test))
         y_score = model.predict_proba(x_test)
         y_score_dec_func = model.decision_function(x_test)
-        accuracy_score_train = np.round(model.score(x_train, y_train), 5) * 100.
+        accuracy_score_train = model.score(x_train, y_train)
+        accuracy_score_train = np.round(accuracy_score_train, 5) * 100.
         _model = copy.deepcopy(model)
         model_2d = make_pipeline(StandardScaler(), _model)
         model_2d.fit(transformed_2d, y_train)
@@ -119,9 +132,13 @@ def do_lr(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
                   {'penalty': ['elasticnet'], 'C': [.01, .1, 1, 10, 100, 1000, 10_000, 100_000],
                    'solver': ['saga']}
                   ]
+    n_classes = len(y_train)
     with parallel_backend('multiprocessing', n_jobs=-1):
         model = LogisticRegression(max_iter=10000, n_jobs=-1, random_state=rng)
-        model = GridSearchCV(model, parameters, n_jobs=-1)
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -159,9 +176,12 @@ def do_svc(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
     parameters = {'nu': np.arange(0, 1, 0.05)}
 
     model = NuSVC(random_state=rng, probability=True, kernel='linear')
-
+    n_classes = len(y_train)
     with parallel_backend('multiprocessing', n_jobs=-1):
-        model = GridSearchCV(model, parameters, n_jobs=-1)
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -194,9 +214,13 @@ def do_nn(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     @return: dict
     """
     parameters = {'n_neighbors': np.arange(2, int(len(x_train) / 2), 1), 'weights': ['uniform', 'distance']}
+    n_classes = len(y_train)
     with parallel_backend('multiprocessing', n_jobs=-1):
         model = KNeighborsClassifier(n_jobs=-1)
-        model = GridSearchCV(model, parameters, n_jobs=-1)
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -259,10 +283,13 @@ def do_dt(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     """
     rng = np.random.RandomState(0)
     parameters = {'criterion': ["gini", "entropy", "log_loss"]}
-
+    n_classes = len(y_train)
     model = DecisionTreeClassifier(random_state=rng)
     with parallel_backend('multiprocessing', n_jobs=-1):
-        model = GridSearchCV(model, parameters, n_jobs=-1)
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -326,10 +353,15 @@ def do_rf(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     @return: dict
     """
     rng = np.random.RandomState(0)
-    parameters = {'criterion': ["gini", "entropy", "log_loss"]}
+    parameters = {'criterion': ["gini", "entropy", "log_loss"], 'min_samples_split': [2, 3, 5, 10],
+                  'n_estimators': [100, 300], 'max_features': ["sqrt", "log2", None]}
+    n_classes = len(y_train)
     with parallel_backend('multiprocessing', n_jobs=-1):
         model = RandomForestClassifier(random_state=rng, n_jobs=-1)
-        model = GridSearchCV(model, parameters, n_jobs=-1)
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -397,13 +429,16 @@ def do_mlp(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
     @return: dict
     """
     rng = np.random.RandomState(0)
+    n_classes = len(y_train)
     with parallel_backend('multiprocessing', n_jobs=-1):
         if 'activation' not in params:
             model = MLPClassifier(random_state=rng)
             parameters = {'activation': ['identity', 'logistic', 'tanh', 'relu'], 'solver': ['lbfgs', 'sgd', 'adam'],
                           'hidden_layer_sizes': np.arange(100, 900, 100)}
-
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            if n_classes > 2:
+                model = GridSearchCV(model, parameters, n_jobs=-1)
+            else:
+                model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         else:
             model = MLPClassifier(params['hidden_layer_sizes'], params['activation'], solver=params['solver'],
                                   random_state=rng)
@@ -425,7 +460,7 @@ def do_mlp(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
             'explained_variance_ratio': explained_variance_ratio, 'y_pred_2d': y_pred_2d, 'y_pred': y_pred}
 
 
-def do_pca(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int]) -> dict:
+def do_pca(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int], params: dict) -> dict:
     """
     PCA
     @param y_test:
@@ -446,7 +481,7 @@ def do_pca(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
     return {'model': model, 'features_in_2d': features_in_2d, 'explained_variance_ratio': explained_variance_ratio}
 
 
-def do_plsda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int]) -> dict:
+def do_plsda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int], params: dict) -> dict:
     """
     PLS-DA
     @param y_test:
@@ -497,9 +532,12 @@ def do_xgboost(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test
                   {'booster': ['dart'], 'normalize_type ': ['tree', 'forest'],
                    'rate_drop ': np.arange(0, 1, 0.1), 'skip_drop': np.arange(0, 1, 0.1)},
                   {'booster': ['gblinear'], 'feature_selector ': ['cyclic', 'shuffle', 'random', 'greedy', 'thrifty']}]
+    n_classes = len(y_train)
     with parallel_backend('multiprocessing', n_jobs=-1):
-        model = GridSearchCV(model, parameters, n_jobs=-1)
-
+        if n_classes > 2:
+            model = GridSearchCV(model, parameters, n_jobs=-1)
+        else:
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])

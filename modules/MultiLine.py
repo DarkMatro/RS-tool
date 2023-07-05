@@ -30,6 +30,7 @@ def _fourierTransform(x_in: np.ndarray, y_in: np.ndarray) -> tuple[np.ndarray, n
         y_out.append(y)
     return np.array(x_out), np.array(y_out)
 
+
 def apply_log_mapping(x: np.ndarray, y: np.ndarray, log_mode: tuple[bool, bool]) -> tuple[np.ndarray, np.ndarray]:
     """
     Applies a logarithmic mapping transformation (base 10) if requested for the respective axis.

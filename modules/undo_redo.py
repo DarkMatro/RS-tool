@@ -394,8 +394,8 @@ class CommandDeleteInputSpectrum(QUndoCommand):
                 self.CuttedFirstDict_old[filename] = self.rs.preprocessing.CuttedFirstDict[filename]
             if self.rs.preprocessing.NormalizedDict and filename in self.rs.preprocessing.NormalizedDict:
                 self.NormalizedDict_old[filename] = self.rs.preprocessing.NormalizedDict[filename]
-            if self.rs.preprocessing.SmoothedDict and filename in self.rs.preprocessing.SmoothedDict:
-                self.SmoothedDict_old[filename] = self.rs.preprocessing.SmoothedDict[filename]
+            if self.rs.preprocessing.smoothed_spectra and filename in self.rs.preprocessing.smoothed_spectra:
+                self.SmoothedDict_old[filename] = self.rs.preprocessing.smoothed_spectra[filename]
             if self.rs.preprocessing.baseline_dict and filename in self.rs.preprocessing.baseline_dict:
                 self.BaselineDict_old[filename] = self.rs.preprocessing.baseline_dict[filename]
             if self.rs.preprocessing.baseline_corrected_dict and filename in self.rs.preprocessing.baseline_corrected_dict:
@@ -476,8 +476,8 @@ class CommandDeleteInputSpectrum(QUndoCommand):
             del self.rs.preprocessing.ConvertedDict[key]
         if key in self.rs.preprocessing.NormalizedDict:
             del self.rs.preprocessing.NormalizedDict[key]
-        if key in self.rs.preprocessing.SmoothedDict:
-            del self.rs.preprocessing.SmoothedDict[key]
+        if key in self.rs.preprocessing.smoothed_spectra:
+            del self.rs.preprocessing.smoothed_spectra[key]
         if key in self.rs.preprocessing.CuttedFirstDict:
             del self.rs.preprocessing.CuttedFirstDict[key]
         if key in self.rs.preprocessing.baseline_dict:
@@ -501,7 +501,7 @@ class CommandDeleteInputSpectrum(QUndoCommand):
         if key in self.NormalizedDict_old:
             self.rs.preprocessing.NormalizedDict[key] = self.NormalizedDict_old[key]
         if key in self.SmoothedDict_old:
-            self.rs.preprocessing.SmoothedDict[key] = self.SmoothedDict_old[key]
+            self.rs.preprocessing.smoothed_spectra[key] = self.SmoothedDict_old[key]
         if key in self.BaselineDict_old:
             self.rs.preprocessing.baseline_dict[key] = self.BaselineDict_old[key]
         if key in self.BaselineCorrectedDict_old:
@@ -1035,7 +1035,7 @@ class CommandSmooth(QUndoCommand):
         self.method_new = self.generate_title_text()
         self.smoothed_dataset_old = copy.deepcopy(rs.ui.smoothed_dataset_table_view.model().dataframe())
         self.smoothed_dataset_new = copy.deepcopy(self.create_smoothed_dataset_new())
-        self.SmoothedDictBefore = rs.preprocessing.SmoothedDict.copy()
+        self.SmoothedDictBefore = rs.preprocessing.smoothed_spectra.copy()
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
@@ -1093,10 +1093,10 @@ class CommandSmooth(QUndoCommand):
         self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
         self.rs.ui.statusBar.showMessage('Redo...' + self.text())
         self.rs.disable_buttons(True)
-        self.rs.preprocessing.SmoothedDict.clear()
+        self.rs.preprocessing.smoothed_spectra.clear()
         for key, array in self.smoothed_list:
-            self.rs.preprocessing.SmoothedDict[key] = array
-        await self.rs.preprocessing.update_plot_item(self.rs.preprocessing.SmoothedDict.items(), 4)
+            self.rs.preprocessing.smoothed_spectra[key] = array
+        await self.rs.preprocessing.update_plot_item(self.rs.preprocessing.smoothed_spectra.items(), 4)
         self.rs.smooth_method = self.method_new
         self.rs.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_dataset_new)
         create_task(self._stop())
@@ -1108,9 +1108,9 @@ class CommandSmooth(QUndoCommand):
         self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
         self.rs.ui.statusBar.showMessage('Undo...' + self.text())
         self.rs.disable_buttons(True)
-        self.rs.preprocessing.SmoothedDict.clear()
-        self.rs.preprocessing.SmoothedDict = self.SmoothedDictBefore.copy()
-        info('Undo smoothing. The len of SmoothedDict is %s', len(self.rs.preprocessing.SmoothedDict))
+        self.rs.preprocessing.smoothed_spectra.clear()
+        self.rs.preprocessing.smoothed_spectra = self.SmoothedDictBefore.copy()
+        info('Undo smoothing. The len of SmoothedDict is %s', len(self.rs.preprocessing.smoothed_spectra))
         await self.rs.preprocessing.update_plot_item(self.SmoothedDictBefore.items(), 4)
         self.rs.smooth_method = self.method_old
         self.rs.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_dataset_old)
@@ -1188,7 +1188,7 @@ class CommandBaselineCorrection(QUndoCommand):
         match self.method:
             case 'Poly':
                 text += 'Polynome order: ' + str(self.params)
-            case 'ModPoly' | 'iModPoly' | 'iModPoly+':
+            case 'ModPoly' | 'iModPoly' | 'ExModPoly':
                 text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1])
             case 'Penalized poly':
                 text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1]) \
@@ -1390,7 +1390,7 @@ class CommandAddDeconvLine(QUndoCommand):
         self._idx = idx
         self._legend = 'Curve ' + str(idx + 1)
         self._line_type = line_type
-        self._line_params = rs.fitting.get_initial_parameters_for_line(line_type)
+        self._line_params = rs.fitting.initial_peak_parameters(line_type)
         self._style = random_line_style()
         self._line_param_names = self._line_params.keys()
         self.UndoAction = rs.action_undo
@@ -1552,7 +1552,7 @@ class CommandDeconvLineTypeChanged(QUndoCommand):
             for i in params_old:
                 if i not in params_new:
                     params_to_dlt.append(i)
-        line_params = self.RS.fitting.get_initial_parameters_for_line(line_type_new)
+        line_params = self.RS.fitting.initial_peak_parameters(line_type_new)
         for i in params_to_add:
             self.RS.ui.fit_params_table.model().append_row(self._idx, i, line_params[i])
         for i in params_to_dlt:
@@ -1868,7 +1868,10 @@ class CommandClearAllDeconvLines(QUndoCommand):
     async def _stop(self) -> None:
         # print('CommandClearAllDeconvLines')
         self.rs.fitting.draw_sum_curve()
-        self.rs.fitting.draw_residual_curve()
+        try:
+            self.rs.fitting.draw_residual_curve()
+        except:
+            pass
         self.update_undo_redo_tooltips()
         self.rs.set_modified()
         collect(2)
@@ -2035,8 +2038,8 @@ class CommandAfterFitting(QUndoCommand):
                  idx_type_param_count_legend_func: list[tuple[int, str, int, str, callable]], filename: str,
                  description: str) -> None:
         super(CommandAfterFitting, self).__init__(description)
-        self.sigma3_conc_up = np.array([])
-        self.sigma3_conc_bottom = np.array([])
+        self.sigma3_top = np.array([])
+        self.sigma3_bottom = np.array([])
         self.rs = rs
         self.report_text = ''
         self.results = results
@@ -2045,7 +2048,7 @@ class CommandAfterFitting(QUndoCommand):
         self.df = rs.ui.fit_params_table.model().query_result('filename == %r' % filename)
         self.sum_ar = rs.fitting.sum_array()
         self.fit_report = ''
-        self.report_result_old = rs.fitting.report_result[filename] if filename in rs.report_result else ''
+        self.report_result_old = rs.fitting.report_result[filename] if filename in rs.fitting.report_result else ''
         self.sigma3 = self.rs.fitting.sigma3[self.filename] if self.filename in self.rs.fitting.sigma3 else None
         self.setText(description)
         self.UndoAction = rs.action_undo
@@ -2055,47 +2058,20 @@ class CommandAfterFitting(QUndoCommand):
         self.prepare_data()
 
     def prepare_data(self) -> None:
-
-        ranges = 0
-        chisqr_av = redchi_av = aic_av = bic_av = rsquared_av = 0.
+        av_text, sigma3_top, sigma3_bottom = fitting_metrics(self.results)
         for fit_result in self.results:
-            ranges += 1
-            self.fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False), fit_result)
-            dely = fit_result.eval_uncertainty(sigma=3)
-            self.sigma3_conc_up = np.concatenate((self.sigma3_conc_up, fit_result.best_fit + dely))
-            self.sigma3_conc_bottom = np.concatenate((self.sigma3_conc_bottom, fit_result.best_fit - dely))
-            chisqr_av += fit_result.chisqr
-            redchi_av += fit_result.redchi
-            aic_av += fit_result.aic
-            bic_av += fit_result.bic
-            try:
-                rsquared_av += fit_result.rsquared
-            except:
-                # print("fit_result.rsquared error")
-                debug("fit_result.rsquared error")
-
+            self.fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False), fit_result) + '\n'+'\n'
         x_axis, _ = self.sum_ar
-        if self.sigma3_conc_up.shape[0] < x_axis.shape[0]:
-            d = x_axis.shape[0] - self.sigma3_conc_up.shape[0]
+        if self.sigma3_top.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - self.sigma3_top.shape[0]
             zer = np.zeros(d)
-            self.sigma3_conc_up = np.concatenate((self.sigma3_conc_up, zer))
-        if self.sigma3_conc_bottom.shape[0] < x_axis.shape[0]:
-            d = x_axis.shape[0] - self.sigma3_conc_bottom.shape[0]
+            self.sigma3_top = np.concatenate((self.sigma3_top, zer))
+        if self.sigma3_bottom.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - self.sigma3_bottom.shape[0]
             zer = np.zeros(d)
-            self.sigma3_conc_bottom = np.concatenate((self.sigma3_conc_bottom, zer))
+            self.sigma3_bottom = np.concatenate((self.sigma3_bottom, zer))
 
-        if ranges != 0:
-            chisqr_av = np.round(chisqr_av / ranges, 6)
-            redchi_av = np.round(redchi_av / ranges, 6)
-            aic_av = np.round(aic_av / ranges, 6)
-            bic_av = np.round(bic_av / ranges, 6)
-            rsquared_av = np.round(rsquared_av / ranges, 8)
-            av_text = "[[Average Fit Statistics]]" + '\n' \
-                      + f"    chi-square         = {chisqr_av}" + '\n' \
-                      + f"    reduced chi-square = {redchi_av}" + '\n' \
-                      + f"    Akaike info crit   = {aic_av}" + '\n' \
-                      + f"    Bayesian info crit = {bic_av}" + '\n' \
-                      + f"    R-squared          = {rsquared_av}" + '\n' + '\n'
+        if av_text:
             self.report_text = av_text + self.fit_report + '\n' + '\n'
         else:
             self.report_text = self.fit_report
@@ -2111,7 +2087,7 @@ class CommandAfterFitting(QUndoCommand):
         for fit_result in self.results:
             self.rs.fitting.set_parameters_after_fit_for_spectrum(fit_result, self.filename)
         x_axis, _ = self.sum_ar
-        self.rs.fitting.sigma3[self.filename] = x_axis, self.sigma3_conc_up, self.sigma3_conc_bottom
+        self.rs.fitting.sigma3[self.filename] = x_axis, self.sigma3_top, self.sigma3_bottom
         self.rs.fitting.update_sigma3_curves(self.filename)
         self.rs.fitting.report_result[self.filename] = self.report_text
         self.rs.ui.report_text_edit.setText(self.report_text)
@@ -2138,7 +2114,7 @@ class CommandAfterFitting(QUndoCommand):
         self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
         self.rs.ui.statusBar.showMessage('Undo...' + self.text())
         info('Undo CommandAfterFitting, filename %s' % self.filename)
-        self.rs.ui.fit_params_table.model().delete_rows_multiindex(self.filename)
+        self.rs.ui.fit_params_table.model().delete_rows_by_filenames([self.filename])
         self.rs.ui.fit_params_table.model().concat_df(self.df)
         self.rs.fitting.set_rows_visibility()
         x_axis, y_axis = self.sum_ar
@@ -2235,68 +2211,6 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.loop = rs.loop
         self.prepare_data()
 
-    def create_deconvoluted_dataset_new(self) -> pd.DataFrame:
-        """
-        Заполняет датасет на основе данных разделенных линий.
-        Колонки - амплитуда и x0 (опционально)
-        Строки - значения для каждого спектра
-        Returns
-        -------
-
-        """
-        if self.rs.predict_logic.is_production_project \
-                and self.rs.ui.deconvoluted_dataset_table_view.model().rowCount() != 0:
-            filenames = []
-            for filename, _ in self.results:
-                filenames.append(filename)
-        else:
-            filename_group = self.rs.ui.input_table.model().column_data(2)
-            filenames = list(filename_group.index)
-        filenames = np.unique(filenames)
-        line_legends = self.rs.ui.deconv_lines_table.model().column_data(0).sort_values()
-        line_indexes = list(line_legends.index)
-        line_legends = list(line_legends)
-        line_legends_a = []
-        line_legends_x0 = []
-        for i in line_legends:
-            line_legends_a.append(i + '_a')
-            if self.rs.ui.include_x0_checkBox.isChecked():
-                line_legends_x0.append(i + '_x0')
-        if self.rs.ui.include_x0_checkBox.isChecked():
-            line_legends = np.concatenate((line_legends_a, line_legends_x0))
-        else:
-            line_legends = line_legends_a
-        params = self.rs.ui.fit_params_table.model().column_data(1)
-        df = pd.DataFrame(columns=line_legends)
-        class_ids = []
-        if self.rs.predict_logic.is_production_project:
-            for i in filenames:
-                class_ids.append(0)
-        for filename in filenames:
-            if not self.rs.predict_logic.is_production_project:
-                class_ids.append(filename_group.loc[filename])
-            values_a = []
-            for i in line_indexes:
-                v = params.loc[(filename, i, 'a')]
-                values_a.append(v)
-            values_x0 = []
-            if self.rs.ui.include_x0_checkBox.isChecked():
-                for i in line_indexes:
-                    v = params.loc[(filename, i, 'x0')]
-                    values_x0.append(v)
-                values = np.concatenate((values_a, values_x0))
-            else:
-                values = values_a
-            df2 = pd.DataFrame(np.array(values).reshape(1, -1), columns=line_legends)
-            df = pd.concat([df, df2], ignore_index=True)
-        df2 = pd.DataFrame({'Class': class_ids, 'Filename': filenames})
-        df = pd.concat([df2, df], axis=1)
-        if self.rs.predict_logic.is_production_project \
-                and self.rs.ui.deconvoluted_dataset_table_view.model().rowCount() != 0:
-            df_old = self.rs.ui.deconvoluted_dataset_table_view.model().dataframe()
-            df = pd.concat([df_old, df])
-        df.reset_index(drop=True)
-        return df
 
     @asyncSlot()
     async def prepare_data(self) -> None:
@@ -2305,23 +2219,25 @@ class CommandAfterBatchFitting(QUndoCommand):
                 self.keys.append(key)
         for key in self.keys:
             self.fit_reports[key] = ''
-            self.chisqr_av[key] = 0.
-            self.redchi_av[key] = 0.
-            self.aic_av[key] = 0.
-            self.bic_av[key] = 0.
-            self.rsquared_av[key] = 0.
+            self.chisqr_av[key] = []
+            self.redchi_av[key] = []
+            self.aic_av[key] = []
+            self.bic_av[key] = []
+            self.rsquared_av[key] = []
             self.sigma3_conc_up[key] = np.array([])
             self.sigma3_conc_bottom[key] = np.array([])
         line_types = self.rs.ui.deconv_lines_table.model().get_visible_line_types()
         x_axis, _ = self.sum_ar
         for key, fit_result in self.results:
-            self.fit_reports[key] += self.edited_fit_report(fit_result, line_types)
-            self.chisqr_av[key] += fit_result.chisqr
-            self.redchi_av[key] += fit_result.redchi
-            self.aic_av[key] += fit_result.aic
-            self.bic_av[key] += fit_result.bic
+            self.fit_reports[key] += self.edited_fit_report(fit_result, line_types) + '\n'
+            if fit_result.chisqr != 1e-250:
+                self.chisqr_av[key].append(fit_result.chisqr)
+            self.redchi_av[key].append(fit_result.redchi)
+            self.aic_av[key].append(fit_result.aic)
+            if fit_result.bic != -np.inf:
+                self.bic_av[key].append(fit_result.bic)
             try:
-                self.rsquared_av[key] += fit_result.rsquared
+                self.rsquared_av[key].append(fit_result.rsquared)
             except:
                 # print("fit_result.rsquared error")
                 debug("fit_result.rsquared error")
@@ -2343,11 +2259,11 @@ class CommandAfterBatchFitting(QUndoCommand):
         ranges = int(len(self.results) / len(self.bic_av))
         for key in self.keys:
             if ranges > 1:
-                chisqr_av = np.round(self.chisqr_av[key] / ranges, 6)
-                redchi_av = np.round(self.redchi_av[key] / ranges, 6)
-                aic_av = np.round(self.aic_av[key] / ranges, 6)
-                bic_av = np.round(self.bic_av[key] / ranges, 6)
-                rsquared_av = np.round(self.rsquared_av[key] / ranges, 8)
+                chisqr_av = np.round(np.mean(self.chisqr_av[key]), 6)
+                redchi_av = np.round(np.mean(self.redchi_av[key]), 6)
+                aic_av = np.round(np.mean(self.aic_av[key]), 6)
+                bic_av = np.round(np.mean(self.bic_av[key]), 6)
+                rsquared_av = np.round(np.mean(self.rsquared_av[key]), 8)
                 av_text = "[[Average For Spectrum Fit Statistics]]" + '\n' \
                           + f"    chi-square         = {chisqr_av}" + '\n' \
                           + f"    reduced chi-square = {redchi_av}" + '\n' \
@@ -2357,11 +2273,21 @@ class CommandAfterBatchFitting(QUndoCommand):
                 self.report_text[key] = av_text + self.fit_reports[key]
             else:
                 self.report_text[key] = self.fit_reports[key]
-        chisqr_av = np.round(np.mean(list(self.chisqr_av.values())) / ranges, 6)
-        redchi_av = np.round(np.mean(list(self.redchi_av.values())) / ranges, 6)
-        aic_av = np.round(np.mean(list(self.aic_av.values())) / ranges, 6)
-        bic_av = np.round(np.mean(list(self.bic_av.values())) / ranges, 6)
-        rsquared_av = np.round(np.mean(list(self.rsquared_av.values())) / ranges, 8)
+        l_chisqr_av = list(self.chisqr_av.values())
+        flat_list = [item for sublist in l_chisqr_av for item in sublist]
+        chisqr_av = np.round(np.mean(flat_list), 6)
+        l_redchi_av = list(self.redchi_av.values())
+        flat_list = [item for sublist in l_redchi_av for item in sublist]
+        redchi_av = np.round(np.mean(flat_list), 6)
+        l_aic_av = list(self.aic_av.values())
+        flat_list = [item for sublist in l_aic_av for item in sublist]
+        aic_av = np.round(np.mean(flat_list), 6)
+        l_bic_av = list(self.bic_av.values())
+        flat_list = [item for sublist in l_bic_av for item in sublist]
+        bic_av = np.round(np.mean(flat_list), 6)
+        l_rsquared_av = list(self.rsquared_av.values())
+        flat_list = [item for sublist in l_rsquared_av for item in sublist]
+        rsquared_av = np.round(np.mean(flat_list), 8)
         self.av_text = "[[Усредненная статистика по всем спектрам]]" + '\n' \
                        + f"    chi-square         = {chisqr_av}" + '\n' \
                        + f"    reduced chi-square = {redchi_av}" + '\n' \
@@ -2387,7 +2313,7 @@ class CommandAfterBatchFitting(QUndoCommand):
             self.rs.fitting.sigma3[key] = x_axis, self.sigma3_conc_up[key], self.sigma3_conc_bottom[key]
         for key in self.keys:
             self.rs.fitting.report_result[key] = self.report_text[key]
-        self.dataset_new = copy.deepcopy(self.create_deconvoluted_dataset_new())
+        self.dataset_new = copy.deepcopy(self.rs.fitting.create_deconvoluted_dataset_new())
         self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.dataset_new)
         for i in self.rs.fitting.report_result:
             self.rs.fitting.report_result[i] += '\n' + '\n' + self.av_text
@@ -2471,100 +2397,70 @@ class CommandAfterGuess(QUndoCommand):
 
     Parameters
     ----------
-    rs
+    mw : MainWindow
         Main window class
-    result : ModelResult
+    result : list[ModelResult]
     line_type : str
         Gaussian, Lorentzian... etc.
-    param_names : list[str]
+    n_params : list[str]
         ['a', 'x0', 'dx'.... etc]
     description : str
         Description to set in tooltip
     """
 
-    def __init__(self, rs, result: list[ModelResult], line_type: str,
-                 param_names: list[str], description: str) -> None:
+    def __init__(self, mw, result: list[ModelResult], line_type: str, n_params: int, description: str = "Auto guess") \
+            -> None:
         super(CommandAfterGuess, self).__init__(description)
-        self.rs = rs
-        self.results = result
-        self.line_type = line_type
-        self.param_names = param_names
-        self.filename = ''
-        self.sum_ar = rs.fitting.sum_array()
-        self.fit_report = ''
-        self._df_lines = rs.ui.deconv_lines_table.model().dataframe().copy()
-        self._df_params = rs.ui.fit_params_table.model().dataframe().copy()
-        self.report_result_old = rs.fitting.report_result[self.filename] if self.filename in rs.report_result else ''
-        self.sigma3_old = self.rs.fitting.sigma3[self.filename] if self.filename in self.rs.fitting.sigma3 else None
+        self._mw = mw
+        self._results = result
+        self._line_type = line_type
+        self._n_params = n_params
+        self._fit_report = ''
+        self._df_lines_old = mw.ui.deconv_lines_table.model().dataframe().copy()
+        self._df_params_old = mw.ui.fit_params_table.model().dataframe().copy()
+        self.report_result_old = mw.fitting.report_result[''] if '' in mw.fitting.report_result else ''
+        self.sigma3_old = self._mw.fitting.sigma3[''] if '' in self._mw.fitting.sigma3 else None
         self.setText(description)
-        self.UndoAction = rs.action_undo
-        self.RedoAction = rs.action_redo
-        self.UndoStack = rs.undoStack
-        self.loop = rs.loop
+        self.UndoAction = mw.action_undo
+        self.RedoAction = mw.action_redo
+        self.UndoStack = mw.undoStack
 
     @asyncSlot()
     async def redo(self) -> None:
-        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
-        self.rs.ui.statusBar.showMessage('Redo...' + self.text())
+        if self._mw.time_start is None:
+            self._mw.time_start = datetime.now()
+        self._mw.ui.statusBar.showMessage('Redo...' + self.text())
         info('redo CommandAfterGuess')
 
-        self.rs.ui.deconv_lines_table.model().clear_dataframe()
-        self.rs.ui.fit_params_table.model().clear_dataframe()
-        self.rs.ui.report_text_edit.setText('')
+        self._mw.ui.deconv_lines_table.model().clear_dataframe()
+        self._mw.ui.fit_params_table.model().clear_dataframe()
+        self._mw.ui.report_text_edit.setText('')
+        self._mw.fitting.remove_all_lines_from_plot()
+        av_text, sigma3_top, sigma3_bottom = fitting_metrics(self._results)
 
-        self.rs.fitting.remove_all_lines_from_plot()
-        sigma3_conc_up = np.array([])
-        sigma3_conc_bottom = np.array([])
-        ranges = 0
-        chisqr_av = redchi_av = aic_av = bic_av = rsquared_av = 0.
-
-        for fit_result in self.results:
-            ranges += 1
+        for fit_result in self._results:
             self.process_result(fit_result)
-            chisqr_av += fit_result.chisqr
-            redchi_av += fit_result.redchi
-            aic_av += fit_result.aic
-            bic_av += fit_result.bic
-            try:
-                rsquared_av += fit_result.rsquared
-            except:
-                # print("fit_result.rsquared error")
-                debug("fit_result.rsquared error")
-            self.fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False))
-            dely = fit_result.eval_uncertainty(sigma=3)
-            sigma3_conc_up = np.concatenate((sigma3_conc_up, fit_result.best_fit + dely))
-            sigma3_conc_bottom = np.concatenate((sigma3_conc_bottom, fit_result.best_fit - dely))
-        if ranges != 0:
-            chisqr_av = np.round(chisqr_av / ranges, 6)
-            redchi_av = np.round(redchi_av / ranges, 6)
-            aic_av = np.round(aic_av / ranges, 6)
-            bic_av = np.round(bic_av / ranges, 6)
-            rsquared_av = np.round(rsquared_av / ranges, 8)
-            av_text = "[[Average Fit Statistics]]" + '\n' \
-                      + f"    chi-square         = {chisqr_av}" + '\n' \
-                      + f"    reduced chi-square = {redchi_av}" + '\n' \
-                      + f"    Akaike info crit   = {aic_av}" + '\n' \
-                      + f"    Bayesian info crit = {bic_av}" + '\n' \
-                      + f"    R-squared          = {rsquared_av}" + '\n' + '\n'
-            report_text = av_text + self.fit_report
+            self._fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False))
+        if av_text:
+            report_text = av_text + self._fit_report
         else:
-            report_text = self.fit_report
-        self.rs.fitting.report_result.clear()
-        self.rs.fitting.report_result[self.filename] = report_text
-        self.rs.ui.report_text_edit.setText(report_text)
-        self.rs.fitting.draw_sum_curve()
-        self.rs.fitting.draw_residual_curve()
-        x_axis, _ = self.sum_ar
-        if sigma3_conc_up.shape[0] < x_axis.shape[0]:
-            d = x_axis.shape[0] - sigma3_conc_up.shape[0]
+            report_text = self._fit_report
+        self._mw.fitting.report_result.clear()
+        self._mw.fitting.report_result[''] = report_text
+        self._mw.ui.report_text_edit.setText(report_text)
+        self._mw.fitting.draw_sum_curve()
+        self._mw.fitting.draw_residual_curve()
+        x_axis, _ = self._mw.fitting.sum_array()
+        if sigma3_top.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - sigma3_top.shape[0]
             zer = np.zeros(d)
-            sigma3_conc_up = np.concatenate((sigma3_conc_up, zer))
-        if sigma3_conc_bottom.shape[0] < x_axis.shape[0]:
-            d = x_axis.shape[0] - sigma3_conc_bottom.shape[0]
+            sigma3_top = np.concatenate((sigma3_top, zer))
+        if sigma3_bottom.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - sigma3_bottom.shape[0]
             zer = np.zeros(d)
-            sigma3_conc_bottom = np.concatenate((sigma3_conc_bottom, zer))
-        self.rs.fitting.sigma3[self.filename] = x_axis, sigma3_conc_up, sigma3_conc_bottom
-        self.rs.fitting.update_sigma3_curves(self.filename)
+            sigma3_bottom = np.concatenate((sigma3_bottom, zer))
+        self._mw.fitting.sigma3[''] = x_axis, sigma3_top, sigma3_bottom
+        self._mw.fitting.update_sigma3_curves('')
         create_task(self._stop())
 
     @staticmethod
@@ -2578,44 +2474,43 @@ class CommandAfterGuess(QUndoCommand):
 
     @asyncSlot()
     async def undo(self) -> None:
-        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
-        self.rs.ui.statusBar.showMessage('Undo...' + self.text())
-        info('Undo CommandAfterFitting, filename %s' % self.filename)
-        self.rs.ui.deconv_lines_table.model().set_dataframe(self._df_lines)
-        self.rs.ui.fit_params_table.model().set_dataframe(self._df_params)
-        self.rs.fitting.set_rows_visibility()
-        self.rs.fitting.remove_all_lines_from_plot()
-        self.rs.fitting.report_result[self.filename] = self.report_result_old
-        self.rs.fitting.show_current_report_result()
+        self._mw.time_start = datetime.now() - (datetime.now() - self._mw.time_start)
+        self._mw.ui.statusBar.showMessage('Undo...' + self.text())
+        info('Undo CommandAfterFitting, filename %s' % '')
+        self._mw.ui.deconv_lines_table.model().set_dataframe(self._df_lines_old)
+        self._mw.ui.fit_params_table.model().set_dataframe(self._df_params_old)
+        self._mw.fitting.set_rows_visibility()
+        self._mw.fitting.remove_all_lines_from_plot()
+        self._mw.fitting.report_result[''] = self.report_result_old
+        self._mw.fitting.show_current_report_result()
         if self.sigma3_old is not None:
-            self.rs.fitting.sigma3[self.filename] = self.sigma3_old[0], self.sigma3_old[1], self.sigma3_old[2]
+            self._mw.fitting.sigma3[''] = self.sigma3_old[0], self.sigma3_old[1], self.sigma3_old[2]
         else:
-            del self.rs.fitting.sigma3[self.filename]
-            self.rs.fitting.fill.setVisible(False)
-        self.rs.fitting.update_sigma3_curves(self.filename)
-        await self.rs.fitting.draw_all_curves()
+            del self._mw.fitting.sigma3['']
+            self._mw.fitting.fill.setVisible(False)
+        self._mw.fitting.update_sigma3_curves('')
+        await self._mw.fitting.draw_all_curves()
         create_task(self._stop())
 
     def process_result(self, fit_result: lmfit.model.ModelResult) -> None:
         params = fit_result.params
-        k = len(self.param_names)
         idx = 0
         line_params = {}
         rnd_style = random_line_style()
         # add fit lines and fit parameters table rows
         for i, j in enumerate(fit_result.best_values.items()):
             legend_param = j[0].replace('dot', '.').split('_', 1)
-            if i % k == 0:
+            if i % self._n_params == 0:
                 line_params = {}
                 rnd_style = random_line_style()
-                idx = self.rs.ui.deconv_lines_table.model().append_row(legend_param[0], self.line_type, rnd_style)
+                idx = self._mw.ui.deconv_lines_table.model().append_row(legend_param[0], self._line_type, rnd_style)
             line_params[legend_param[1]] = j[1]
             v = np.round(j[1], 5)
             min_v = np.round(params[j[0]].min, 5)
             max_v = np.round(params[j[0]].max, 5)
-            self.rs.ui.fit_params_table.model().append_row(idx, legend_param[1], v, min_v, max_v)
-            if i % k == k - 1:
-                self.rs.fitting.add_deconv_curve_to_plot(line_params, idx, rnd_style, self.line_type)
+            self._mw.ui.fit_params_table.model().append_row(idx, legend_param[1], v, min_v, max_v)
+            if i % self._n_params == self._n_params - 1:
+                self._mw.fitting.add_deconv_curve_to_plot(line_params, idx, rnd_style, self._line_type)
 
     def update_undo_redo_tooltips(self) -> None:
         if self.UndoStack.canUndo():
@@ -2628,17 +2523,16 @@ class CommandAfterGuess(QUndoCommand):
             self.RedoAction.setToolTip('')
 
     async def _stop(self) -> None:
-        # print('stop CommandAfterGuess')
         info('stop CommandAfterGuess')
         self.update_undo_redo_tooltips()
-        self.rs.fitting.set_rows_visibility()
-        time_end = self.rs.time_start
-        if not self.rs.time_start:
+        self._mw.fitting.set_rows_visibility()
+        time_end = self._mw.time_start
+        if not self._mw.time_start:
             time_end = datetime.now()
         seconds = round((datetime.now() - time_end).total_seconds())
-        self.rs.time_start = None
-        self.rs.ui.statusBar.showMessage('Guess completed for ' + str(seconds) + ' sec.', 55000)
-        self.rs.set_modified()
+        self._mw.time_start = None
+        self._mw.ui.statusBar.showMessage('Guess completed for ' + str(seconds) + ' sec.', 55000)
+        self._mw.set_modified()
         collect(2)
         await sleep(0)
 
@@ -3044,3 +2938,42 @@ class CommandAfterFittingStat(QUndoCommand):
         self.mw.ui.statusBar.showMessage('Model fitting completed for ' + str(seconds) + ' sec.', 550000)
         collect(2)
         await sleep(0)
+
+
+def fitting_metrics(fit_results: list[ModelResult]) \
+        -> tuple[str, np.ndarray, np.ndarray]:
+    ranges = 0
+    chisqr_av = []
+    redchi_av = []
+    aic_av = []
+    bic_av = []
+    rsquared_av = []
+    sigma3_top = np.array([])
+    sigma3_bottom = np.array([])
+    av_text = ''
+    for fit_result in fit_results:
+        ranges += 1
+        chisqr_av.append(fit_result.chisqr)
+        redchi_av.append(fit_result.redchi)
+        aic_av.append(fit_result.aic)
+        bic_av.append(fit_result.bic)
+        try:
+            rsquared_av.append(fit_result.rsquared)
+        except:
+            debug("fit_result.rsquared error")
+        dely = fit_result.eval_uncertainty(sigma=3)
+        sigma3_top = np.concatenate((sigma3_top, fit_result.best_fit + dely))
+        sigma3_bottom = np.concatenate((sigma3_bottom, fit_result.best_fit - dely))
+    if ranges != 0:
+        chisqr_av = np.round(np.mean(chisqr_av), 6)
+        redchi_av = np.round(np.mean(redchi_av), 6)
+        aic_av = np.round(np.mean(aic_av), 6)
+        bic_av = np.round(np.mean(bic_av), 6)
+        rsquared_av = np.round(np.mean(rsquared_av), 8)
+        av_text = "[[Average Fit Statistics]]" + '\n' \
+                  + f"    chi-square         = {chisqr_av}" + '\n' \
+                  + f"    reduced chi-square = {redchi_av}" + '\n' \
+                  + f"    Akaike info crit   = {aic_av}" + '\n' \
+                  + f"    Bayesian info crit = {bic_av}" + '\n' \
+                  + f"    R-squared          = {rsquared_av}" + '\n' + '\n'
+    return av_text, sigma3_top, sigma3_bottom

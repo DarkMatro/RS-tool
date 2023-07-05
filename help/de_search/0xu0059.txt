@@ -1,5 +1,5 @@
 Y
- 20
+ 20,21,22
 Y-Z
  20
 Y.J
@@ -12,6 +12,8 @@ YANG
  20
 YAOYI
  20
+YBL
+ 21
 YE
  20
 YI
@@ -22,3 +24,7 @@ YN
  20
 YORK
  20,19
+Y_INPUT
+ 22
+Y_RESIDUAL
+ 22

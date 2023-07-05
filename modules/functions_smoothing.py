@@ -9,7 +9,7 @@ from scipy.sparse import csc_matrix, spdiags
 from scipy.sparse.linalg import spsolve
 
 from modules.mlesg import mlesg
-from modules.static_functions import find_nearest_idx
+from modules.functions_for_arrays import nearest_idx
 
 
 def smooth_savgol(item: tuple[str, np.ndarray], params: tuple[int, int]) -> tuple[str, np.ndarray]:
@@ -229,7 +229,7 @@ def smooth_mlesg(item: tuple[str, np.ndarray], params: tuple[float, int, float])
     peaks, properties = find_peaks(y_d, distance=1.5 * distance, width=(distance, 5 * distance),
                                    height=(1 - min_height * 2, 1))
     if not peaks.any():
-        peaks = [find_nearest_idx(y_d, y_max)]
+        peaks = [nearest_idx(y_d, y_max)]
     filtered = mlesg(y_axis, x_axis, peaks, snr=snr, g_sigma=sigma)
     # plt.plot(y_axis)
     # plt.plot(y_d)

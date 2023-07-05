@@ -97,6 +97,12 @@ span.de_38AAE45C6C
 	font-size: 12pt;
 	color:#ff0000;
 }
+span.de_488B32347D
+{
+	font-family: "Symbol";
+	font-size: 14pt;
+	color:#000000;
+}
 span.de_4AF4BF9DD6
 {
 	font-family: "Arial";
@@ -125,6 +131,13 @@ span.de_56F4564E24
 	font-family: "Arial";
 	font-size: 12pt;
 	color:#000000;
+}
+span.de_585AE78DFF
+{
+	font-family: "Times New Roman";
+	font-size: 14pt;
+	color:#000000;
+	font-style:italic;
 }
 span.de_68B99ACC5C
 {
@@ -211,6 +224,12 @@ span.de_B3C12BA318
 	font-family: "Ableton Sans Small";
 	color:#ff003c;
 }
+span.de_BA39CD3CF1
+{
+	font-family: "Times New Roman";
+	font-size: 16pt;
+	color:#000000;
+}
 span.de_C0E7FF3839
 {
 	font-family: "Arial";
@@ -242,6 +261,12 @@ span.de_CA1A7AD334
 	font-family: "Arial";
 	font-size: 14pt;
 	color:#ff0000;
+}
+span.de_CAB14B116D
+{
+	font-family: "Times New Roman";
+	font-size: 14pt;
+	color:#000000;
 }
 span.de_CBCA81314A
 {
@@ -290,6 +315,12 @@ span.de_F3194616F1
 {
 	font-family: "Ableton Sans Light";
 	font-size: 12pt;
+	color:#000000;
+}
+span.de_FEAC54B5A3
+{
+	font-family: "Times New Roman Greek";
+	font-size: 14pt;
 	color:#000000;
 }
 span.de_FEB1B86AF9

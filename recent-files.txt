@@ -1,10 +1,9 @@
-C:/Users/Matro/Documents/RS-tool/231231.zip
-C:/Users/Matro/Desktop/Все спектры 2 группы с и без.zip
-C:/Users/Matro/Documents/RS-tool/бактерии все.zip
-C:/Users/Matro/Documents/RS-tool/geli_prod.zip
-C:/Users/Matro/Documents/RS-tool/гели.zip
-C:/Users/Matro/Documents/RS-tool/example project.zip
-C:/Program Files (x86)/RS-tool/Examples/example production project.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/биогели.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/БАКТЕРИИ.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/1000.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/2000.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.zip
 C:/Program Files (x86)/RS-tool/Examples/example project.zip

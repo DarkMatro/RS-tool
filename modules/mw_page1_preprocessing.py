@@ -2,8 +2,8 @@ from asyncqtpy import asyncSlot
 from qtpy.QtWidgets import QMessageBox
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from modules.static_functions import cut_spectrum, get_average_spectrum, random_rgb, find_first_right_local_minimum, \
-    find_first_left_local_minimum, find_nearest_idx, convert, find_nearest, find_fluorescence_beginning, \
+from modules.static_functions import get_average_spectrum, random_rgb, find_first_right_local_minimum, \
+    find_first_left_local_minimum, convert, find_fluorescence_beginning, \
     find_nearest_by_idx, subtract_cosmic_spikes_moll, interpolate
 from os import environ
 from asyncio import gather
@@ -16,7 +16,8 @@ from qtpy.QtGui import QColor
 from qtpy.QtCore import Qt
 from modules.default_values import baseline_methods, smoothing_methods, normalize_methods
 from modules.functions_normalize import get_emsc_average_spectrum
-
+from modules.functions_cut_trim import cut_spectrum
+from modules.functions_for_arrays import nearest_idx, find_nearest
 
 
 class PreprocessingLogic:
@@ -27,7 +28,7 @@ class PreprocessingLogic:
         self.ConvertedDict = dict()
         self.CuttedFirstDict = dict()
         self.NormalizedDict = dict()
-        self.SmoothedDict = dict()
+        self.smoothed_spectra = dict()
         self.baseline_dict = dict()
         self.baseline_corrected_dict = dict()
         self.baseline_corrected_not_trimmed_dict = dict()
@@ -289,7 +290,7 @@ class PreprocessingLogic:
         mw.current_executor = executor
         with executor:
             mw.current_futures = [mw.loop.run_in_executor(executor, interpolate, mw.ImportedArray[i], i, ref_file)
-                                    for i in filenames]
+                                  for i in filenames]
             for future in mw.current_futures:
                 future.add_done_callback(mw.progress_indicator)
             interpolated = await gather(*mw.current_futures)
@@ -486,7 +487,7 @@ class PreprocessingLogic:
             x_axis = arr[:, 0]
             break
         laser_nm = mw.ui.laser_wl_spinbox.value()
-        nearest_idx = find_nearest_idx(x_axis, laser_nm + 5)
+        near_idx = nearest_idx(x_axis, laser_nm + 5)
         max_ccd_value = mw.ui.max_CCD_value_spinBox.value()
         executor = ThreadPoolExecutor()
         if n_files >= 12_000:
@@ -494,7 +495,7 @@ class PreprocessingLogic:
         mw.current_executor = executor
         with executor:
             mw.current_futures = [
-                mw.loop.run_in_executor(executor, convert, i, nearest_idx, laser_nm, max_ccd_value)
+                mw.loop.run_in_executor(executor, convert, i, near_idx, laser_nm, max_ccd_value)
                 for i in mw.ImportedArray.items()]
             for future in mw.current_futures:
                 future.add_done_callback(mw.progress_indicator)
@@ -738,7 +739,7 @@ class PreprocessingLogic:
     # region baseline_correction
     @asyncSlot()
     async def baseline_correction(self):
-        if not self.SmoothedDict or len(self.SmoothedDict) == 0:
+        if not self.smoothed_spectra or len(self.smoothed_spectra) == 0:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Information)
             msg.setText("No spectra for baseline correction")
@@ -757,7 +758,7 @@ class PreprocessingLogic:
         mw.time_start = datetime.now()
         mw.ui.statusBar.showMessage('Baseline correction...')
         mw.close_progress_bar()
-        n_files = len(self.SmoothedDict)
+        n_files = len(self.smoothed_spectra)
         mw.open_progress_bar(max_value=n_files)
         mw.open_progress_dialog("Baseline correction...", "Cancel", maximum=n_files)
         method = mw.ui.baseline_correction_method_comboBox.currentText()
@@ -769,7 +770,8 @@ class PreprocessingLogic:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
         with executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params) for i in self.SmoothedDict.items()]
+            mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+                                  for i in self.smoothed_spectra.items()]
             for future in mw.current_futures:
                 future.add_done_callback(mw.progress_indicator)
             baseline_corrected = await gather(*mw.current_futures)
@@ -790,9 +792,12 @@ class PreprocessingLogic:
         match method:
             case 'Poly':
                 params = mw.ui.polynome_degree_spinBox.value()
-            case 'ModPoly' | 'iModPoly' | 'iModPoly+':
+            case 'ModPoly' | 'iModPoly':
                 params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
                           mw.ui.n_iterations_spinBox.value()]
+            case 'ExModPoly':
+                params = [float(mw.ui.polynome_degree_spinBox.value()), mw.ui.grad_doubleSpinBox.value(),
+                          float(mw.ui.n_iterations_spinBox.value())]
             case 'Penalized poly':
                 params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
                           mw.ui.n_iterations_spinBox.value(), mw.ui.alpha_factor_doubleSpinBox.value(),

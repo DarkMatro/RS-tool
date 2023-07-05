@@ -94,7 +94,7 @@ class PandasModel(QAbstractTableModel):
     def row_data(self, row: int):
         return self._dataframe.iloc[row]
 
-    def get_df_by_multiindex(self, mi: MultiIndex) -> DataFrame:
+    def get_df_by_multiindex(self, mi: MultiIndex) -> DataFrame | None:
         return self._dataframe.loc[mi]
 
     def query_result(self, q: str) -> DataFrame:
@@ -265,6 +265,9 @@ class PandasModelInputTable(PandasModel):
 
     def row_data_by_index(self, idx: str):
         return self._dataframe.loc[idx]
+
+    def min_fwhm(self) -> float:
+        return np.min(self.get_column('FWHM, cm\N{superscript minus}\N{superscript one}').values)
 
 
 class PandasModelGroupsTable(PandasModel):
@@ -460,6 +463,10 @@ class PandasModelDeconvLinesTable(PandasModel):
         self.modelReset.emit()
         return idx
 
+    @property
+    def indexes(self):
+        return self._dataframe.index
+
     def free_index(self) -> int:
         idx = len(self._dataframe)
         if idx in self._dataframe.index:
@@ -588,6 +595,12 @@ class PandasModelFitParamsTable(PandasModel):
         super().__init__(dataframe)
         self.parent = parent
         self._dataframe = dataframe
+
+    @property
+    def filenames(self) -> list[str]:
+        filenames = self._dataframe.index.levels[0].values
+        filenames = [i for i in filenames if i]
+        return filenames
 
     def append_row(self, line_index: int, param_name: str, param_value: float, min_v: float = None,
                    max_v: float = None, filename: str = '') -> None:

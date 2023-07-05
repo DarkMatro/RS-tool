@@ -99,3 +99,4 @@ def normalize_minmax(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
     y_axis_pre_norm = np.subtract(y_axis, y_min)
     y_axis_norm = np.divide(y_axis_pre_norm, norm)
     return key, np.vstack((arr[:, 0], y_axis_norm)).T
+

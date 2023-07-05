@@ -1070,12 +1070,12 @@ QLabel:disabled {
 
 QFrame[frameShape="4"] {
     border-width: 1px 0 0 0;
-    background: none;
+    background: {{secondaryLightColor}};
 }
 
 QFrame[frameShape="5"] {
     border-width: 0 1px 0 0;
-    background: none;
+    background: {{secondaryLightColor}};
 }
 
 QFrame[frameShape="4"],

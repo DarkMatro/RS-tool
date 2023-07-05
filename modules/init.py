@@ -4,7 +4,6 @@ from logging import warning
 from os import environ
 from pathlib import Path
 from xml.dom.minidom import parse
-
 import jinja2
 from qtpy.QtCore import QDir, Qt
 from qtpy.QtGui import QFontDatabase
@@ -153,10 +152,7 @@ def apply_stylesheet(app: QApplication, theme: tuple[str, str, dict] = ('Mid Dar
     stylesheet = build_stylesheet(theme, invert_secondary, parent)
     if stylesheet is None:
         return
-    try:
-        app.setStyleSheet(stylesheet)
-    except:
-        app.style_sheet = stylesheet
+    app.setStyleSheet(stylesheet)
 
 
 def opacity(theme: dict, value: float = 0.5) -> str:

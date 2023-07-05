@@ -1,9 +1,11 @@
+- File "joblib\_memmapping_reducer.py", line 594 and 609, in register_folder_finalizer commented to avoid running program process copy.
+
 pyqtgraph -
 1. exporters -SVGExporter - generateSvg no backgroundtag,
   __init__ comment in self.params background and scaling stroke, add self.params.param('width').setValue(6000.) to end of __init_
 2. FillBetweenItem - setCurves - comment            # curve1.sigPlotChanged.connect(self.curveChanged)
                                                     # curve2.sigPlotChanged.connect(self.curveChanged)
-из-за вылетов после компиляции в С при sigPlotChanged.emit()
+из-за вылетов после компиляции в С при sigPlotChanged.emit() (не обязательно)
 
     def setCurves(self, curve1, curve2):
         """Set the curves to fill between.
@@ -30,7 +32,7 @@ pyqtgraph -
         self.setZValue(min(curve1.zValue(), curve2.zValue())-1)
         self.curveChanged()
 
-3. GrahhicsScene.py - add
+3. GrahhicsScene.py - add (не обязательно)
 
     def exportSVG(self):
         from ..exporters import SVGExporter

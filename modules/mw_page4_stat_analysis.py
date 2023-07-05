@@ -110,9 +110,14 @@ class StatAnalysisLogic:
         main_window.ui.statusBar.showMessage('Fitting model...')
         main_window.close_progress_bar()
         main_window.open_progress_bar(max_value=0)
-        main_window.open_progress_dialog("Fitting Classificator...", "Cancel", maximum=0)
+        main_window.open_progress_dialog("Fitting %s Classificator..." % cl_type, "Cancel", maximum=0)
         X, Y, feature_names, target_names, _ = self.dataset_for_ml()
-
+        if main_window.ui.random_state_cb.isChecked():
+            rng = np.random.RandomState(main_window.ui.random_state_sb.value())
+        else:
+            rng = None
+        ros = RandomOverSampler(random_state=rng)
+        X, Y = ros.fit_resample(X, Y)
         if cl_type == 'XGBoost':
             Y = self.corrected_class_labels(Y)
         y_test_bin = None
@@ -120,18 +125,13 @@ class StatAnalysisLogic:
         if len(target_names) > 2:
             Y_bin = label_binarize(Y, classes=list(np.unique(Y)))
             _, _, _, y_test_bin = train_test_split(X, Y_bin, test_size=test_size)
-        if main_window.ui.random_state_cb.isChecked():
-            rng = np.random.RandomState(main_window.ui.random_state_sb.value())
-        else:
-            rng = None
-        ros = RandomOverSampler(random_state=rng)
-        X, Y = ros.fit_resample(X, Y)
+
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rng)
         executor = ProcessPoolExecutor()
         func = self.classificator_funcs[cl_type]
         # Для БОльших датасетов возможно лучше будет ProcessPoolExecutor. Но таких пока нет
         main_window.current_executor = executor
-        params = None
+        params = {}
         cl_types_using_pca_plsda = list(self.classificator_funcs.keys())
         cl_types_using_pca_plsda.remove('LDA')
         cl_types_using_pca_plsda.remove('PCA')
@@ -144,14 +144,11 @@ class StatAnalysisLogic:
                       'use_pca': use_pca}
         elif cl_type in cl_types_using_pca_plsda:
             params = {'use_pca': use_pca}
-
+        params['refit'] = self.parent.ui.refit_score.currentText()
         with executor:
-            if params is not None:
-                main_window.current_futures = [
-                    main_window.loop.run_in_executor(executor, func, x_train, y_train, x_test, y_test, params)]
-            else:
-                main_window.current_futures = [main_window.loop.run_in_executor(executor, func, x_train, y_train,
-                                                                                x_test, y_test)]
+            main_window.current_futures = [main_window.loop.run_in_executor(executor, func, x_train, y_train, x_test,
+                                                                            y_test, params)]
+
             for future in main_window.current_futures:
                 future.add_done_callback(main_window.progress_indicator)
             result = await gather(*main_window.current_futures)
@@ -229,7 +226,8 @@ class StatAnalysisLogic:
         plt_colors = []
         for cls in classes:
             clr = self.parent.get_color_by_group_number(cls)
-            plt_colors.append(clr.lighter().name())
+            color_name = clr.name() if self.parent.ui.sun_Btn.isChecked() else clr.lighter().name()
+            plt_colors.append(color_name)
         return plt_colors
 
     def get_current_dataset_type_cb(self):
@@ -351,7 +349,7 @@ class StatAnalysisLogic:
             color = self.parent.ui.GroupsTable.model().cell_data_by_idx_col_name(cls, 'Style')['color'].name()
             plot_widget.canvas.axes.scatter(x_tp[:, 0], x_tp[:, 1], marker=mrkr, color=color,
                                             edgecolor='black', s=60)
-            plot_widget.canvas.axes.scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60, color=color)
+            plot_widget.canvas.axes.scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60, color=color, edgecolor='black')
         dr_method = 'PC' if use_pca else 'PLS-DA'
         plot_widget.canvas.axes.set_xlabel(dr_method + '-1 (%.2f%%)' % (explained_variance_ratio[0] * 100),
                                            fontsize=self.parent.axis_label_font_size)
@@ -396,7 +394,7 @@ class StatAnalysisLogic:
         top_indices = np.unique(top_indices)
         predictive_words = feature_names[top_indices]
         # plot feature effects
-        bar_size = 0.25
+        bar_size = 0.5
         padding = 0.75
         y_locs = np.arange(len(top_indices)) * (4 * bar_size + padding)
         ax = plot_widget.canvas.axes
@@ -1320,7 +1318,7 @@ class StatAnalysisLogic:
         plt_colors = []
         for cls in classes:
             clr = main_window.get_color_by_group_number(cls)
-            plt_colors.append(clr.lighter(140).name())
+            plt_colors.append(clr.lighter(155).name())
         tp = y == y_pred  # True Positive
         cmap = LinearSegmentedColormap('', None).from_list('', plt_colors)
         DecisionBoundaryDisplay.from_estimator(model_2d, features_in_2d, grid_resolution=1000, eps=.5, cmap=cmap,
@@ -1337,7 +1335,7 @@ class StatAnalysisLogic:
             main_window.ui.lda_scores_2d_plot_widget.canvas.axes.scatter(x_tp[:, 0], x_tp[:, 1], marker=marker,
                                                                          color=color, edgecolor='black', s=60)
             main_window.ui.lda_scores_2d_plot_widget.canvas.axes.scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60,
-                                                                         color=color)
+                                                                         color=color, edgecolor='black')
         main_window.ui.lda_scores_2d_plot_widget.canvas.axes.set_xlabel(
             'LD-1 (%.2f%%)' % (explained_variance_ratio[0] * 100), fontsize=main_window.axis_label_font_size)
         main_window.ui.lda_scores_2d_plot_widget.canvas.axes.set_ylabel(

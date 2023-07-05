@@ -59,5 +59,11 @@
  3.3. Baseline correction
  3_3__baseline_correction.htm
 21
+ Ex-Mod-Poly
+ ex_mod_poly.htm
+22
+ Алгоритм декомпозиции спектра
+ algoritm_dekompozitsii_spektra.htm
+23
  Функционал программы
  funktsional_programmy.htm
