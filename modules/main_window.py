@@ -34,7 +34,7 @@ from modules.pandas_tables import PandasModelGroupsTable, PandasModelInputTable,
     PandasModelDeconvLinesTable, ComboDelegate, PandasModelFitParamsTable, \
     DoubleSpinBoxDelegate, PandasModelFitIntervals, IntervalsTableDelegate, \
     PandasModelSmoothedDataset, PandasModelBaselinedDataset, PandasModelDeconvolutedDataset, PandasModel, \
-    PandasModelPredictTable, PandasModelPCA
+    PandasModelPredictTable, PandasModelPCA, PandasModelIgnoreDataset
 from modules.default_values import default_values, \
     baseline_parameter_defaults, optimize_extended_range_methods
 from modules.init import QtStyleTools, get_theme, opacity
@@ -350,6 +350,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.interval_end_dsb.setValue(self.default_values['interval_end'])
         self.ui.max_dx_dsb.setValue(self.default_values['max_dx_guess'])
         self.ui.mlp_layer_size_spinBox.setValue(self.default_values['mlp_layer_size_spinBox'])
+        self.ui.max_epoch_spinBox.setValue(self.default_values['max_epoch_spinBox'])
+        self.ui.learning_rate_doubleSpinBox.setValue(self.default_values['learning_rate_doubleSpinBox'])
         self.ui.feature_display_max_spinBox.setValue(self.default_values['feature_display_max_spinBox'])
         self.ui.l_ratio_doubleSpinBox.setValue(self.default_values['l_ratio'])
 
@@ -896,6 +898,30 @@ class MainWindow(QMainWindow, QtStyleTools):
         menu.move(a0.globalPos())
         menu.show()
 
+    def _initial_torch_force_single_plot(self) -> None:
+        self.ui.torch_force_single.page().setHtml('')
+        self.ui.torch_force_single.contextMenuEvent = self.torch_single_context_menu_event
+
+    def torch_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
+        line = QLineEdit(self)
+        menu = QMenu(line)
+        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.torch_force_single.page()))
+        menu.addAction('Refresh', lambda: self.reload_force(self.ui.torch_force_single, 'Torch'))
+        menu.move(a0.globalPos())
+        menu.show()
+
+    def _initial_torch_force_full_plot(self) -> None:
+        self.ui.torch_force_full.page().setHtml('')
+        self.ui.torch_force_full.contextMenuEvent = self.torch_force_full_context_menu_event
+
+    def torch_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
+        line = QLineEdit(self)
+        menu = QMenu(line)
+        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.torch_force_full.page()))
+        menu.addAction('Refresh', lambda: self.reload_force(self.ui.torch_force_full, 'Torch', True))
+        menu.move(a0.globalPos())
+        menu.show()
+
     def _initial_xgboost_force_single_plot(self) -> None:
         self.ui.xgboost_force_single.page().setHtml('')
         self.ui.xgboost_force_single.contextMenuEvent = self.xgboost_force_single_context_menu_event
@@ -978,7 +1004,11 @@ class MainWindow(QMainWindow, QtStyleTools):
                         self.ui.xgboost_dm_plot, self.ui.xgboost_features_plot_widget, self.ui.xgboost_pr_plot,
                         self.ui.xgboost_roc_plot, self.ui.xgboost_scores_plot_widget, self.ui.xgboost_shap_beeswarm,
                         self.ui.xgboost_shap_decision, self.ui.xgboost_shap_heatmap, self.ui.xgboost_shap_means,
-                        self.ui.xgboost_shap_scatter, self.ui.xgboost_shap_waterfall, self.ui.xgboost_tree_plot_widget
+                        self.ui.xgboost_shap_scatter, self.ui.xgboost_shap_waterfall, self.ui.xgboost_tree_plot_widget,
+                        self.ui.torch_scores_plot_widget, self.ui.torch_dm_plot, self.ui.torch_pr_plot,
+                        self.ui.torch_roc_plot, self.ui.torch_shap_beeswarm, self.ui.torch_shap_means,
+                        self.ui.torch_shap_heatmap, self.ui.torch_shap_scatter, self.ui.torch_shap_decision,
+                        self.ui.torch_shap_waterfall
                         ]
         for pl in plot_widgets:
             self.set_canvas_colors(pl.canvas)
@@ -1001,6 +1031,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.stat_analysis_logic.do_update_shap_plots('Random Forest')
         self.stat_analysis_logic.do_update_shap_plots('AdaBoost')
         self.stat_analysis_logic.do_update_shap_plots('MLP')
+        self.stat_analysis_logic.do_update_shap_plots('Torch')
         self.stat_analysis_logic.do_update_shap_plots('XGBoost')
 
     def _update_shap_plots_by_instance(self) -> None:
@@ -1015,6 +1046,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.stat_analysis_logic.do_update_shap_plots_by_instance('Random Forest')
         self.stat_analysis_logic.do_update_shap_plots_by_instance('AdaBoost')
         self.stat_analysis_logic.do_update_shap_plots_by_instance('MLP')
+        self.stat_analysis_logic.do_update_shap_plots_by_instance('Torch')
         self.stat_analysis_logic.do_update_shap_plots_by_instance('XGBoost')
 
     @asyncSlot()
@@ -1024,7 +1056,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def do_update_shap_scatters(self):
         tab_id_and_classificator = [(0, 'LDA'), (1, 'QDA'), (2, 'Logistic regression'), (3, 'NuSVC'),
                                     (4, 'Nearest Neighbors'), (5, 'GPC'), (6, 'Decision Tree'), (7, 'Naive Bayes'),
-                                    (8, 'Random Forest'), (9, 'AdaBoost'), (10, 'MLP'), (11, 'XGBoost')]
+                                    (8, 'Random Forest'), (9, 'AdaBoost'), (10, 'MLP'), (11, 'XGBoost'), (12, 'Torch')]
         for tab_id, classificator in tab_id_and_classificator:
             if self.ui.stat_tab_widget.currentIndex() == tab_id \
                     and classificator in self.stat_analysis_logic.latest_stat_result \
@@ -1244,6 +1276,20 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_mlp_force_single_plot()
         self._initial_mlp_force_full_plot()
 
+    def _initial_torch_plots(self) -> None:
+        self.initial_stat_plot(self.ui.torch_dm_plot)
+        self.initial_stat_plot(self.ui.torch_roc_plot)
+        self.initial_stat_plot(self.ui.torch_pr_plot)
+        self.initial_scores_plot(self.ui.torch_scores_plot_widget)
+        self.initial_shap_plot(self.ui.torch_shap_means)
+        self.initial_shap_plot(self.ui.torch_shap_beeswarm)
+        self.initial_shap_plot(self.ui.torch_shap_heatmap)
+        self.initial_shap_plot(self.ui.torch_shap_scatter)
+        self.initial_shap_plot(self.ui.torch_shap_waterfall)
+        self.initial_shap_plot(self.ui.torch_shap_decision)
+        self._initial_torch_force_single_plot()
+        self._initial_torch_force_full_plot()
+
     def _initial_xgboost_plots(self) -> None:
         self.initial_stat_plot(self.ui.xgboost_dm_plot)
         self.initial_stat_plot(self.ui.xgboost_roc_plot)
@@ -1281,6 +1327,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_ab_plots()
         self._initial_mlp_plots()
         self._initial_xgboost_plots()
+        self._initial_torch_plots()
         self._initial_pca_plots()
         self._initial_plsda_plots()
 
@@ -1464,6 +1511,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.clear_menu.addAction('AdaBoost', lambda: self.clear_selected_step('AdaBoost'))
         self.clear_menu.addAction('MLP', lambda: self.clear_selected_step('MLP'))
         self.clear_menu.addAction('XGBoost', lambda: self.clear_selected_step('XGBoost'))
+        self.clear_menu.addAction('Torch', lambda: self.clear_selected_step('Torch'))
         self.clear_menu.addAction('PCA', lambda: self.clear_selected_step('PCA'))
         self.clear_menu.addAction('PLS-DA', lambda: self.clear_selected_step('PLS-DA'))
         self.clear_menu.addSeparator()
@@ -1531,6 +1579,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.action_fit_mlp.triggered.connect(lambda: self.fit_classificator('MLP'))
         self.action_fit_xgboost = QAction('XGBoost')
         self.action_fit_xgboost.triggered.connect(lambda: self.fit_classificator('XGBoost'))
+        self.action_fit_torch = QAction('Torch')
+        self.action_fit_torch.triggered.connect(lambda: self.fit_classificator('Torch'))
         self.action_fit_pca = QAction('PCA')
         self.action_fit_pca.triggered.connect(lambda: self.fit_classificator('PCA'))
         self.action_fit_plsda = QAction('PLS-DA')
@@ -1540,7 +1590,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         actions = [self.action_fit_lda, self.action_fit_qda, self.action_fit_lr, self.action_fit_svc,
                    self.action_fit_sgd, self.action_fit_gpc, self.action_fit_dt, self.action_fit_nb,
                    self.action_fit_rf, self.action_fit_ab, self.action_fit_mlp, self.action_fit_xgboost,
-                   self.action_fit_pca, self.action_fit_plsda, self.action_redraw_plots]
+                   self.action_fit_torch, self.action_fit_pca, self.action_fit_plsda, self.action_redraw_plots]
         self.stat_analysis_menu.addActions(actions)
         self.ui.stat_analysis_btn.setMenu(self.stat_analysis_menu)
 
@@ -1643,6 +1693,9 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.min_length_spinBox.mouseDoubleClickEvent = self._min_length_mouse_dce
         self.ui.sections_spinBox.mouseDoubleClickEvent = self._sections_mouse_dce
         self.ui.fill_half_window_spinBox.mouseDoubleClickEvent = self._fill_half_window_mouse_dce
+        self.ui.max_epoch_spinBox.mouseDoubleClickEvent = self._max_epoch_spin_box_mouse_dce
+        self.ui.learning_rate_doubleSpinBox.mouseDoubleClickEvent = self._learning_rate_double_spin_box_mouse_dce
+
 
     def _init_params_value_changed(self) -> None:
         self.ui.alpha_factor_doubleSpinBox.valueChanged.connect(self.set_modified)
@@ -1739,9 +1792,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         else:
             return
         if model.rowCount() == 0 or self.predict_logic.is_production_project:
+            self.ui.dataset_features_n.setText('')
             return
         q_res = model.dataframe()
         features_names = list(q_res.columns[2:])
+        n_features = len(features_names)
+        self.ui.dataset_features_n.setText('%s features' % n_features)
         self.ui.current_feature_comboBox.clear()
         self.ui.coloring_feature_comboBox.clear()
         self.ui.coloring_feature_comboBox.addItem('')
@@ -1934,6 +1990,13 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.fill_half_window_spinBox.setValue(self.default_values['fill_half_window'])
 
+    def _learning_rate_double_spin_box_mouse_dce(self, event: QMouseEvent) -> None:
+        if event.buttons() == Qt.MouseButton.MiddleButton:
+            self.ui.learning_rate_doubleSpinBox.setValue(self.default_values['learning_rate_doubleSpinBox'])
+    def _max_epoch_spin_box_mouse_dce(self, event: QMouseEvent) -> None:
+        if event.buttons() == Qt.MouseButton.MiddleButton:
+            self.ui.max_epoch_spinBox.setValue(self.default_values['max_epoch_spinBox'])
+
     def _fraction_dsb_mouse_dce(self, event: QMouseEvent) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
@@ -2076,6 +2139,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_smoothed_dataset_table()
         self._initial_baselined_dataset_table()
         self._initial_deconvoluted_dataset_table()
+        self._initial_ignore_dataset_table()
         self._initial_predict_dataset_table()
         self._initial_pca_features_table()
         self._initial_plsda_vip_table()
@@ -2206,7 +2270,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.fitting.set_rows_visibility()
         row = selected_indexes[0].row()
         idx = self.ui.deconv_lines_table.model().index_by_row(row)
-        if self.fitting.updating_fill_curve_idx is not None:
+        if self.fitting.updating_fill_curve_idx is not None \
+                and self.fitting.updating_fill_curve_idx in self.ui.deconv_lines_table.model().dataframe().index:
             curve_style = self.ui.deconv_lines_table.model().cell_data_by_idx_col_name(
                 self.fitting.updating_fill_curve_idx,
                 'Style')
@@ -2421,6 +2486,19 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     # endregion
 
+    # region ignore features dataset
+
+    def _initial_ignore_dataset_table(self) -> None:
+        self._reset_ignore_dataset_table()
+        self.ui.ignore_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+        self.ui.ignore_dataset_table_view.verticalHeader().setVisible(False)
+
+    def _reset_ignore_dataset_table(self) -> None:
+        df = DataFrame(columns=['Feature'])
+        model = PandasModelIgnoreDataset(self, df, {})
+        self.ui.ignore_dataset_table_view.setModel(model)
+
+    # endregion
     # region predict dataset
 
     def _initial_predict_dataset_table(self) -> None:
@@ -2723,7 +2801,10 @@ class MainWindow(QMainWindow, QtStyleTools):
     def stat_tab_widget_tab_changed(self, i: int):
         self.stat_analysis_logic.update_stat_report_text()
         self.decide_vertical_scroll_bar_visible()
-        self.ui.groupBox_mlp.setVisible(i == 10)
+        self.ui.groupBox_mlp.setVisible(i == 10 or i == 12)
+        self.ui.max_epoch_spinBox.setVisible(i == 12)
+        self.ui.label_max_epoch.setVisible(i == 12)
+        self.ui.label_learning_rate.setVisible(i == 12)
         if i == 8 and 'Random Forest' in self.stat_analysis_logic.latest_stat_result:
             model = self.stat_analysis_logic.latest_stat_result['Random Forest']['model']
             n_trees = len(model.best_estimator_.estimators_)
@@ -3708,6 +3789,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.baselined_dataset_table_view.verticalScrollBar().setValue(event)
         elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 2:
             self.ui.deconvoluted_dataset_table_view.verticalScrollBar().setValue(event)
+        elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 3:
+            self.ui.ignore_dataset_table_view.verticalScrollBar().setValue(event)
         elif self.ui.stackedWidget_mainpages.currentIndex() == 4:
             self.ui.predict_table_view.verticalScrollBar().setValue(event)
         elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 0:
@@ -3877,6 +3960,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             tv = self.ui.baselined_dataset_table_view
         elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 2:
             tv = self.ui.deconvoluted_dataset_table_view
+        elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 3:
+            tv = self.ui.ignore_dataset_table_view
         elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 0:
             tv = self.ui.scrollArea_lda
         elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 1:
@@ -3999,7 +4084,6 @@ class MainWindow(QMainWindow, QtStyleTools):
                     show_distribution(item['x0'], self.fitting.averaged_array,
                                       self.fitting.all_ranges_clustered_x0_sd[i])
             case Qt.Key.Key_F3:
-                return
                 from numpy.polynomial.polynomial import polyval
                 from modules.functions_baseline_correction import baseline_penalized_poly, baseline_loess, baseline_quant_reg, baseline_goldindec
                 from sklearn.metrics import mean_squared_error
@@ -4010,10 +4094,10 @@ class MainWindow(QMainWindow, QtStyleTools):
                 baseline_and_raman = baseline_test + y_raman
                 test_arr = np.vstack((x_axis, baseline_and_raman)).T
                 _, _, corrected_plus = ex_mod_poly(('1', test_arr), [7., 1e-10, 1000.])
-                _, _, corrected_imod = baseline_imodpoly(('3', test_arr), [7, 1e-7, 1000])
-                _, _, corrected_modp = baseline_modpoly(('3', test_arr), [7, 1e-7, 1000])
-                _, _, corrected_quant = baseline_quant_reg(('3', test_arr), [7, 1e-7, 1000, 0.01])
-                _, _, corrected_goldin= baseline_goldindec(('3', test_arr), [7, 1e-7, 1000, 'asymmetric_truncated_quadratic', 0.5, .99])
+                _, _, corrected_imod = baseline_imodpoly(('3', test_arr), [7, 1e-8, 1000])
+                _, _, corrected_modp = baseline_modpoly(('3', test_arr), [7, 1e-10, 1000])
+                _, _, corrected_quant = baseline_penalized_poly(('3', test_arr), [7, 1e-8, 1000, 0.999, 'asymmetric_truncated_quadratic'])
+                _, _, corrected_goldin= baseline_goldindec(('3', test_arr), [7, 1e-9, 1000, 'asymmetric_truncated_quadratic', 0.5, .999])
                 corr_matrix_plus = np.corrcoef(y_raman, corrected_plus[:, 1])
                 corr1 = corr_matrix_plus[0, 1] ** 2
                 rms1 = mean_squared_error(corrected_plus[:, 1], y_raman, squared=False)
@@ -4021,31 +4105,40 @@ class MainWindow(QMainWindow, QtStyleTools):
                 rms3 = mean_squared_error(corrected_modp[:, 1], y_raman, squared=False)
                 rms6 = mean_squared_error(corrected_quant[:, 1], y_raman, squared=False)
                 rms7 = mean_squared_error(corrected_goldin[:, 1], y_raman, squared=False)
-                print('r2 EX-Mod-Poly+ ', corr1,  'rms ', rms1)
+                corrected_plus1 = corrected_plus[corrected_plus < 0]
+                corrected_imod1 = corrected_imod[corrected_imod < 0]
+                corrected_modp1 = corrected_modp[corrected_modp < 0]
+                corrected_quant1 = corrected_quant[corrected_quant < 0]
+                corrected_goldin1 = corrected_goldin[corrected_goldin < 0]
+                area0 = np.trapz(corrected_plus1)
+                area1 = np.trapz(corrected_imod1)
+                area2 = np.trapz(corrected_modp1)
+                area3 = np.trapz(corrected_quant1)
+                area4 = np.trapz(corrected_goldin1)
+                print('r2 EX-Mod-Poly+ ', corr1,  'rms ', rms1, 'area ', area0)
                 corr_matrix_imod = np.corrcoef(y_raman, corrected_imod[:, 1])
                 corr2 = corr_matrix_imod[0, 1] ** 2
-                print('r2 I-Mod-Poly ', corr2 )
+                print('r2 I-Mod-Poly ', corr2, 'area ', area1)
                 corr_matrix_modp = np.corrcoef(y_raman, corrected_modp[:, 1])
                 corr3 = corr_matrix_modp[0, 1] ** 2
-                print('r2 Mod-Poly ', corr3)
+                print('r2 Mod-Poly ', corr3, 'area ', area2)
                 corr_matrix_quant = np.corrcoef(y_raman, corrected_quant[:, 1])
                 corr6 = corr_matrix_quant[0, 1] ** 2
-                print('r2 Quantile regression ', corr6)
+                print('r2 Penalized Poly ', corr6, 'area ', area3)
                 corr_matrix_goldin= np.corrcoef(y_raman, corrected_goldin[:, 1])
                 corr7 = corr_matrix_goldin[0, 1] ** 2
-                print('r2 Goldindec ', corr7)
+                print('r2 Goldindec ', corr7, 'area ', area4)
                 fig, ax = plt.subplots()
                 ax.plot(x_axis, y_raman, label='Synthesized spectrum', color = 'black')
                 ax.plot(x_axis, corrected_plus[:, 1], label='Ex-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr1*100, 3)) + '. RMSE=' + str(np.round(rms1, 2)), color = 'red')
                 ax.plot(x_axis, corrected_imod[:, 1], label='I-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr2*100, 3)) + '. RMSE=' + str(np.round(rms2, 2)), color = 'green')
                 ax.plot(x_axis, corrected_modp[:, 1], label='Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr3*100, 3)) + '. RMSE=' + str(np.round(rms3, 2)), color = 'blue', dashes=[6, 2])
-                ax.plot(x_axis, corrected_quant[:, 1], label='Quantile regression. $\mathregular{r^2}$=' + str(np.round(corr6*100, 3)) + '. RMSE=' + str(np.round(rms6, 2)), color = 'c', dashes=[8, 4])
+                ax.plot(x_axis, corrected_quant[:, 1], label='Penalized Poly. $\mathregular{r^2}$=' + str(np.round(corr6*100, 3)) + '. RMSE=' + str(np.round(rms6, 2)), color = 'c', dashes=[8, 4])
                 ax.plot(x_axis, corrected_goldin[:, 1], label='Goldindec. $\mathregular{r^2}$=' + str(np.round(corr7*100, 3)) + '. RMSE=' + str(np.round(rms7, 2)), color = 'm', dashes=[8, 4])
                 ax.legend()
                 ax.grid()
                 plt.show()
             case Qt.Key.Key_F4:
-                return
                 arr = self.preprocessing.smoothed_spectra['[1]_Здоровый (1).asc']
                 y = arr[:, 1]
                 keyarr = '[1]_Здоровый (1).asc', arr
@@ -4082,7 +4175,6 @@ class MainWindow(QMainWindow, QtStyleTools):
                 ax.grid()
                 plt.show()
             case Qt.Key.Key_F5:
-                return
                 self.arre()
             case Qt.Key.Key_F6:
                 return
@@ -4113,11 +4205,40 @@ class MainWindow(QMainWindow, QtStyleTools):
                 ax.grid()
                 ax.legend()
                 plt.show()
+            case Qt.Key.Key_F9:
+                areas = []
+                for i in self.preprocessing.baseline_corrected_dict.values():
+                    y = i[:, 1]
+                    y = y[y < 0]
+                    area = np.trapz(y)
+                    areas.append(area)
+                mean_area = np.mean(areas)
+                print(mean_area)
+            case Qt.Key.Key_F8:
+                from modules.functions_peak_shapes import gaussian
+                x_axis = next(iter(self.preprocessing.baseline_corrected_dict.values()))[:, 0]
+                self.preprocessing.baseline_corrected_dict.clear()
+                keys = self.preprocessing.smoothed_spectra.keys()
+                for key in keys:
+                    y_axis = np.zeros(x_axis.shape[0])
+                    params_df_values = self.ui.fit_params_table.model().get_df_by_filename('').values
+                    for i in range(0, params_df_values.shape[0], 3):
+                        rnd = np.random.rand(1)[0]
+                        a = params_df_values[i][1] * (1 + (0.01 * rnd - 0.005))
+                        x0 = params_df_values[i+1][1]
+                        dx = params_df_values[i+2][1]
+                        y_shape = gaussian(x_axis, a, x0, dx)
+                        y_axis += y_shape
+                    std = np.std(y_axis)
+                    print(std)
+                    noise = np.random.normal(0, std, x_axis.shape[0])
+                    self.preprocessing.baseline_corrected_dict[key] = np.vstack((x_axis, y_axis + (noise * 10.))).T
             case Qt.Key.Key_F11:
                 if not self.isFullScreen():
                     self.showFullScreen()
                 else:
                     self.showMaximized()
+
     @asyncSlot()
     async def arre(self):
         from itertools import islice
@@ -4364,6 +4485,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             db["DeconvParamsTableDF"] = self.ui.fit_params_table.model().dataframe()
             db["intervals_table_df"] = self.ui.fit_intervals_table_view.model().dataframe()
             db["DeconvLinesTableChecked"] = self.ui.deconv_lines_table.model().checked()
+            db["IgnoreTableChecked"] = self.ui.ignore_dataset_table_view.model().checked
             db["LaserWL"] = self.ui.laser_wl_spinbox.value()
             db["Maxima_count_despike"] = self.ui.maxima_count_despike_spin_box.value()
             db["Despike_fwhm_width"] = self.ui.despike_fwhm_width_doubleSpinBox.value()
@@ -4436,6 +4558,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             db['activation_comboBox'] = self.ui.activation_comboBox.currentText()
             db['refit_score'] = self.ui.refit_score.currentText()
             db['solver_mlp_combo_box'] = self.ui.solver_mlp_combo_box.currentText()
+            db['mlp_layer_size_spinBox'] = self.ui.mlp_layer_size_spinBox.value()
+            db['max_epoch_spinBox'] = self.ui.max_epoch_spinBox.value()
+            db['learning_rate_doubleSpinBox'] = self.ui.learning_rate_doubleSpinBox.value()
             db['feature_display_max_checkBox'] = self.ui.feature_display_max_checkBox.isChecked()
             db['include_x0_checkBox'] = self.ui.include_x0_checkBox.isChecked()
             db['feature_display_max_spinBox'] = self.ui.feature_display_max_spinBox.value()
@@ -4457,6 +4582,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 db["smoothed_dataset_df"] = self.ui.smoothed_dataset_table_view.model().dataframe()
                 db["baselined_dataset_df"] = self.ui.baselined_dataset_table_view.model().dataframe()
                 db["deconvoluted_dataset_df"] = self.ui.deconvoluted_dataset_table_view.model().dataframe()
+                db["ignore_dataset_df"] = self.ui.ignore_dataset_table_view.model().dataframe()
                 db["predict_df"] = self.ui.predict_table_view.model().dataframe()
                 db["ImportedArray"] = self.ImportedArray
                 db["ConvertedDict"] = self.preprocessing.ConvertedDict
@@ -4677,6 +4803,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             if self.ui.deconvoluted_dataset_table_view.model().rowCount() > 0:
                 self.ui.deconvoluted_dataset_table_view.model().dataframe().to_excel(writer,
                                                                                      sheet_name='Deconvoluted dataset')
+            if self.ui.ignore_dataset_table_view.model().rowCount() > 0:
+                self.ui.ignore_dataset_table_view.model().dataframe().to_excel(writer,
+                                                                                     sheet_name='Ignored features')
             if self.ui.pca_features_table_view.model().rowCount() > 0:
                 self.ui.pca_features_table_view.model().dataframe().to_excel(writer, sheet_name='PCA loadings')
             if self.ui.plsda_vip_table_view.model().rowCount() > 0:
@@ -4748,6 +4877,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.interval_checkBox.setChecked(False)
                 self.linearRegionDeconv.setVisible(False)
                 self.ui.deconvoluted_dataset_table_view.model().clear_dataframe()
+                self.ui.ignore_dataset_table_view.model().clear_dataframe()
                 self.fitting.update_template_combo_box()
             case 'Stat':
                 self._initial_all_stat_plots()
@@ -4787,6 +4917,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self._initial_mlp_plots()
             case 'XGBoost':
                 self._initial_xgboost_plots()
+            case 'Torch':
+                self._initial_torch_plots()
             case 'PCA':
                 self._initial_pca_plots()
                 self._initial_pca_features_table()
@@ -4815,6 +4947,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.baselined_dataset_table_view.model().clear_dataframe()
         self._reset_baselined_dataset_table()
         self.ui.deconvoluted_dataset_table_view.model().clear_dataframe()
+        self.ui.ignore_dataset_table_view.model().clear_dataframe()
         self._reset_deconvoluted_dataset_table()
         self.predict_logic.is_production_project = False
         self.predict_logic.stat_models = {}
@@ -4873,6 +5006,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     @asyncSlot()
     async def load_params(self, path: str) -> None:
         self.ui.statusBar.showMessage('Reading data file...')
+        self.fitting.deselect_selected_line()
         self.close_progress_bar()
         self.open_progress_bar()
         self.setEnabled(False)
@@ -4930,6 +5064,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             if "DeconvLinesTableChecked" in db:
                 checked = db["DeconvLinesTableChecked"]
                 self.ui.deconv_lines_table.model().set_checked(checked)
+            if "IgnoreTableChecked" in db:
+                checked = db["IgnoreTableChecked"]
+                self.ui.ignore_dataset_table_view.model().set_checked(checked)
             if "DeconvParamsTableDF" in db:
                 df = db["DeconvParamsTableDF"]
                 self.ui.fit_params_table.model().set_dataframe(df)
@@ -4944,6 +5081,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.baselined_dataset_table_view.model().set_dataframe(db["baselined_dataset_df"])
             if "deconvoluted_dataset_df" in db:
                 self.ui.deconvoluted_dataset_table_view.model().set_dataframe(db["deconvoluted_dataset_df"])
+            if "ignore_dataset_df" in db:
+                self.ui.ignore_dataset_table_view.model().set_dataframe(db["ignore_dataset_df"])
             if "interp_ref_array" in db:
                 self.predict_logic.interp_ref_array = db["interp_ref_array"]
             if "predict_df" in db:
@@ -5128,6 +5267,12 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.activation_comboBox.setCurrentText(db['activation_comboBox'])
             if 'solver_mlp_combo_box' in db:
                 self.ui.solver_mlp_combo_box.setCurrentText(db['solver_mlp_combo_box'])
+            if 'mlp_layer_size_spinBox' in db:
+                self.ui.mlp_layer_size_spinBox.setValue(db['mlp_layer_size_spinBox'])
+            if 'max_epoch_spinBox' in db:
+                self.ui.max_epoch_spinBox.setValue(db['max_epoch_spinBox'])
+            if 'learning_rate_doubleSpinBox' in db:
+                self.ui.learning_rate_doubleSpinBox.setValue(db['learning_rate_doubleSpinBox'])
             if 'refit_score' in db:
                 self.ui.refit_score.setCurrentText(db['refit_score'])
             if 'feature_display_max_checkBox' in db:
@@ -5480,6 +5625,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             if "DeconvLinesTableChecked" in db:
                 checked = db["DeconvLinesTableChecked"]
                 self.ui.deconv_lines_table.model().set_checked(checked)
+            if "IgnoreTableChecked" in db:
+                checked = db["IgnoreTableChecked"]
+                self.ui.ignore_dataset_table_view.model().set_checked(checked)
             if "DeconvParamsTableDF" in db:
                 df = db["DeconvParamsTableDF"]
                 self.ui.fit_params_table.model().set_dataframe(df)
@@ -5524,6 +5672,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             db["DeconvParamsTableDF"] = self.ui.fit_params_table.model().dataframe()
             db["intervals_table_df"] = self.ui.fit_intervals_table_view.model().dataframe()
             db["DeconvLinesTableChecked"] = self.ui.deconv_lines_table.model().checked()
+            db["IgnoreTableChecked"] = self.ui.ignore_dataset_table_view.model().checked
         zf = ZipFile(filename, "w", ZIP_DEFLATED, compresslevel=9)
         zf.write(filename + '.dat', "data.dat")
         zf.write(filename + '.dir', "data.dir")
@@ -5889,6 +6038,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             return
         df = self.fitting.create_deconvoluted_dataset_new()
         self.ui.deconvoluted_dataset_table_view.model().set_dataframe(df)
+        self.fitting.update_ignore_features_table()
 
     @asyncSlot()
     async def fit(self):
@@ -6049,6 +6199,14 @@ class MainWindow(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
+        # if self.ui.activation_comboBox.currentText() == 'identity' and cl_type == 'Torch':
+        #     msg = QMessageBox()
+        #     msg.setIcon(QMessageBox.Icon.Warning)
+        #     msg.setText("Для этой Pytorch сети функция активации identity не допустима. Выбери другую.")
+        #     msg.setWindowTitle("Classificator Fitting failed")
+        #     msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        #     msg.exec()
+        #     return
         try:
             await self.stat_analysis_logic.do_fit_classificator(cl_type)
         except Exception as err:

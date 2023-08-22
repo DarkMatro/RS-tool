@@ -1,6 +1,6 @@
 from modules.functions_baseline_correction import *
 from modules.functions_classificators import do_lda, do_qda, do_lr, do_svc, do_nn, do_gpc, do_dt, do_nb, do_rf, do_ab, \
-    do_mlp, do_pca, do_plsda, do_xgboost
+    do_mlp, do_pca, do_plsda, do_xgboost, do_torch_nn
 from modules.functions_normalize import *
 from modules.functions_peak_shapes import *
 from modules.functions_smoothing import *
@@ -63,6 +63,8 @@ def default_values() -> dict[float | str]:
             'test_data_ratio_spinBox': 25,
             'random_state_sb': 0,
             'mlp_layer_size_spinBox': 100,
+            'max_epoch_spinBox': 10,
+            'learning_rate_doubleSpinBox': .01,
             'feature_display_max_spinBox': 50,
             'l_ratio': .25,
             }
@@ -302,8 +304,8 @@ def normalize_methods() -> dict[str, tuple]:
 def classificator_funcs() -> dict[str, callable]:
     return {'LDA': do_lda, 'QDA': do_qda, 'Logistic regression': do_lr, 'NuSVC': do_svc, 'Nearest Neighbors': do_nn,
             'GPC': do_gpc, 'Decision Tree': do_dt, 'Naive Bayes': do_nb, 'Random Forest': do_rf, 'AdaBoost': do_ab,
-            'MLP': do_mlp, 'XGBoost': do_xgboost, 'PCA': do_pca, 'PLS-DA': do_plsda}
+            'MLP': do_mlp, 'XGBoost': do_xgboost, 'Torch': do_torch_nn, 'PCA': do_pca, 'PLS-DA': do_plsda, }
 
 
 def program_version() -> str:
-    return 'ver. 1.0.04 '
+    return 'ver. 1.0.05 '

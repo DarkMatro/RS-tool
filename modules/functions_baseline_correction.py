@@ -227,7 +227,7 @@ def ex_mod_poly(item: tuple[str, np.ndarray], params: list[float, float, float])
         if i == 0:                                                          # Remove strong raman peaks.
             idx = np.argwhere(y <= baseline).T[0]
             x, y, baseline = x[idx], y[idx], baseline[idx]
-        dev = max(_residual_deviation(y - baseline), 1e-20)
+        dev = max(_residual_deviation(y - baseline), 1e-30)
         y = np.minimum(y, baseline + dev)                                   # Reconstruct model input y data.
         sc = np.abs((dev - dev_prev) / dev)
         stop_criteria.append(sc)

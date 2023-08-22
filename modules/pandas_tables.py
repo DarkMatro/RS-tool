@@ -254,7 +254,10 @@ class PandasModelInputTable(PandasModel):
             self._dataframe.to_excel(writer, sheet_name='Spectrum info')
 
     def flags(self, index):
-        return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
+        if index.column() == 2:
+            return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
+        else:
+            return Qt.ItemIsSelectable | Qt.ItemIsEnabled
 
     def sort_values(self, current_name: str, ascending: bool) -> None:
         self._dataframe = self._dataframe.sort_values(by=current_name, ascending=ascending)
@@ -351,7 +354,7 @@ class PandasModelGroupsTable(PandasModel):
         if role == Qt.EditRole and not index.column() == 1:
             old_value = self._dataframe.iloc[index.row(), index.column()]
             command = CommandUpdateTableCell(self, self.parent, index, value, old_value,
-                                                          'Change group name')
+                                             'Change group name')
             self.parent.undoStack.push(command)
             return True
         else:
@@ -432,7 +435,6 @@ class PandasModelFitIntervals(PandasModel):
         return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
 
     def sort_by_border(self) -> None:
-        print('sort_by_border')
         self._dataframe = self._dataframe.sort_values(by=['Border'])
         self._dataframe.index = np.arange(1, len(self._dataframe) + 1)
         self.modelReset.emit()
@@ -530,7 +532,7 @@ class PandasModelDeconvLinesTable(PandasModel):
         if role == Qt.EditRole and index.column() == 0:
             old_value = self._dataframe.iloc[index.row(), index.column()]
             command = CommandUpdateTableCell(self, self.parent, index, value, old_value,
-                                                          'Change line name')
+                                             'Change line name')
             self.parent.undoStack.push(command)
             return True
         elif role == Qt.CheckStateRole:
@@ -833,6 +835,12 @@ class PandasModelSmoothedDataset(PandasModel):
         else:
             return False
 
+    @property
+    def filenames(self) -> list[str]:
+        filenames = self._dataframe['Filename']
+        filenames = [i for i in filenames if i]
+        return filenames
+
 
 class PandasModelBaselinedDataset(PandasModel):
 
@@ -873,6 +881,12 @@ class PandasModelBaselinedDataset(PandasModel):
         else:
             return False
 
+    @property
+    def filenames(self) -> list[str]:
+        filenames = self._dataframe['Filename']
+        filenames = [i for i in filenames if i]
+        return filenames
+
 
 class PandasModelDeconvolutedDataset(PandasModel):
 
@@ -912,6 +926,72 @@ class PandasModelDeconvolutedDataset(PandasModel):
             return True
         else:
             return False
+
+    @property
+    def filenames(self) -> list[str]:
+        filenames = self._dataframe['Filename']
+        filenames = [i for i in filenames if i]
+        return filenames
+
+    @property
+    def features(self) -> list[str]:
+        return list(self._dataframe.columns.values[2:])
+
+
+class PandasModelIgnoreDataset(PandasModel):
+
+    def __init__(self, parent, dataframe: DataFrame, checked: dict):
+        super().__init__(dataframe)
+        self.parent = parent
+        self._dataframe = dataframe
+        self._checked = checked
+
+    def flags(self, index):
+        return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
+
+    def data(self, index: QModelIndex, role=Qt.ItemDataRole):
+        """Override method from QAbstractTableModel
+
+        Return data cell from the pandas DataFrame
+        """
+        if not index.isValid():
+            return None
+        value = self._dataframe.iloc[index.row(), index.column()]
+
+        if role == Qt.DisplayRole:
+            return str(value)
+        elif role == Qt.ItemDataRole.EditRole:
+            return str(value)
+        if role == Qt.CheckStateRole:
+            checked_name = self._dataframe.iloc[index.row()].Feature
+            return Qt.Checked if checked_name not in self._checked or self._checked[checked_name] is True \
+                else Qt.Unchecked
+        return None
+
+    def setData(self, index, value, role):
+        if role == Qt.CheckStateRole:
+            checked = value == 2
+            checked_name = self._dataframe.iloc[index.row()].Feature
+            self._checked[checked_name] = checked
+            return True
+        else:
+            return False
+
+    @property
+    def checked(self) -> dict:
+        return self._checked
+
+    def set_checked(self, checked: dict) -> None:
+        self._checked = checked
+
+    @property
+    def ignored_features(self) -> list[str]:
+        checked = self._checked
+        ignored_features = []
+        for k, v in checked.items():
+            if not v:
+                ignored_features.append(k)
+        return ignored_features
 
 
 class PandasModelPredictTable(PandasModel):
@@ -1024,7 +1104,7 @@ class DoubleSpinBoxDelegate(QStyledItemDelegate):
         self.sigLineParamChanged.emit(new_float, line_index, param_name)
         self.RS.fitting.CommandDeconvLineDraggedAllowed = False
         command = CommandDeconvLineParameterChanged(self, self.RS, index, new_float, current_float, model,
-                                                                 line_index, param_name, "Edit line %s" % index)
+                                                    line_index, param_name, "Edit line %s" % index)
         self.RS.undoStack.push(command)
 
     @pyqtSlot()
@@ -1101,4 +1181,3 @@ class ComboDelegate(QStyledItemDelegate):
     @pyqtSlot()
     def current_item_changed(self):
         self.commitData.emit(self.sender())
-

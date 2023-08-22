@@ -40,6 +40,35 @@ def update_plot_tree(clf, plot_widget, feature_names, class_names) -> None:
     plot_widget.canvas.figure.tight_layout()
 
 
+def lda_coef_equation(model) -> str:
+    """
+    Формирует уравнение LDA вида
+        a = c1*x1 + c2*x2 ... cn*xn
+        где cn - коэффиент, xn - признак
+    Коэффициенты отсортированы по возрастанию по абсолютной величине.
+
+    Parameters
+    ----------
+    model : LDA model
+
+    Returns
+    -------
+    out : str
+        Equation
+    """
+    for n_ld in range(len(model.best_estimator_.coef_)):
+        coef = model.best_estimator_.coef_[n_ld]
+        feature_names = model.best_estimator_.feature_names_in_
+        name_coef = {}
+        for i, n in enumerate(feature_names):
+            name_coef[n] = coef[i]
+        name_coef = sorted(name_coef.items(), key=lambda x: abs(x[1]), reverse=True)
+        eq_text = 'LD-%s =' % str(n_ld + 1)
+        for feature_name, coef_value in name_coef:
+            eq_text += '+ %s * x(%s) ' % (coef_value, feature_name)
+        return eq_text
+
+
 class StatAnalysisLogic:
 
     def __init__(self, parent):
@@ -59,7 +88,8 @@ class StatAnalysisLogic:
                                        'Random Forest': self.parent.ui.rf_scores_plot_widget,
                                        'AdaBoost': self.parent.ui.ab_scores_plot_widget,
                                        'MLP': self.parent.ui.mlp_scores_plot_widget,
-                                       'XGBoost': self.parent.ui.xgboost_scores_plot_widget},
+                                       'XGBoost': self.parent.ui.xgboost_scores_plot_widget,
+                                       'Torch': self.parent.ui.torch_scores_plot_widget},
                        'feature_plots': {'LDA': self.parent.ui.lda_features_plot_widget,
                                          'Logistic regression': self.parent.ui.lr_features_plot_widget,
                                          'NuSVC': self.parent.ui.svc_features_plot_widget},
@@ -73,7 +103,8 @@ class StatAnalysisLogic:
                                     'Random Forest': self.parent.ui.rf_dm_plot,
                                     'AdaBoost': self.parent.ui.ab_dm_plot,
                                     'MLP': self.parent.ui.mlp_dm_plot,
-                                    'XGBoost': self.parent.ui.xgboost_dm_plot},
+                                    'XGBoost': self.parent.ui.xgboost_dm_plot,
+                                    'Torch': self.parent.ui.torch_dm_plot},
                        'pr_plots': {'LDA': self.parent.ui.lda_pr_plot, 'QDA': self.parent.ui.qda_pr_plot,
                                     'Logistic regression': self.parent.ui.lr_pr_plot,
                                     'NuSVC': self.parent.ui.svc_pr_plot,
@@ -84,7 +115,8 @@ class StatAnalysisLogic:
                                     'Random Forest': self.parent.ui.rf_pr_plot,
                                     'AdaBoost': self.parent.ui.ab_pr_plot,
                                     'MLP': self.parent.ui.mlp_pr_plot,
-                                    'XGBoost': self.parent.ui.xgboost_pr_plot},
+                                    'XGBoost': self.parent.ui.xgboost_pr_plot,
+                                    'Torch': self.parent.ui.torch_pr_plot},
                        'roc_plots': {'LDA': self.parent.ui.lda_roc_plot, 'QDA': self.parent.ui.qda_roc_plot,
                                      'Logistic regression': self.parent.ui.lr_roc_plot,
                                      'NuSVC': self.parent.ui.svc_roc_plot,
@@ -95,7 +127,8 @@ class StatAnalysisLogic:
                                      'Random Forest': self.parent.ui.rf_roc_plot,
                                      'AdaBoost': self.parent.ui.ab_roc_plot,
                                      'MLP': self.parent.ui.mlp_roc_plot,
-                                     'XGBoost': self.parent.ui.xgboost_roc_plot},
+                                     'XGBoost': self.parent.ui.xgboost_roc_plot,
+                                     'Torch': self.parent.ui.torch_roc_plot},
                        }
 
     @asyncSlot()
@@ -142,6 +175,16 @@ class StatAnalysisLogic:
                       'solver': main_window.ui.solver_mlp_combo_box.currentText(),
                       'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
                       'use_pca': use_pca}
+        elif cl_type == 'Torch' and main_window.ui.groupBox_mlp.isChecked():
+            params = {'activation': main_window.ui.activation_comboBox.currentText(),
+                      'solver': main_window.ui.solver_mlp_combo_box.currentText(),
+                      'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
+                      'max_epoch': main_window.ui.max_epoch_spinBox.value(),
+                      'learning_rate': main_window.ui.learning_rate_doubleSpinBox.value(),
+                      'use_pca': use_pca}
+        elif cl_type == 'Torch' and not main_window.ui.groupBox_mlp.isChecked():
+            params = {'max_epoch': main_window.ui.max_epoch_spinBox.value(),
+                      'use_pca': use_pca}
         elif cl_type in cl_types_using_pca_plsda:
             params = {'use_pca': use_pca}
         params['refit'] = self.parent.ui.refit_score.currentText()
@@ -158,6 +201,7 @@ class StatAnalysisLogic:
             return
         result = result[0]
         result['X'] = X
+        result['Y'] = Y
         result['y_train'] = y_train
         result['use_pca'] = use_pca
         result['y_test'] = y_test
@@ -213,6 +257,9 @@ class StatAnalysisLogic:
                 classes.append(int(i))
             if len(classes) > 1:
                 q_res = model.query_result_with_list('Class == @input_list', classes)
+        if selected_dataset == 'Deconvoluted':
+            ignored_features = main_window.ui.ignore_dataset_table_view.model().ignored_features
+            q_res = q_res.drop(ignored_features, axis=1)
         y = list(q_res['Class'])
         classes = np.unique(q_res['Class'].values)
         if main_window.predict_logic.is_production_project:
@@ -268,6 +315,10 @@ class StatAnalysisLogic:
         @param metrics_result:
         @param top: top 5 features for each class
         @return:
+
+        Parameters
+        ----------
+        classificator_type
         """
         text = '\n' + 'Accuracy score (test data): {!s}%'.format(metrics_result['accuracy_score']) + '\n' \
                + 'Accuracy score (train data): {!s}%'.format(metrics_result['accuracy_score_train']) + '\n' \
@@ -276,7 +327,8 @@ class StatAnalysisLogic:
                + 'F1 score: {!s}%'.format(metrics_result['f1_score']) + '\n' \
                + 'F_beta score: {!s}%'.format(metrics_result['fbeta_score']) + '\n' \
                + 'Hamming loss score: {!s}%'.format(metrics_result['hamming_loss']) + '\n' \
-               + 'Jaccard score: {!s}%'.format(metrics_result['jaccard_score']) + '\n' + '\n'
+               + 'Jaccard score: {!s}%'.format(metrics_result['jaccard_score']) + '\n' \
+               + 'AUC: {!s}%'.format(metrics_result['AUC']) + '\n' + '\n'
         if top is not None:
             text += 'top 5 features per class:' + '\n' + str(top) + '\n'
         if cv_scores is not None:
@@ -289,6 +341,8 @@ class StatAnalysisLogic:
             text += 'N Trees: %s' % len(model.best_estimator_.estimators_) + '\n'
         elif classificator_type == 'AdaBoost':
             text += 'N Trees: %s' % len(model.estimators_) + '\n'
+        if classificator_type == 'LDA' and model:
+            text += lda_coef_equation(model) + '\n'
         self.parent.ui.stat_report_text_edit.setText(text)
         if metrics_result['classification_report'] is None:
             return
@@ -421,7 +475,7 @@ class StatAnalysisLogic:
         ax.cla()
         ax.plot([0, 1], [0, 1], "--", label="chance level (AUC = 0.5)", color=self.parent.theme_colors['primaryColor'])
         RocCurveDisplay.from_estimator(model, x_test, y_test,
-                                       name=target_names[1], color='darkorange', ax=ax, )
+                                       name=target_names[0], color='darkorange', ax=ax, )
         ax.axis("square")
         ax.set_xlabel("False Positive Rate", fontsize=self.parent.axis_label_font_size)
         ax.set_ylabel("True Positive Rate", fontsize=self.parent.axis_label_font_size)
@@ -616,9 +670,10 @@ class StatAnalysisLogic:
                 plot_widget = self.parent.ui.mlp_shap_means
             case 'XGBoost':
                 plot_widget = self.parent.ui.xgboost_shap_means
+            case 'Torch':
+                plot_widget = self.parent.ui.torch_shap_means
             case _:
                 return
-
         fig = plot_widget.canvas.figure
         try:
             fig.clear()
@@ -645,7 +700,7 @@ class StatAnalysisLogic:
             shap_values = shap_values[class_i]
         elif not isinstance(shap_values, list) and len(shap_values.shape) == 3:
             shap_values = shap_values[..., class_i]
-        shap.plots.bar(shap_values, show=False, max_display=20, ax=fig.gca(), fig=fig)
+        shap.plots.bar(shap_values, show=True, max_display=20, ax=fig.gca(), fig=fig)
         self.parent.set_canvas_colors(plot_widget.canvas)
         try:
             plot_widget.canvas.figure.tight_layout()
@@ -685,6 +740,8 @@ class StatAnalysisLogic:
                 plot_widget = self.parent.ui.mlp_shap_beeswarm
             case 'XGBoost':
                 plot_widget = self.parent.ui.xgboost_shap_beeswarm
+            case 'Torch':
+                plot_widget = self.parent.ui.torch_shap_beeswarm
             case _:
                 return
 
@@ -693,7 +750,8 @@ class StatAnalysisLogic:
         else:
             plt.style.use(self.parent.plt_style)
         if self.parent.ui.sun_Btn.isChecked():
-            color = None
+            # color = None
+            color = plt.get_cmap("copper")
         else:
             color = plt.get_cmap("cool")
         if binary:
@@ -755,6 +813,8 @@ class StatAnalysisLogic:
                 plot_widget = self.parent.ui.mlp_shap_scatter
             case 'XGBoost':
                 plot_widget = self.parent.ui.xgboost_shap_scatter
+            case 'Torch':
+                plot_widget = self.parent.ui.torch_shap_scatter
             case _:
                 return
 
@@ -818,6 +878,8 @@ class StatAnalysisLogic:
                 plot_widget = self.parent.ui.mlp_shap_heatmap
             case 'XGBoost':
                 plot_widget = self.parent.ui.xgboost_shap_heatmap
+            case 'Torch':
+                plot_widget = self.parent.ui.torch_shap_heatmap
             case _:
                 return
 
@@ -953,6 +1015,8 @@ class StatAnalysisLogic:
                 plot_widget = self.parent.ui.mlp_shap_decision
             case 'XGBoost':
                 plot_widget = self.parent.ui.xgboost_shap_decision
+            case 'Torch':
+                plot_widget = self.parent.ui.torch_shap_decision
             case _:
                 return
         model = self.get_current_dataset_type_cb()
@@ -1072,6 +1136,8 @@ class StatAnalysisLogic:
                 plot_widget = self.parent.ui.mlp_shap_waterfall
             case 'XGBoost':
                 plot_widget = self.parent.ui.xgboost_shap_waterfall
+            case 'Torch':
+                plot_widget = self.parent.ui.torch_shap_waterfall
             case _:
                 return
         model = self.get_current_dataset_type_cb()
@@ -1137,7 +1203,7 @@ class StatAnalysisLogic:
                     ('GPC', self.parent.ui.gpc_force_single), ('Decision Tree', self.parent.ui.dt_force_single),
                     ('Naive Bayes', self.parent.ui.nb_force_single), ('Random Forest', self.parent.ui.rf_force_single),
                     ('AdaBoost', self.parent.ui.ab_force_single), ('MLP', self.parent.ui.mlp_force_single),
-                    ('XGBoost', self.parent.ui.xgboost_force_single)]
+                    ('XGBoost', self.parent.ui.xgboost_force_single), ('Torch', self.parent.ui.torch_force_single)]
         for cl_type, plot_widget in cl_types:
             if clasificator_type != '' and clasificator_type != cl_type:
                 continue
@@ -1164,7 +1230,7 @@ class StatAnalysisLogic:
                     ('GPC', self.parent.ui.gpc_force_full), ('Decision Tree', self.parent.ui.dt_force_full),
                     ('Naive Bayes', self.parent.ui.nb_force_full), ('Random Forest', self.parent.ui.rf_force_full),
                     ('AdaBoost', self.parent.ui.ab_force_full), ('MLP', self.parent.ui.mlp_force_full),
-                    ('XGBoost', self.parent.ui.xgboost_force_full)]
+                    ('XGBoost', self.parent.ui.xgboost_force_full), ('Torch', self.parent.ui.torch_force_full)]
         for cl_type, plot_widget in cl_types:
             if clas_type != '' and clas_type != cl_type:
                 continue
@@ -1193,9 +1259,17 @@ class StatAnalysisLogic:
         model_results = self.latest_stat_result[cl_type]
         model = model_results['model']
         y_train_plus_test = model_results['y_train_plus_test']
-        features_in_2d = model_results['features_in_2d']
-        target_names = model_results['target_names']
+        if cl_type != 'Torch':
+            features_in_2d = model_results['features_in_2d']
+            y_pred_2d = model_results['y_pred_2d']
+            model_2d = model_results['model_2d']
+        x_test = model_results['x_test']
         y_test = model_results['y_test']
+        if cl_type == 'Torch':
+            x_test = np.array(x_test.values).astype(np.float32)
+            y_test = np.array(y_test).astype(np.int64) - 1
+        target_names = model_results['target_names']
+
         y_score = model_results['y_score']
         y_onehot_test = model_results['y_onehot_test']
         if 'y_score_dec_func' not in model_results:
@@ -1206,9 +1280,9 @@ class StatAnalysisLogic:
             use_pca = True
         else:
             use_pca = model_results['use_pca']
-        y_pred_2d = model_results['y_pred_2d']
+
         y_test_bin = model_results['y_test_bin']
-        model_2d = model_results['model_2d']
+
         y_pred = model_results['y_pred']
         explained_variance_ratio = None
         if 'explained_variance_ratio' in model_results:
@@ -1218,14 +1292,29 @@ class StatAnalysisLogic:
         binary = len(classes) == 2
         if cl_type == 'LDA':
             if model_results['features_in_2d'].shape[1] == 1:
-                self.update_lda_scores_plot_1d(classes, y_train_plus_test, features_in_2d)
+                # self.update_lda_scores_plot_1d(classes, y_train_plus_test, features_in_2d)
+                self.decision_score(model.decision_function(model_results['X']), target_names, model.classes_,
+                                    model_results['Y'], self.parent.ui.lda_scores_2d_plot_widget)
             else:
                 self.update_lda_scores_plot_2d(features_in_2d, y_train_plus_test, y_pred, model, model_2d)
+        elif cl_type == 'Torch':
+            proba = model.predict_proba(np.array(model_results['X'].values).astype(np.float32))
+            for i in proba:
+                i[0] = -i[0]
+            twoclass_output = []
+            for i in range(proba.shape[0]):
+                v = max(proba[i], key=abs)
+                if v < 0:
+                    v += 1
+                twoclass_output.append(v)
+            twoclass_output = np.array(twoclass_output)
+            self.decision_score(twoclass_output, target_names, model.classes_, model_results['Y'],
+                                self.parent.ui.torch_scores_plot_widget)
         else:
             self.update_scores_plot(features_in_2d, y_train_plus_test, y_pred_2d, model,
                                     model_2d, self.params['score_plots'][cl_type], explained_variance_ratio, use_pca)
         if binary:
-            self.update_roc_plot_bin(model, model_results['x_test'], y_test, target_names,
+            self.update_roc_plot_bin(model, x_test, y_test, target_names,
                                      self.params['roc_plots'][cl_type])
             self.update_pr_plot_bin(y_score_dec_func, y_test, classes[0], self.params['pr_plots'][cl_type], cl_type)
         else:
@@ -1254,11 +1343,48 @@ class StatAnalysisLogic:
             self.update_features_plot_random_forest(model.best_estimator_, self.parent.ui.xgboost_features_plot_widget)
         if cl_type == 'XGBoost':
             self.update_xgboost_tree_plot(model.best_estimator_)
-        self.update_dm_plot(y_test, model_results['x_test'], target_names, model, self.params['dm_plots'][cl_type])
+        self.update_dm_plot(y_test, x_test, target_names, model, self.params['dm_plots'][cl_type])
         self.do_update_shap_plots(cl_type)
         self.do_update_shap_plots_by_instance(cl_type)
 
     # region LDA
+
+    def decision_score(self, twoclass_output, class_names, classes, Y, plot_widget) -> None:
+        main_window = self.parent
+        ax = plot_widget.canvas.axes.axes
+        ax.cla()
+        main_window.ui.lda_scores_1d_plot_widget.setVisible(False)
+        plot_widget.setVisible(True)
+        plot_range = (twoclass_output.min(), twoclass_output.max())
+        min_scores = int(np.round(twoclass_output.min())) - 1
+        max_scores = int(np.round(twoclass_output.max())) + 1
+        rng = int((max_scores - min_scores) / .2)
+        plot_colors = []
+        for cls in classes:
+            clr = main_window.get_color_by_group_number(cls)
+            plot_colors.append(clr.name())
+        y = np.array(Y)
+        centroids = []
+        for i, n, c in zip(range(2), class_names, plot_colors):
+            t_o = twoclass_output[y == (i + 1)]
+            centroid = np.mean(t_o)
+            centroids.append(centroid)
+            ax.hist(
+                t_o,
+                bins=np.linspace(min_scores, max_scores, rng),
+                range=plot_range,
+                facecolor=c,
+                label="Class %s" % n,
+                alpha=0.55,
+                edgecolor="k",
+            )
+            ax.vlines(centroid, 0, len(y) / 5, colors=c, linestyles='dashed')
+        boundary = np.mean(centroids)
+        ax.vlines(boundary, 0, len(y) / 5, colors='black', linestyles='solid')
+        ax.legend(loc="best", prop={'size': self.parent.plot_font_size - 2})
+        ax.set_ylabel("Samples")
+        ax.set_xlabel("Model decision score")
+        ax.set_title("Decision Scores, boundary = %s" % np.round(boundary, 3))
 
     def update_lda_scores_plot_1d(self, classes: np.ndarray, y: list[int], features_in_2d) -> None:
         main_window = self.parent
@@ -1295,7 +1421,7 @@ class StatAnalysisLogic:
                 main_window.lda_scores_1d_plot_item.addItem(inf_line)
                 main_window.lda_1d_inf_lines.append(inf_line)
         if len(main_window.lda_1d_inf_lines) > 1:
-            inf_line_mean = InfiniteLine(np.mean(means), pen=QColor(main_window.theme_colors['inverseTextColor']))
+            inf_line_mean = InfiniteLine(np.mean(means), pen=main_window.plot_text_color)
             main_window.lda_scores_1d_plot_item.addItem(inf_line_mean)
             main_window.lda_1d_inf_lines.append(inf_line_mean)
 

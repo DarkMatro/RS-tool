@@ -114,9 +114,7 @@ QToolBox > QWidget,
 QTabWidget > QWidget {
     border: none;
 }
-QTabWidget::tab-bar {
-    right: 5px;  /*move to the left by 5px */
-}
+
 QTabWidget::pane {
   border: none;
 }
@@ -1731,7 +1729,8 @@ QSizeGrip {
 #dec_table,
 #smoothed_dataset_table_view,
 #baselined_dataset_table_view,
-#deconvoluted_dataset_table_view{
+#deconvoluted_dataset_table_view,
+#ignore_dataset_table_view{
     background-color: {{backgroundInsideColor}};
     border: none;
     border-top: 2px solid;
@@ -1750,7 +1749,8 @@ QSizeGrip {
 #deconv_lines_table::item,
 #smoothed_dataset_table_view::item,
 #baselined_dataset_table_view::item,
-#deconvoluted_dataset_table_view::item{
+#deconvoluted_dataset_table_view::item,
+#ignore_dataset_table_view::item{
   border-color: transparent;
   border-bottom: 1px solid;
   border-left: 1px solid;
@@ -1765,7 +1765,8 @@ QSizeGrip {
 #deconv_lines_table::item:selected,
 #smoothed_dataset_table_view::item:selected,
 #baselined_dataset_table_view::item:selected,
-#deconvoluted_dataset_table_view::item:selected{
+#deconvoluted_dataset_table_view::item:selected,
+#ignore_dataset_table_view::item:selected{
     background-color: {{secondaryDarkColor|opacity(0.2)}};
 }
 

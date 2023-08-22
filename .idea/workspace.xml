@@ -7,7 +7,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="11f6b06c-79ed-4d25-b95c-a8c19fecb829" name="Changes" comment="">
+    <list default="true" id="11f6b06c-79ed-4d25-b95c-a8c19fecb829" name="Changes" comment="v1.0.04&#10;1) Added Recall-precision, F1-Score, accuracy GridSearchCV optimization.&#10;2) Include x0 now refresh Deconvoluted dataset.&#10;3) Fixed Voigt profile.&#10;4) Fixed decomposition report bug with averaged metric.&#10;5) Added new baseline correction method ExModPoly&#10;6) Updated decomposition algorithm.&#10;7) Fixed a lot of minor bugs.&#10;8) Updated third party libraries.">
       <change afterPath="$PROJECT_DIR$/build/main/Analysis-00.toc" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/build/main/COLLECT-00.toc" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/build/main/EXE-00.toc" afterDir="false" />
@@ -23,7 +23,6 @@
       <change afterPath="$PROJECT_DIR$/build/main/main.pkg" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/build/main/warn-main.txt" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/build/main/xref-main.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/changes" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/dist/main/IPython/core/profile/README_STARTUP" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/dist/main/IPython/core/tests/2x2.jpg" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/dist/main/IPython/core/tests/2x2.png" afterDir="false" />
@@ -5665,187 +5664,23 @@
       <change afterPath="$PROJECT_DIR$/dist/main/tk86t.dll" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/dist/main/unicodedata.pyd" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/dist/main/winsound.pyd" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/algoritm_dekompozitsii_spektra.htm" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/de_search/0xu0393.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/de_search/0xu0395.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/de_search/0xu03a7.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_10.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_11.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_12.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_13.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_14.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_15.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_16.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_17.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_18.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_19.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_2.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_20.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_21.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_22.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_23.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_3.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_4.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_5.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_6.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_7.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_8.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_algoritm_dekompozitsii_spektra_custom_9.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_10.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_11.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_12.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_13.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_14.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_15.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_16.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_17.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_18.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_19.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_2.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_20.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_21.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_22.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_23.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_24.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_25.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_26.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_27.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_28.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_3.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_4.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_5.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_6.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_7.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_8.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/drex_ex_mod_poly_custom_9.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/help/ex_mod_poly.htm" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/functions_cut_trim.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/functions_fitting.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/functions_for_arrays.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/functions_guess_raman_lines.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/modules/numba_polyfit.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/RS.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/RS.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_2__nastrojki_programmy.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_2__nastrojki_programmy.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_3__knopki_grafikov.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_3__knopki_grafikov.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_4__vkladka_preprocessing.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_4__vkladka_preprocessing.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_5__vkladka_fitting.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_5__vkladka_fitting.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_6__vkladka_datasets.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_6__vkladka_datasets.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_7__vkladka_stat_analysis.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_7__vkladka_stat_analysis.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/1_8__vkladka_predict.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/1_8__vkladka_predict.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/2_1__zagruzka_fajlov_i_sozdanie_proekta.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/2_1__zagruzka_fajlov_i_sozdanie_proekta.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/2_2__preprocessing.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/2_2__preprocessing.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/2_3__fitting.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/2_3__fitting.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/2_4__obuchenie_klassifikatorov.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/2_4__obuchenie_klassifikatorov.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/2_5__proverka_raboty_klassifikatorov_i_sozdanie_production_project.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/2_5__proverka_raboty_klassifikatorov_i_sozdanie_production_project.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/3_1__normalizatsiya.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/3_1__normalizatsiya.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/3_2__sglazhivanie.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/3_2__sglazhivanie.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/3_3__baseline_correction.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/3_3__baseline_correction.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/3__algoritmy.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/3__algoritmy.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0030.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0030.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0031.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0031.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0032.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0032.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0033.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0033.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0034.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0034.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0035.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0035.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0036.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0036.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0037.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0037.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0038.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0038.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0039.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0039.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0041.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0041.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0042.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0042.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0043.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0043.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0044.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0044.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0045.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0045.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0046.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0046.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0047.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0047.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0048.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0048.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0049.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0049.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu004a.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu004a.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu004b.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu004b.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu004c.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu004c.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu004d.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu004d.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu004e.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu004e.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu004f.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu004f.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0050.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0050.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0051.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0051.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0052.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0052.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0053.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0053.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0054.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0054.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0056.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0056.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0057.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0057.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0058.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0058.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0059.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0059.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu005a.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu005a.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0394.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0394.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0410.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0410.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0411.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0411.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0412.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0412.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0413.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0413.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0414.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0414.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0415.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0415.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0416.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0416.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0417.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0417.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0418.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0418.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu041a.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu041a.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu041b.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu041b.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu041c.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu041c.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu041d.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu041d.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu041e.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu041e.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu041f.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu041f.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0420.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0420.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0421.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0421.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0422.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0422.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0423.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0423.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0424.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0424.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0425.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0425.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0426.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0426.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0427.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0427.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu0428.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu0428.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu042d.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu042d.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/0xu042f.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/0xu042f.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/ids.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/ids.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_search/prefixes.txt" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_search/prefixes.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/de_style.css" beforeDir="false" afterPath="$PROJECT_DIR$/help/de_style.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/drex_1_5__vkladka_fitting_custom_2.png" beforeDir="false" afterPath="$PROJECT_DIR$/help/drex_1_5__vkladka_fitting_custom_2.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/drex_1_7__vkladka_stat_analysis_custom.png" beforeDir="false" afterPath="$PROJECT_DIR$/help/drex_1_7__vkladka_stat_analysis_custom.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/drex_file_list" beforeDir="false" afterPath="$PROJECT_DIR$/help/drex_file_list" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/funktsional_programmy.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/funktsional_programmy.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/index.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/index.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/interfejs_.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/interfejs_.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/js/all.js" beforeDir="false" afterPath="$PROJECT_DIR$/help/js/all.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/js/drexplain.data.index.js" beforeDir="false" afterPath="$PROJECT_DIR$/help/js/drexplain.data.index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/menyu.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/menyu.htm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/help/poshagovaya_instruktsiya_po_primeru_proekta.htm" beforeDir="false" afterPath="$PROJECT_DIR$/help/poshagovaya_instruktsiya_po_primeru_proekta.htm" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/interface.ui" beforeDir="false" afterPath="$PROJECT_DIR$/interface.ui" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib changes" beforeDir="false" afterPath="$PROJECT_DIR$/lib changes" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.spec" beforeDir="false" afterPath="$PROJECT_DIR$/main.spec" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main_rs.spec" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/material/material.css.template" beforeDir="false" afterPath="$PROJECT_DIR$/material/material.css.template" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/MultiLine.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/MultiLine.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/default_values.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/default_values.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/functions_baseline_correction.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/functions_baseline_correction.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/functions_classificators.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/functions_classificators.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/functions_normalize.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/functions_normalize.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/functions_peak_shapes.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/functions_peak_shapes.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/functions_smoothing.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/functions_smoothing.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/init.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/init.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/modules/functions_guess_raman_lines.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/functions_guess_raman_lines.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/mw_page1_preprocessing.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/mw_page1_preprocessing.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/mw_page2_fitting.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/mw_page2_fitting.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/mw_page4_stat_analysis.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/mw_page4_stat_analysis.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/pandas_tables.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/pandas_tables.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/start_program.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/start_program.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/modules/static_functions.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/static_functions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/ui_main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/ui_main_window.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/modules/undo_redo.py" beforeDir="false" afterPath="$PROJECT_DIR$/modules/undo_redo.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/preferences.txt" beforeDir="false" afterPath="$PROJECT_DIR$/preferences.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/recent-files.txt" beforeDir="false" afterPath="$PROJECT_DIR$/recent-files.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/simple_example.png" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -5912,22 +5747,22 @@
     <option name="showExcludedFiles" value="false" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_ADD_EXTERNAL_FILES": "true",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "last_opened_file_path": "C:/Users/Matro/PycharmProjects/RS/images",
-    "run.code.analysis.last.selected.profile": "aDefault",
-    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Matro/PycharmProjects/RS/images&quot;,
+    &quot;run.code.analysis.last.selected.profile&quot;: &quot;aDefault&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;
   },
-  "keyToStringList": {
-    "ChangesTree.GroupingKeys": [
-      "directory"
+  &quot;keyToStringList&quot;: {
+    &quot;ChangesTree.GroupingKeys&quot;: [
+      &quot;directory&quot;
     ]
   }
-}]]></component>
+}</component>
   <component name="PyDebuggerOptionsProvider">
     <option name="mySupportQtDebugging" value="false" />
     <option name="myPyQtBackend" value="pyqt5" />
@@ -6147,7 +5982,14 @@
       <option name="project" value="LOCAL" />
       <updated>1684346229683</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="v1.0.04&#10;1) Added Recall-precision, F1-Score, accuracy GridSearchCV optimization.&#10;2) Include x0 now refresh Deconvoluted dataset.&#10;3) Fixed Voigt profile.&#10;4) Fixed decomposition report bug with averaged metric.&#10;5) Added new baseline correction method ExModPoly&#10;6) Updated decomposition algorithm.&#10;7) Fixed a lot of minor bugs.&#10;8) Updated third party libraries.">
+      <created>1688600628188</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1688600628188</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -6212,7 +6054,8 @@
     <MESSAGE value="1. Global refactoring.&#10;2. Added new stat. plots for Adaboost, XGBoost, RandomForest.&#10;3. Added 'Fixed random state' parameter.&#10;4. Added dimensional reduction method selector.&#10;5. Added 'Do Shapley' parameter.&#10;6. Fixed multiple bugs." />
     <MESSAGE value="1. Fixed critical bug during GridSearchCV parallel processing.&#10; - File &quot;joblib\_memmapping_reducer.py&quot;, line 594 and 609, in register_folder_finalizer commented to avoid running program process copy.&#10; - 'with parallel_backend('multiprocessing', n_jobs=-1):' added to classificator functions&#10;2. Minor bugs fixed." />
     <MESSAGE value="Deleted build, dist folders" />
-    <option name="LAST_COMMIT_MESSAGE" value="Deleted build, dist folders" />
+    <MESSAGE value="v1.0.04&#10;1) Added Recall-precision, F1-Score, accuracy GridSearchCV optimization.&#10;2) Include x0 now refresh Deconvoluted dataset.&#10;3) Fixed Voigt profile.&#10;4) Fixed decomposition report bug with averaged metric.&#10;5) Added new baseline correction method ExModPoly&#10;6) Updated decomposition algorithm.&#10;7) Fixed a lot of minor bugs.&#10;8) Updated third party libraries." />
+    <option name="LAST_COMMIT_MESSAGE" value="v1.0.04&#10;1) Added Recall-precision, F1-Score, accuracy GridSearchCV optimization.&#10;2) Include x0 now refresh Deconvoluted dataset.&#10;3) Fixed Voigt profile.&#10;4) Fixed decomposition report bug with averaged metric.&#10;5) Added new baseline correction method ExModPoly&#10;6) Updated decomposition algorithm.&#10;7) Fixed a lot of minor bugs.&#10;8) Updated third party libraries." />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -6249,7 +6092,7 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/modules/functions_classificators.py</url>
-          <line>457</line>
+          <line>460</line>
           <option name="timeStamp" value="964" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
@@ -6259,28 +6102,18 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/modules/mw_page4_stat_analysis.py</url>
-          <line>919</line>
+          <line>981</line>
           <option name="timeStamp" value="969" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/modules/main_window.py</url>
-          <line>2734</line>
+          <line>2815</line>
           <option name="timeStamp" value="973" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/modules/functions_baseline_correction.py</url>
-          <line>658</line>
+          <line>660</line>
           <option name="timeStamp" value="1007" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/modules/mw_page4_stat_analysis.py</url>
-          <line>129</line>
-          <option name="timeStamp" value="1018" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/modules/mw_page4_stat_analysis.py</url>
-          <line>120</line>
-          <option name="timeStamp" value="1023" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/modules/mw_page2_fitting.py</url>
@@ -6301,6 +6134,21 @@
           <url>file://$PROJECT_DIR$/modules/static_functions.py</url>
           <line>611</line>
           <option name="timeStamp" value="1045" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/modules/functions_classificators.py</url>
+          <line>75</line>
+          <option name="timeStamp" value="1048" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/modules/main_window.py</url>
+          <line>6194</line>
+          <option name="timeStamp" value="1050" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/modules/functions_classificators.py</url>
+          <line>708</line>
+          <option name="timeStamp" value="1054" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>

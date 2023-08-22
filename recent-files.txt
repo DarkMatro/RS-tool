@@ -1,9 +1,10 @@
-C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/1000.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/2000.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.zip
-C:/Users/Matro/AppData/Roaming/RS-tool/пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.zip
-C:/Program Files (x86)/RS-tool/Examples/example project.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/брефматрицы и ювенильный дентин.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/э.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/эмаль пародонтит.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/эмаль пародонтит больше спектров.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/example project.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/кюретаж эмаль.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/кюретаж дентин.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/кюретаж цемент.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/биогели.zip
+C:/Users/Matro/AppData/Roaming/RS-tool/Дентин деминерализация.zip

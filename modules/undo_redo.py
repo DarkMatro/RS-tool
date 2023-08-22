@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from gc import collect
 from logging import info, debug
-
+import torch
 from sklearn.model_selection import GridSearchCV
 import lmfit.model
 import numpy as np
@@ -336,13 +336,16 @@ class CommandChangeGroupCellsBatch(QUndoCommand):
             group_number = int(new_value)
         self.input_table.model().change_cell_data(row, 2, group_number)
         filename = self.input_table.model().index_by_row(row)
-        if self.rs.ui.smoothed_dataset_table_view.model().rowCount() > 0:
+        if self.rs.ui.smoothed_dataset_table_view.model().rowCount() > 0 \
+                and filename in self.rs.ui.smoothed_dataset_table_view.model().filenames:
             idx_sm = self.rs.ui.smoothed_dataset_table_view.model().idx_by_column_value('Filename', filename)
             self.rs.ui.smoothed_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_sm, 'Class', group_number)
-        if self.rs.ui.baselined_dataset_table_view.model().rowCount() > 0:
+        if self.rs.ui.baselined_dataset_table_view.model().rowCount() > 0 \
+                and filename in self.rs.ui.baselined_dataset_table_view.model().filenames:
             idx_bl = self.rs.ui.baselined_dataset_table_view.model().idx_by_column_value('Filename', filename)
             self.rs.ui.baselined_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_bl, 'Class', group_number)
-        if self.rs.ui.deconvoluted_dataset_table_view.model().rowCount() > 0:
+        if self.rs.ui.deconvoluted_dataset_table_view.model().rowCount() > 0 \
+                and filename in self.rs.ui.deconvoluted_dataset_table_view.model().filenames:
             idx_dc = self.rs.ui.deconvoluted_dataset_table_view.model().idx_by_column_value('Filename', filename)
             self.rs.ui.deconvoluted_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_dc, 'Class',
                                                                                              group_number)
@@ -2060,7 +2063,8 @@ class CommandAfterFitting(QUndoCommand):
     def prepare_data(self) -> None:
         av_text, sigma3_top, sigma3_bottom = fitting_metrics(self.results)
         for fit_result in self.results:
-            self.fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False), fit_result) + '\n'+'\n'
+            self.fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False),
+                                                      fit_result) + '\n' + '\n'
         x_axis, _ = self.sum_ar
         if self.sigma3_top.shape[0] < x_axis.shape[0]:
             d = x_axis.shape[0] - self.sigma3_top.shape[0]
@@ -2210,7 +2214,6 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.UndoStack = rs.undoStack
         self.loop = rs.loop
         self.prepare_data()
-
 
     @asyncSlot()
     async def prepare_data(self) -> None:
@@ -2371,6 +2374,7 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.rs.fitting.show_current_report_result()
         self.rs.fitting.update_sigma3_curves()
         self.rs.fitting.set_rows_visibility()
+        self.rs.fitting.update_ignore_features_table()
         self.rs.ui.fit_params_table.model().sort_index()
         self.rs.ui.fit_params_table.model().model_reset_emit()
         # print('stop CommandAfterBatchFitting')
@@ -2755,11 +2759,13 @@ class CommandAfterFittingStat(QUndoCommand):
             stat_result_new = self.create_stat_result_lr()
         elif self.cl_type == 'NuSVC':
             stat_result_new = self.create_stat_result_svc()
-        elif self.cl_type == 'Nearest Neighbors' or self.cl_type == 'GPC' or self.cl_type == 'Decision Tree'\
-                or self.cl_type == 'Naive Bayes'\
+        elif self.cl_type == 'Nearest Neighbors' or self.cl_type == 'GPC' or self.cl_type == 'Decision Tree' \
+                or self.cl_type == 'Naive Bayes' \
                 or self.cl_type == 'Random Forest' \
                 or self.cl_type == 'AdaBoost' or self.cl_type == 'MLP' or self.cl_type == 'XGBoost':
             stat_result_new = self.create_stat_result_rf()
+        elif self.cl_type == 'Torch':
+            stat_result_new = self.create_stat_result_torch()
         elif self.cl_type == 'PCA':
             stat_result_new = self.create_stat_result_pca()
         elif self.cl_type == 'PLS-DA':
@@ -2876,6 +2882,34 @@ class CommandAfterFittingStat(QUndoCommand):
         result['shap_values_legacy'] = kernel_explainer.shap_values(result['X'])
         return result
 
+    def create_stat_result_torch(self) -> dict:
+        device = ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+        result = copy.deepcopy(self.result)
+        y_test = result['y_test']
+        x_train = result['x_train']
+        model = result['model']
+        if isinstance(model, GridSearchCV):
+            model = model.best_estimator_
+        result['y_train_plus_test'] = np.concatenate((result['y_train'], y_test))
+        binary = True if len(model.classes_) == 2 else False
+        metrics_result = model_metrics(np.array(y_test) - 1, result['y_pred_test'], binary, result['target_names'])
+        metrics_result['accuracy_score_train'] = result['accuracy_score_train']
+        result['metrics_result'] = metrics_result
+        label_binarizer = LabelBinarizer().fit(result['y_train'])
+        result['y_onehot_test'] = label_binarizer.transform(y_test)
+        if not self.mw.ui.use_shapley_cb.isChecked():
+            return result
+
+        # X = np.array(result['X'].values).astype(np.float32)
+        func = lambda x: model.predict_proba(x.astype(np.float32))[:, 1]
+        med = x_train.median().values.reshape((1, x_train.shape[1])).astype(np.float32)
+        explainer = shap.Explainer(func, med, max_evals=2 * len(result['feature_names']) + 1)
+        kernel_explainer = shap.KernelExplainer(func, med)
+        result['shap_values'] = explainer(result['X'])
+        result['expected_value'] = kernel_explainer.expected_value
+        result['shap_values_legacy'] = kernel_explainer.shap_values(result['X'])
+        return result
+
     def create_stat_result_pca(self) -> dict:
         result = copy.deepcopy(self.result)
         result['y_train_plus_test'] = np.concatenate((self.result['y_train'], self.result['y_test']))
@@ -2919,7 +2953,7 @@ class CommandAfterFittingStat(QUndoCommand):
             self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_pca_plots)
         elif self.cl_type == 'PLS-DA' and self.mw.stat_analysis_logic.latest_stat_result['PLS-DA'] is not None:
             self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plsda_plots)
-        elif self.cl_type != 'PCA' and self.cl_type != 'PLS-DA'\
+        elif self.cl_type != 'PCA' and self.cl_type != 'PLS-DA' \
                 and self.mw.stat_analysis_logic.latest_stat_result[self.cl_type] is not None:
             self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plots, self.cl_type)
 

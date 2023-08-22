@@ -677,7 +677,13 @@ class FittingLogic:
             df_old = self.parent.ui.deconvoluted_dataset_table_view.model().dataframe()
             df = concat([df_old, df])
         df.reset_index(drop=True)
+        self.update_ignore_features_table()
         return df
+
+    def update_ignore_features_table(self):
+        features = self.parent.ui.deconvoluted_dataset_table_view.model().features
+        df = DataFrame(features, columns=['Feature'])
+        self.parent.ui.ignore_dataset_table_view.model().set_dataframe(df)
 
     # region GUESS
     def _parameters_to_guess(self, line_type: str) -> dict:
@@ -1010,6 +1016,9 @@ class FittingLogic:
         # create intervals for create_intervals_data()
         if self.parent.ui.interval_checkBox.isChecked():
             intervals = [(self.parent.ui.interval_start_dsb.value(), self.parent.ui.interval_end_dsb.value())]
+        elif not self.parent.ui.intervals_gb.isChecked():
+            x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
+            intervals = [(x_axis[0], x_axis[-1])]
         else:
             borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
             x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]

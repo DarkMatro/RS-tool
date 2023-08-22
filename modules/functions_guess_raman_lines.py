@@ -104,7 +104,8 @@ def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user
     """
     x_input = n_array[:, 0]
     y_input = n_array[:, 1]
-    y_residual = n_array[:, 1].copy()
+    y_input[y_input < 0.] = 0.
+    y_residual = y_input.copy()
     input_parameters = copy.deepcopy(input_parameters)
     func = input_parameters['func']
     init_model_params = input_parameters['init_model_params']
@@ -622,7 +623,14 @@ def params_func_legend(cur_range_clustered_x0_sd: np.ndarray, n_array: np.ndarra
         func_legend.append((func, legend))
         idx_x0 = nearest_idx(x_axis, x0)
         dx_left, dx_right, arg_left, arg_right, _, _ = possible_peak_dx(n_array, idx_x0)
-        a = np.amax(y_axis[arg_left:arg_right])
+        a = np.amax(y_axis)
+        try:
+            y = y_axis[arg_left:arg_right]
+            if y.size == 0 or y.shape[0] == 0:
+                y = y_axis
+            a = np.amax(y)
+        except ValueError as msg:
+            debug(msg)
         for j, param_name in enumerate(param_names):
             if param_name == 'a':
                 v = max_v = a
@@ -757,6 +765,8 @@ def possible_peak_dx(n_array: np.ndarray, idx_x0: int | np.ndarray[int]) -> tupl
         dx_left = dx_right
     if idx_x0 == y_input.shape[0]:
         dx_right = dx_left
+    if arg_left == arg_right:
+        arg_right += 1
     return dx_left, dx_right, arg_left, arg_right, idx_left_qr, idx_right_qr
 
 
