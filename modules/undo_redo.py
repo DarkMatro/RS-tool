@@ -2883,7 +2883,6 @@ class CommandAfterFittingStat(QUndoCommand):
         return result
 
     def create_stat_result_torch(self) -> dict:
-        device = ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         result = copy.deepcopy(self.result)
         y_test = result['y_test']
         x_train = result['x_train']
@@ -2899,8 +2898,6 @@ class CommandAfterFittingStat(QUndoCommand):
         result['y_onehot_test'] = label_binarizer.transform(y_test)
         if not self.mw.ui.use_shapley_cb.isChecked():
             return result
-
-        # X = np.array(result['X'].values).astype(np.float32)
         func = lambda x: model.predict_proba(x.astype(np.float32))[:, 1]
         med = x_train.median().values.reshape((1, x_train.shape[1])).astype(np.float32)
         explainer = shap.Explainer(func, med, max_evals=2 * len(result['feature_names']) + 1)

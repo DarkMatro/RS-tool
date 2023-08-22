@@ -21,9 +21,8 @@ from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 from joblib import parallel_backend
 from skorch import NeuralNetClassifier
-import torch
 from torch import nn
-
+from torch.optim import SGD, Adam, LBFGS
 
 def _scorers() -> dict:
     return {'precision_score': make_scorer(precision_score),
@@ -664,12 +663,12 @@ def do_torch_nn(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_tes
             model = NeuralNetClassifier(NeuralNetwork, max_epochs=params['max_epoch'], criterion=loss_fn,
                                         iterator_train__shuffle=True, device=device, train_split=False)
             grid_params = {
-            #     'lr': [.1, .01, .02, 1e-3],
+                'lr': [.1, .01, .02, 1e-3],
                 'module__hidden_layer_size': list(h_sizes),
                 'module__input_size': [input_layer_size],
                 'module__output_size': [n_classes],
-                # 'optimizer': [torch.optim.SGD, torch.optim.Adam, torch.optim.LBFGS],
-                # 'module__activation': [nn.Identity(), nn.LogSigmoid(), nn.Tanh(), nn.ReLU()],
+                'optimizer': [SGD, Adam, LBFGS],
+                'module__activation': [nn.Identity(), nn.LogSigmoid(), nn.Tanh(), nn.ReLU()],
             }
             if n_classes > 2:
                 model = GridSearchCV(model, grid_params,  verbose=0, error_score='raise')
@@ -690,27 +689,22 @@ def do_torch_nn(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_tes
                     activation_f = nn.ReLU()
             match params['solver']:
                 case 'lbfgs':
-                    solver = torch.optim.LBFGS
+                    solver = LBFGS
                 case 'sgd':
-                    solver = torch.optim.SGD
+                    solver = SGD
                 case 'adam':
-                    solver = torch.optim.Adam
+                    solver = Adam
                 case _:
-                    solver = torch.optim.SGD
+                    solver = SGD
             net = NeuralNetwork(input_layer_size, n_classes, params['hidden_layer_sizes'], activation_f).to(device)
             print(net)
             model = NeuralNetClassifier(net, max_epochs=params['max_epoch'], criterion=loss_fn, device=device,
                                         lr=params['learning_rate'], iterator_train__shuffle=True, train_split=False,
                                         optimizer=solver)
         model.fit(x_train, y_train)
-        # transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
-        #                                                                          params['use_pca'])
-        # model_2d = make_pipeline(StandardScaler(), copy.deepcopy(model))
-        # model_2d.fit(transformed_2d, y_train)
         y_pred = model.predict(x_train)
         y_pred_test = model.predict(x_test)
         y_pred = np.concatenate((y_pred, y_pred_test))
-        # y_pred_2d = model_2d.predict(features_in_2d)
         accuracy_score_train = np.round(model.score(x_train, y_train) * 100., 5)
         y_score = model.predict_proba(x_test)
         cv_scores = cross_val_score(model, np.concatenate((x_train, x_test)), np.concatenate((y_train, y_test)),
