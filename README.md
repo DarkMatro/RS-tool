@@ -1,26 +1,27 @@
 # Raman spectroscopy processing tool (RS-tool)
-Программа предназначена для обработки Рамановских спектров, разделения спектров на элементарные линии, создание моделей-классификаторов.
+Программа предназначена для обработки Рамановских спектров, декомпозиции спектров, создание моделей-классификаторов для дальнейшей работы с новоми измеренными спектрами.
 
 # Установка
 1. Скачать установщик в разделе Releases, установить.
-2. Установить Graphviz https://graphviz.org/download/.
+2. Установить Graphviz https://graphviz.org/download/. (нужно только для отображения деревьев XGBoost).
 
 # Функционал программы
 - Импорт файлов в формате .txt, .asc в виде двумерного массива со спектрами.
+- Импорт файлов в формате .txt, .asc в виде двумерного массива со спектрами.
 - Сохранение всех данных в файле проекта .zip. Вся информация переводится в бинарный формат и сжимается в zip архиве с максимальной степенью сжатия.
 - Интерполяция для приведения спектров с различными диапазонами длин волн к одному диапазону нм.
-- Despike (удаление случайных шумов).
+- Despike (удаление высокочастотных случайных шумов (наводок с электросети)).
 - Конвертация спектров из диапазона длин волн нм в волновые числа см-1 .
 - Нормализация спектров 6 методами: EMSC, SNV, Area, Trapezoidal rule area, Max intensity, Min-max intensity.
 - Сглаживание спектров 14 методами: MLESG, CEEMDAN, EEMD, EMD, Savitsky-Golay filter, Whittaker smoother, Flat window, Hanning window, Hamming window, Bartlett window, Blackman window, Kaiser window, Median filter, Wiener filter.
-Коррекция базовой линии 42 методами: Poly, ModPoly, iModPoly, ExModPoly, Penalized poly, LOESS, Quantile regression, Goldindec, AsLS, iAsLS, arPLS, airPLS, drPLS, iarPLS, asPLS, psaLSA, DerPSALSA, MPLS, iMor, MorMol, AMorMol, MPSpline, JBCD, Mixture Model, IRSQR, Corner-Cutting, RIA, Dietrich, Golotvin, Std Distribution, FastChrom, FABC.
-- Разделение спектра на сумму элементарных линий. 
-- Используемые линии: Gaussian, Split Gaussian, Skewed Gaussian, Lorentzian, Split Lorentzian, Voigt, Split Voigt, Skewed Voigt, Pseudo Voigt, Split Pseudo Voigt, Pearson4, Split Pearson4, Pearson7, Split Pearson7.
-- Используемые при разделении линий методы оптимизации: "Levenberg-Marquardt",  "Least-Squares, Trust Region Reflective method", 'Differential evolution', 'Basin-hopping', 'Adaptive Memory Programming for Global Optimization', 'Nelder-Mead', 'L-BFGS-B', 'Powell', 'Conjugate-Gradient', 'BFGS', 'Truncated Newton', 'trust-region for constrained optimization', 'Sequential Linear Squares Programming', 'Maximum likelihood via Monte-Carlo Markov Chain', 'Dual Annealing optimization'.
-- Обучение классификаторов и классификация измерений с помощью моделей: 'LDA', 'QDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest', 'AdaBoost', 'MLP' (нейросеть), 'XGBoost'.
+- Коррекция базовой линии 42 методами: Poly, ModPoly, iModPoly, ExModPoly, Penalized poly, LOESS, Quantile regression, Goldindec, AsLS, iAsLS, arPLS, airPLS, drPLS, iarPLS, asPLS, psaLSA, DerPSALSA, MPLS, iMor, MorMol, AMorMol, MPSpline, JBCD, Mixture Model, IRSQR, Corner-Cutting, RIA, Dietrich, Golotvin, Std Distribution, FastChrom, FABC.
+- Алгоритм декомпозиции спектра КР.
+- Используемые профили линий для декомпозиции: Gaussian, Split Gaussian, Skewed Gaussian, Lorentzian, Split Lorentzian, Voigt, Split Voigt, Skewed Voigt, Pseudo Voigt, Split Pseudo Voigt, Pearson4, Split Pearson4, Pearson7, Split Pearson7.
+- Используемые при декомпозиции линий методы оптимизации: "Levenberg-Marquardt",  "Least-Squares, 'Nelder-Mead', 'L-BFGS-B', 'Powell', 'Conjugate-Gradient', 'Cobyla', 'BFGS', 'Truncated Newton', 'trust-region for constrained optimization', 'Sequential Linear Squares Programming'.
+- Обучение классификаторов и классификация измерений с помощью моделей: 'LDA', 'QDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest', 'AdaBoost', 'MLP' (нейросеть), XGBoost, Pytorch нейросеть с 1 скрытым слоем.
 - Снижение размерности данных методами PCA и PLS-DA.
 - Получения значений Variable importance in projections (VIP) PLS-DA.
-- Возможность использования программы для классификации по обученным моделям новых измерений спектров.
+- Возможность использования программы для классификации по обученным моделям новых измеренных спектров.
 - Автоматическое построение всех необходимых графиков для статей и возможность сохранения их в различных форматах.
 
 ![image](https://github.com/DarkMatro/RS-tool/assets/113565324/eda859df-511d-476e-9ec8-b3dbe1be4141)
