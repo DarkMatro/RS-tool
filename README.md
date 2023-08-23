@@ -24,7 +24,10 @@
 - Возможность использования программы для классификации по обученным моделям новых измеренных спектров.
 - Автоматическое построение всех необходимых графиков для статей и возможность сохранения их в различных форматах.
 
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/eda859df-511d-476e-9ec8-b3dbe1be4141)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/f786b8ed-c484-4dfa-bd58-713cee2e2512)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/3939ec60-07e7-42b4-b1f3-4053262baf4c)
+![1](https://github.com/DarkMatro/RS-tool/assets/113565324/d449b6f3-fd60-4a62-afe1-941ec252d231)
+![2](https://github.com/DarkMatro/RS-tool/assets/113565324/f72cea02-f66f-41ba-aad6-ea1889b2deda)
+![3](https://github.com/DarkMatro/RS-tool/assets/113565324/52eb9c92-b2da-41cb-9c7d-acec6c8a246c)
+
+
+
 
