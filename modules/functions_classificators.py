@@ -20,9 +20,10 @@ from sklearn.svm import NuSVC
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 from joblib import parallel_backend
-from skorch import NeuralNetClassifier
-from torch import nn
-from torch.optim import SGD, Adam, LBFGS
+# from skorch import NeuralNetClassifier
+# from torch.nn import Module, CrossEntropyLoss, ReLU, Tanh, Identity, LogSigmoid, Flatten, Sequential, Linear
+# from torch.optim import SGD, Adam, LBFGS
+
 
 def _scorers() -> dict:
     return {'precision_score': make_scorer(precision_score),
@@ -50,9 +51,9 @@ def do_lda(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
     model = LinearDiscriminantAnalysis(store_covariance=True)
     with parallel_backend('multiprocessing', n_jobs=-1):
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d = model.transform(x_train)
         if transformed_2d.shape[1] > 1:
@@ -138,9 +139,9 @@ def do_lr(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     with parallel_backend('multiprocessing', n_jobs=-1):
         model = LogisticRegression(max_iter=10000, n_jobs=-1, random_state=rng)
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -181,9 +182,9 @@ def do_svc(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
     n_classes = len(np.unique(y_train))
     with parallel_backend('multiprocessing', n_jobs=-1):
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -220,9 +221,9 @@ def do_nn(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     with parallel_backend('multiprocessing', n_jobs=-1):
         model = KNeighborsClassifier(n_jobs=-1)
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -289,9 +290,9 @@ def do_dt(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     model = DecisionTreeClassifier(random_state=rng)
     with parallel_backend('multiprocessing', n_jobs=-1):
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -361,9 +362,9 @@ def do_rf(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
     with parallel_backend('multiprocessing', n_jobs=-1):
         model = RandomForestClassifier(random_state=rng, n_jobs=-1)
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -417,8 +418,7 @@ def do_ab(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: lis
             'y_score_dec_func': y_score_dec_func}
 
 
-def do_mlp(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int], params: dict) \
-        -> dict:
+def do_mlp(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: list[int], params: dict) -> dict:
     """
     MLP Multi-layer Perceptron classifier
     @param y_test:
@@ -432,18 +432,21 @@ def do_mlp(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test: li
     """
     rng = np.random.RandomState(0)
     n_classes = len(np.unique(y_train))
+    input_layer_size = x_train.shape[1]
+    h_sizes = np.arange(1, 11) * input_layer_size
     with parallel_backend('multiprocessing', n_jobs=-1):
         if 'activation' not in params:
-            model = MLPClassifier(random_state=rng)
+            model = MLPClassifier(random_state=rng, max_iter=params['max_epoch'])
             parameters = {'activation': ['identity', 'logistic', 'tanh', 'relu'], 'solver': ['lbfgs', 'sgd', 'adam'],
-                          'hidden_layer_sizes': np.arange(2, 100, 2)}
+                          'hidden_layer_sizes': list(h_sizes), 'learning_rate_init': [.1, .01, .02, 1e-3]}
             if n_classes > 2:
-                model = GridSearchCV(model, parameters, n_jobs=-1)
+                model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
             else:
-                model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+                model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         else:
             model = MLPClassifier(params['hidden_layer_sizes'], params['activation'], solver=params['solver'],
-                                  random_state=rng)
+                                  random_state=rng, max_iter=params['max_epoch'],
+                                  learning_rate_init=params['learning_rate'])
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -537,9 +540,9 @@ def do_xgboost(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_test
     n_classes = len(np.unique(y_train))
     with parallel_backend('multiprocessing', n_jobs=-1):
         if n_classes > 2:
-            model = GridSearchCV(model, parameters, n_jobs=-1)
+            model = GridSearchCV(model, parameters, n_jobs=-1, verbose=3)
         else:
-            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'])
+            model = GridSearchCV(model, parameters, scoring=_scorers(), n_jobs=-1, refit=params['refit'], verbose=3)
         model.fit(x_train, y_train)
         transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test, y_train,
                                                                                  params['use_pca'])
@@ -616,7 +619,7 @@ def dim_reduction(x_train, x_test, y_train, use_pca):
     if isinstance(x_test, DataFrame):
         x_test = x_test.values
     if use_pca:
-        pca = PCA(n_components=1)
+        pca = PCA(n_components=2)
         pca.fit(x_train, y_train)
         transformed_2d = scale(pca.transform(x_train))
         features_in_2d = scale(pca.transform(np.concatenate((x_train, x_test))))
@@ -644,92 +647,93 @@ def do_torch_nn(x_train: DataFrame, y_train: list[int], x_test: DataFrame, y_tes
             Testing data
     @return: dict
     """
-    rng = np.random.RandomState(0)
-    # device = ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-    device = "cpu"
-    print(f"Using {device} device")
-    n_classes = len(np.unique(y_train))
-    input_layer_size = x_train.shape[1]
-    loss_fn = nn.CrossEntropyLoss()
-    h_sizes = np.arange(1, 11) * input_layer_size
-    x_train = np.array(x_train.values).astype(np.float32)
-    y_train = np.array(y_train).astype(np.int64)
-    y_train -= 1
-    x_test = np.array(x_test.values).astype(np.float32)
-    y_test = np.array(y_test).astype(np.int64)
-    y_test -= 1
-    with parallel_backend('multiprocessing', n_jobs=-1):
-        if 'activation' not in params:
-            model = NeuralNetClassifier(NeuralNetwork, max_epochs=params['max_epoch'], criterion=loss_fn,
-                                        iterator_train__shuffle=True, device=device, train_split=False)
-            grid_params = {
-                'lr': [.1, .01, .02, 1e-3],
-                'module__hidden_layer_size': list(h_sizes),
-                'module__input_size': [input_layer_size],
-                'module__output_size': [n_classes],
-                'optimizer': [SGD, Adam, LBFGS],
-                'module__activation': [nn.Identity(), nn.LogSigmoid(), nn.Tanh(), nn.ReLU()],
-            }
-            if n_classes > 2:
-                model = GridSearchCV(model, grid_params,  verbose=0, error_score='raise')
-            else:
-                model = GridSearchCV(model, grid_params,  verbose=0, error_score='raise', refit=params['refit'],
-                                     scoring=_scorers())
-        else:
-            match params['activation']:
-                case 'relu':
-                    activation_f = nn.ReLU()
-                case 'tanh':
-                    activation_f = nn.Tanh()
-                case 'logistic':
-                    activation_f = nn.LogSigmoid()
-                case 'identity':
-                    activation_f = nn.Identity()
-                case _:
-                    activation_f = nn.ReLU()
-            match params['solver']:
-                case 'lbfgs':
-                    solver = LBFGS
-                case 'sgd':
-                    solver = SGD
-                case 'adam':
-                    solver = Adam
-                case _:
-                    solver = SGD
-            net = NeuralNetwork(input_layer_size, n_classes, params['hidden_layer_sizes'], activation_f).to(device)
-            print(net)
-            model = NeuralNetClassifier(net, max_epochs=params['max_epoch'], criterion=loss_fn, device=device,
-                                        lr=params['learning_rate'], iterator_train__shuffle=True, train_split=False,
-                                        optimizer=solver)
-        model.fit(x_train, y_train)
-        y_pred = model.predict(x_train)
-        y_pred_test = model.predict(x_test)
-        y_pred = np.concatenate((y_pred, y_pred_test))
-        accuracy_score_train = np.round(model.score(x_train, y_train) * 100., 5)
-        y_score = model.predict_proba(x_test)
-        cv_scores = cross_val_score(model, np.concatenate((x_train, x_test)), np.concatenate((y_train, y_test)),
-                                    n_jobs=-1)
-    return {'model': model, 'y_pred_test': y_pred_test,
-            'accuracy_score_train': accuracy_score_train, 'y_score': y_score, 'cv_scores': cv_scores, 'y_pred': y_pred}
-
-
+    pass
+#     rng = np.random.RandomState(0)
+#     # device = ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+#     device = "cpu"
+#     print(f"Using {device} device")
+#     n_classes = len(np.unique(y_train))
+#     input_layer_size = x_train.shape[1]
+#     loss_fn = CrossEntropyLoss()
+#     h_sizes = np.arange(1, 11) * input_layer_size
+#     x_train = np.array(x_train.values).astype(np.float32)
+#     y_train = np.array(y_train).astype(np.int64)
+#     y_train -= 1
+#     x_test = np.array(x_test.values).astype(np.float32)
+#     y_test = np.array(y_test).astype(np.int64)
+#     y_test -= 1
+#     with parallel_backend('multiprocessing', n_jobs=-1):
+#         if 'activation' not in params:
+#             model = NeuralNetClassifier(NeuralNetwork, max_epochs=params['max_epoch'], criterion=loss_fn,
+#                                         iterator_train__shuffle=True, device=device, train_split=False)
+#             grid_params = {
+#                 'lr': [.1, .01, .02, 1e-3],
+#                 'module__hidden_layer_size': list(h_sizes),
+#                 'module__input_size': [input_layer_size],
+#                 'module__output_size': [n_classes],
+#                 'optimizer': [SGD, Adam, LBFGS],
+#                 'module__activation': [Identity(), LogSigmoid(), Tanh(), ReLU()],
+#             }
+#             if n_classes > 2:
+#                 model = GridSearchCV(model, grid_params,  verbose=0, error_score='raise')
+#             else:
+#                 model = GridSearchCV(model, grid_params,  verbose=0, error_score='raise', refit=params['refit'],
+#                                      scoring=_scorers())
+#         else:
+#             match params['activation']:
+#                 case 'relu':
+#                     activation_f = ReLU()
+#                 case 'tanh':
+#                     activation_f = Tanh()
+#                 case 'logistic':
+#                     activation_f = LogSigmoid()
+#                 case 'identity':
+#                     activation_f = Identity()
+#                 case _:
+#                     activation_f = ReLU()
+#             match params['solver']:
+#                 case 'lbfgs':
+#                     solver = LBFGS
+#                 case 'sgd':
+#                     solver = SGD
+#                 case 'adam':
+#                     solver = Adam
+#                 case _:
+#                     solver = SGD
+#             net = NeuralNetwork(input_layer_size, n_classes, params['hidden_layer_sizes'], activation_f).to(device)
+#             print(net)
+#             model = NeuralNetClassifier(net, max_epochs=params['max_epoch'], criterion=loss_fn, device=device,
+#                                         lr=params['learning_rate'], iterator_train__shuffle=True, train_split=False,
+#                                         optimizer=solver)
+#         model.fit(x_train, y_train)
+#         y_pred = model.predict(x_train)
+#         y_pred_test = model.predict(x_test)
+#         y_pred = np.concatenate((y_pred, y_pred_test))
+#         accuracy_score_train = np.round(model.score(x_train, y_train) * 100., 5)
+#         y_score = model.predict_proba(x_test)
+#         cv_scores = cross_val_score(model, np.concatenate((x_train, x_test)), np.concatenate((y_train, y_test)),
+#                                     n_jobs=-1)
+#     return {'model': model, 'y_pred_test': y_pred_test,
+#             'accuracy_score_train': accuracy_score_train, 'y_score': y_score, 'cv_scores': cv_scores, 'y_pred': y_pred}
+#
+#
 # Define model
-class NeuralNetwork(nn.Module):
-    def __init__(self, input_size: int = 93, output_size: int = 2, hidden_layer_size: int = 93,
-                 activation=nn.ReLU()):
-        super(NeuralNetwork, self).__init__()
-        self.flatten = nn.Flatten()
-        self.input_size = input_size
-        self.output_size = output_size
-        self.hidden_layer_size = hidden_layer_size
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(self.input_size, self.hidden_layer_size),
-            activation,
-            nn.Linear(self.hidden_layer_size, self.output_size)
-        )
-
-    def forward(self, x):
-        x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
+# class NeuralNetwork(Module):
+#     def __init__(self, input_size: int = 93, output_size: int = 2, hidden_layer_size: int = 93,
+#                  activation=ReLU()):
+#         super(NeuralNetwork, self).__init__()
+#         self.flatten = Flatten()
+#         self.input_size = input_size
+#         self.output_size = output_size
+#         self.hidden_layer_size = hidden_layer_size
+#         self.linear_relu_stack = Sequential(
+#             Linear(self.input_size, self.hidden_layer_size),
+#             activation,
+#             Linear(self.hidden_layer_size, self.output_size)
+#         )
+#
+#     def forward(self, x):
+#         x = self.flatten(x)
+#         logits = self.linear_relu_stack(x)
+#         return logits
 

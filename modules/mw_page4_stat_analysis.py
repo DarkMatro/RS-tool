@@ -174,15 +174,17 @@ class StatAnalysisLogic:
             params = {'activation': main_window.ui.activation_comboBox.currentText(),
                       'solver': main_window.ui.solver_mlp_combo_box.currentText(),
                       'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
-                      'use_pca': use_pca}
-        elif cl_type == 'Torch' and main_window.ui.groupBox_mlp.isChecked():
-            params = {'activation': main_window.ui.activation_comboBox.currentText(),
-                      'solver': main_window.ui.solver_mlp_combo_box.currentText(),
-                      'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
                       'max_epoch': main_window.ui.max_epoch_spinBox.value(),
                       'learning_rate': main_window.ui.learning_rate_doubleSpinBox.value(),
                       'use_pca': use_pca}
-        elif cl_type == 'Torch' and not main_window.ui.groupBox_mlp.isChecked():
+        # elif cl_type == 'Torch' and main_window.ui.groupBox_mlp.isChecked():
+        #     params = {'activation': main_window.ui.activation_comboBox.currentText(),
+        #               'solver': main_window.ui.solver_mlp_combo_box.currentText(),
+        #               'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
+        #               'max_epoch': main_window.ui.max_epoch_spinBox.value(),
+        #               'learning_rate': main_window.ui.learning_rate_doubleSpinBox.value(),
+        #               'use_pca': use_pca}
+        elif cl_type == 'MLP' and not main_window.ui.groupBox_mlp.isChecked():
             params = {'max_epoch': main_window.ui.max_epoch_spinBox.value(),
                       'use_pca': use_pca}
         elif cl_type in cl_types_using_pca_plsda:

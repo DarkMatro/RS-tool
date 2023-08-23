@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from gc import collect
 from logging import info, debug
-import torch
 from sklearn.model_selection import GridSearchCV
 import lmfit.model
 import numpy as np

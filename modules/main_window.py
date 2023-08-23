@@ -191,6 +191,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.initial_timers()
         self.set_buttons_ability()
         self.ui.stat_tab_widget.currentChanged.connect(self.stat_tab_widget_tab_changed)
+        self.ui.stat_tab_widget.setTabEnabled(12, False)
+        self.ui.stat_tab_widget.setTabVisible(12, False)
         self.ui.page5_predict.clicked.connect(self.predict)
         self.ui.splitter_page1.moveSplitter(100, 1)
         self.ui.splitter_page2.moveSplitter(100, 1)
@@ -1511,7 +1513,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.clear_menu.addAction('AdaBoost', lambda: self.clear_selected_step('AdaBoost'))
         self.clear_menu.addAction('MLP', lambda: self.clear_selected_step('MLP'))
         self.clear_menu.addAction('XGBoost', lambda: self.clear_selected_step('XGBoost'))
-        self.clear_menu.addAction('Torch', lambda: self.clear_selected_step('Torch'))
+        # self.clear_menu.addAction('Torch', lambda: self.clear_selected_step('Torch'))
         self.clear_menu.addAction('PCA', lambda: self.clear_selected_step('PCA'))
         self.clear_menu.addAction('PLS-DA', lambda: self.clear_selected_step('PLS-DA'))
         self.clear_menu.addSeparator()
@@ -1590,7 +1592,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         actions = [self.action_fit_lda, self.action_fit_qda, self.action_fit_lr, self.action_fit_svc,
                    self.action_fit_sgd, self.action_fit_gpc, self.action_fit_dt, self.action_fit_nb,
                    self.action_fit_rf, self.action_fit_ab, self.action_fit_mlp, self.action_fit_xgboost,
-                   self.action_fit_torch, self.action_fit_pca, self.action_fit_plsda, self.action_redraw_plots]
+                   self.action_fit_pca, self.action_fit_plsda, self.action_redraw_plots]
         self.stat_analysis_menu.addActions(actions)
         self.ui.stat_analysis_btn.setMenu(self.stat_analysis_menu)
 
@@ -2802,9 +2804,10 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.stat_analysis_logic.update_stat_report_text()
         self.decide_vertical_scroll_bar_visible()
         self.ui.groupBox_mlp.setVisible(i == 10 or i == 12)
-        self.ui.max_epoch_spinBox.setVisible(i == 12)
-        self.ui.label_max_epoch.setVisible(i == 12)
-        self.ui.label_learning_rate.setVisible(i == 12)
+        # self.ui.max_epoch_spinBox.setVisible(i == 10 or i == 12)
+        # self.ui.learning_rate_doubleSpinBox.setVisible(i == 10 or i == 12)
+        # self.ui.label_max_epoch.setVisible(i == 10 or i == 12)
+        # self.ui.label_learning_rate.setVisible(i == 10 or i == 12)
         if i == 8 and 'Random Forest' in self.stat_analysis_logic.latest_stat_result:
             model = self.stat_analysis_logic.latest_stat_result['Random Forest']['model']
             n_trees = len(model.best_estimator_.estimators_)
@@ -6199,14 +6202,14 @@ class MainWindow(QMainWindow, QtStyleTools):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
-        # if self.ui.activation_comboBox.currentText() == 'identity' and cl_type == 'Torch':
-        #     msg = QMessageBox()
-        #     msg.setIcon(QMessageBox.Icon.Warning)
-        #     msg.setText("Для этой Pytorch сети функция активации identity не допустима. Выбери другую.")
-        #     msg.setWindowTitle("Classificator Fitting failed")
-        #     msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-        #     msg.exec()
-        #     return
+        if cl_type == 'Torch':
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setText("На этой версии убрана возможность создания PyTorch сети.")
+            msg.setWindowTitle("Classificator Fitting failed")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+            return
         try:
             await self.stat_analysis_logic.do_fit_classificator(cl_type)
         except Exception as err:
