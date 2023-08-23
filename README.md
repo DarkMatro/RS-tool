@@ -18,7 +18,7 @@
 - Алгоритм декомпозиции спектра КР.
 - Используемые профили линий для декомпозиции: Gaussian, Split Gaussian, Skewed Gaussian, Lorentzian, Split Lorentzian, Voigt, Split Voigt, Skewed Voigt, Pseudo Voigt, Split Pseudo Voigt, Pearson4, Split Pearson4, Pearson7, Split Pearson7.
 - Используемые при декомпозиции линий методы оптимизации: "Levenberg-Marquardt",  "Least-Squares, 'Nelder-Mead', 'L-BFGS-B', 'Powell', 'Conjugate-Gradient', 'Cobyla', 'BFGS', 'Truncated Newton', 'trust-region for constrained optimization', 'Sequential Linear Squares Programming'.
-- Обучение классификаторов и классификация измерений с помощью моделей: 'LDA', 'QDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest', 'AdaBoost', 'MLP' (нейросеть), XGBoost, Pytorch нейросеть с 1 скрытым слоем.
+- Обучение классификаторов и классификация измерений с помощью моделей: 'LDA', 'QDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest', 'AdaBoost', 'MLP' (нейросеть), XGBoost.
 - Снижение размерности данных методами PCA и PLS-DA.
 - Получения значений Variable importance in projections (VIP) PLS-DA.
 - Возможность использования программы для классификации по обученным моделям новых измеренных спектров.
