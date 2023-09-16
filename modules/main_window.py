@@ -34,7 +34,7 @@ from modules.pandas_tables import PandasModelGroupsTable, PandasModelInputTable,
     PandasModelDeconvLinesTable, ComboDelegate, PandasModelFitParamsTable, \
     DoubleSpinBoxDelegate, PandasModelFitIntervals, IntervalsTableDelegate, \
     PandasModelSmoothedDataset, PandasModelBaselinedDataset, PandasModelDeconvolutedDataset, PandasModel, \
-    PandasModelPredictTable, PandasModelPCA, PandasModelIgnoreDataset
+    PandasModelPredictTable, PandasModelPCA, PandasModelIgnoreDataset, PandasModelDescribeDataset
 from modules.default_values import default_values, \
     baseline_parameter_defaults, optimize_extended_range_methods
 from modules.init import QtStyleTools, get_theme, opacity
@@ -1812,7 +1812,12 @@ class MainWindow(QMainWindow, QtStyleTools):
             error('failed to disconnect currentTextChanged self.current_group_shap_comboBox)')
         self.ui.current_group_shap_comboBox.clear()
 
-        classes = np.unique(q_res['Class'].values)
+        uniq_classes = np.unique(q_res['Class'].values)
+        classes = []
+        groups = self.ui.GroupsTable.model().groups_list()
+        for i in uniq_classes:
+            if i in groups:
+                classes.append(i)
         target_names = self.ui.GroupsTable.model().dataframe().loc[classes]['Group name'].values
         for i in target_names:
             self.ui.current_group_shap_comboBox.addItem(i)
@@ -2142,6 +2147,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_baselined_dataset_table()
         self._initial_deconvoluted_dataset_table()
         self._initial_ignore_dataset_table()
+        self._initial_describe_dataset_table()
         self._initial_predict_dataset_table()
         self._initial_pca_features_table()
         self._initial_plsda_vip_table()
@@ -2501,6 +2507,20 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.ignore_dataset_table_view.setModel(model)
 
     # endregion
+
+    # region describe dataset
+
+    def _initial_describe_dataset_table(self) -> None:
+        self._reset_describe_dataset_table()
+        self.ui.describe_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+
+    def _reset_describe_dataset_table(self) -> None:
+        df = DataFrame()
+        model = PandasModelDescribeDataset(self, df)
+        self.ui.describe_dataset_table_view.setModel(model)
+
+    # endregion
+
     # region predict dataset
 
     def _initial_predict_dataset_table(self) -> None:
@@ -3954,6 +3974,11 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def decide_vertical_scroll_bar_visible(self, _model_index: QModelIndex = None, _start: int = 0,
                                            _end: int = 0) -> None:
+        if self.ui.data_tables_tab_widget.currentIndex() == 4:
+            X, _, _, _, _ = self.stat_analysis_logic.dataset_for_ml()
+            if not X.empty:
+                df = X.describe()
+                self.ui.describe_dataset_table_view.model().set_dataframe(df)
         tv = None
         if self.ui.stackedWidget_mainpages.currentIndex() == 0:
             tv = self.ui.input_table
@@ -3965,6 +3990,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             tv = self.ui.deconvoluted_dataset_table_view
         elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 3:
             tv = self.ui.ignore_dataset_table_view
+        elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 4:
+            tv = self.ui.describe_dataset_table_view
         elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 0:
             tv = self.ui.scrollArea_lda
         elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 1:
@@ -4076,7 +4103,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             case Qt.Key.Key_F1:
                 action_help()
             case Qt.Key.Key_F7:
-                self.stat_analysis_logic.dataset_for_ml()
+                X, _, _, _, _ = self.stat_analysis_logic.dataset_for_ml()
+                print(X.describe())
             case Qt.Key.Key_F2:
                 if self.ui.stackedWidget_mainpages.currentIndex() != 1:
                     return

@@ -240,6 +240,7 @@ class StatAnalysisLogic:
         Y: list[int]. True labels
         feature_names: feature names (lol)
         target_names: classes names
+        filenames
         """
         main_window = self.parent
         selected_dataset = main_window.ui.dataset_type_cb.currentText()
@@ -263,7 +264,12 @@ class StatAnalysisLogic:
             ignored_features = main_window.ui.ignore_dataset_table_view.model().ignored_features
             q_res = q_res.drop(ignored_features, axis=1)
         y = list(q_res['Class'])
-        classes = np.unique(q_res['Class'].values)
+        uniq_classes = np.unique(q_res['Class'].values)
+        classes = []
+        groups = main_window.ui.GroupsTable.model().groups_list()
+        for i in uniq_classes:
+            if i in groups:
+                classes.append(i)
         if main_window.predict_logic.is_production_project:
             target_names = None
         else:
@@ -1367,6 +1373,8 @@ class StatAnalysisLogic:
             plot_colors.append(clr.name())
         y = np.array(Y)
         centroids = []
+        y_max_hist = np.histogram(twoclass_output, bins=np.linspace(min_scores, max_scores, rng))[0]
+        y_max_hist = np.max(y_max_hist) + 1
         for i, n, c in zip(range(2), class_names, plot_colors):
             t_o = twoclass_output[y == (i + 1)]
             centroid = np.mean(t_o)
@@ -1380,9 +1388,9 @@ class StatAnalysisLogic:
                 alpha=0.55,
                 edgecolor="k",
             )
-            ax.vlines(centroid, 0, len(y) / 5, colors=c, linestyles='dashed')
+            ax.vlines(centroid, 0, y_max_hist, colors=c, linestyles='dashed')
         boundary = np.mean(centroids)
-        ax.vlines(boundary, 0, len(y) / 5, colors='black', linestyles='solid')
+        ax.vlines(boundary, 0, y_max_hist, colors='black', linestyles='solid')
         ax.legend(loc="best", prop={'size': self.parent.plot_font_size - 2})
         ax.set_ylabel("Samples")
         ax.set_xlabel("Model decision score")

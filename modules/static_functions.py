@@ -363,8 +363,12 @@ def subtract_cosmic_spikes_moll(input_tuple: tuple[str, np.ndarray], laser_fwhm:
             subtracted_peaks_idx.append(top_peak_index)
             y_mod_score[top_peak_index] = 0
             for k in range(mollification_width):
+                if top_peak_index + k >= len(y_mod_score):
+                    break
                 y_mod_score[top_peak_index + k] = 0
             for k in range(mollification_width):
+                if top_peak_index - k >= len(y_mod_score):
+                    break
                 y_mod_score[top_peak_index - k] = 0
         if stop_loop:
             break

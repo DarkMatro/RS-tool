@@ -415,17 +415,55 @@ def clustering_lines_intervals(data_by_intervals: dict, hwhm: float) -> list[nda
     """
     all_ranges_clustered_x0_sd = []
     for _, item in data_by_intervals.items():
-        info('x0_lines {!s}, lines_count {!s}'.format(item['x0'], item['lines_count']))
         x0 = split_list(item['x0'], item['lines_count'])
-        clustered_lines_of_current_range = estimate_n_lines_in_range(x0, hwhm)
+        info('x0 {!s}'.format(x0))
+        clustered_lines_of_current_range = estimate_n_lines_in_range(x0, hwhm, centers_of_clusters(x0, hwhm))
         all_ranges_clustered_x0_sd.append(clustered_lines_of_current_range)
     info('clustered_lines_x0 {!s}'.format(all_ranges_clustered_x0_sd))
     return all_ranges_clustered_x0_sd
 
 
-def estimate_n_lines_in_range(x0_lines_spl: list[list[float]], hwhm: float = 12.) -> np.ndarray:
+def centers_of_clusters(x0: list[list], hwhm: float) -> list[list]:
     """
-    1. Create first clusters using first 2 spectrum data
+    A function finds most frequent estimation of raman lines centers list.
+    Parameters
+    ----------
+    x0 : list[list]
+        list of estimated centers of raman lines for each variant of estimation
+        [[431.48339021272716, 455.09678879007845, 407.35186507907326, 481.3566921374394],
+         [430.04300739751113, 458.0407297631946, 405.1497056267086, 475.6762495875454, 445.13839466191627,
+          498.92140788914725, 375.36714911050314, 389.2553236563882], ....]
+    hwhm : list
+
+    Returns
+    -------
+    x_merged : list[list]
+        for final estimate_n_lines_in_range
+    """
+    various_estimations = []
+    for _ in x0:
+        various_estimations.append(estimate_n_lines_in_range(x0, hwhm))
+    various_centers_of_clusters = []
+    for i in various_estimations:
+        various_centers_of_clusters.append(np.sort(i[:, 0]))
+    shapes = []
+    for i in various_centers_of_clusters:
+        shapes.append(i.size)
+    most_frequent_shape = np.argmax(np.bincount(shapes))
+    various_centers_of_clusters_right_shape = []
+    for i in various_centers_of_clusters:
+        if i.size == most_frequent_shape:
+            various_centers_of_clusters_right_shape.append(i)
+    centers = np.stack(various_centers_of_clusters_right_shape, axis=0)
+    centers = np.median(centers, axis=0)
+    x_merged = [[x] for x in centers]
+    return x_merged
+
+
+def estimate_n_lines_in_range(x0_lines_spl: list[list[float]], hwhm: float = 12., x_merged=None) \
+        -> np.ndarray:
+    """
+    1. Create first clusters using first 2 (randomly selected) spectrum data
     2. Add to those clusters' data (to the nearest cluster) if distance <= hwhm
     3. If distance > hwhm it's a new cluster
     Parameters
@@ -435,16 +473,21 @@ def estimate_n_lines_in_range(x0_lines_spl: list[list[float]], hwhm: float = 12.
     hwhm: float, optional
         The maximum distance between two samples (or sample and center of cluster) for one to be considered
         as in the neighborhood of the other.
+    x_merged: list[list] | None, optional
+        centers of clusters. If is None it will be calculated by DBSCAN
 
     Returns
     -------
     np.ndarray
         2D np.array with 2 columns: center of cluster x0 and standard deviation of each cluster
     """
-    x_merged = create_first_clusters(x0_lines_spl[0], x0_lines_spl[1], hwhm)
-    if len(x0_lines_spl) == 2:
-        return clusters_means(x_merged, std=True).T
-    for i in range(2, len(x0_lines_spl)):
+    if x_merged is None:
+        idx_1 = np.random.randint(0, len(x0_lines_spl))
+        idx_2 = np.random.randint(0, len(x0_lines_spl))
+        x_merged = create_first_clusters(x0_lines_spl[idx_1], x0_lines_spl[idx_2], hwhm)
+        if len(x0_lines_spl) == 2:
+            return clusters_means(x_merged, std=True).T
+    for i in range(0, len(x0_lines_spl)):
         x_means = clusters_means(x_merged)
         for x in x0_lines_spl[i]:
             distances = np.abs(x_means - x)

@@ -284,6 +284,9 @@ class PandasModelGroupsTable(PandasModel):
     def get_group_name_by_int(self, group_number: int) -> str:
         return self._dataframe.loc[self._dataframe.index == group_number].iloc[0]['Group name']
 
+    def groups_list(self) -> list:
+        return self._dataframe.index
+
     def append_group(self, group: str, style: dict, index: int) -> None:
         df2 = DataFrame({'Group name': [group],
                          'Style': [style]
@@ -989,9 +992,36 @@ class PandasModelIgnoreDataset(PandasModel):
         checked = self._checked
         ignored_features = []
         for k, v in checked.items():
-            if not v:
+            if not v and k in self._dataframe.columns:
                 ignored_features.append(k)
         return ignored_features
+
+
+class PandasModelDescribeDataset(PandasModel):
+
+    def __init__(self, parent, dataframe: DataFrame):
+        super().__init__(dataframe)
+        self.parent = parent
+        self._dataframe = dataframe
+
+    def flags(self, index):
+        return Qt.ItemIsSelectable
+
+    def data(self, index: QModelIndex, role=Qt.ItemDataRole):
+        """Override method from QAbstractTableModel
+
+        Return data cell from the pandas DataFrame
+        """
+        if not index.isValid():
+            return None
+        value = self._dataframe.iloc[index.row(), index.column()]
+
+        if role == Qt.DisplayRole:
+            return str(np.round(value, 5))
+        return None
+
+    def setData(self, index, value, role):
+        return False
 
 
 class PandasModelPredictTable(PandasModel):
