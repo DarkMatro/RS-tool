@@ -175,7 +175,6 @@ class MessageBox(MaskDialogBase, Ui_MessageBox):
             self.contentLabel.y() + self.contentLabel.height() + 105
         )
 
-
     def eventFilter(self, obj, e: QEvent):
         if obj is self.window():
             if e.type() == QEvent.Resize:

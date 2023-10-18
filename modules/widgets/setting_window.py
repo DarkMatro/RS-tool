@@ -6,7 +6,6 @@ from qtpy.QtWidgets import QWidget
 from modules.init import list_themes, update_theme_event
 from modules.work_with_files.preferences_file import get_theme
 from modules.ui.ui_settings import Ui_Form
-from BlurWindow.blurWindow import blur
 
 
 def add_menu_combobox(combobox_ref, background: bool = True):
@@ -23,12 +22,6 @@ class SettingWindow(QWidget):
     def __init__(self, parent):
         super().__init__(parent, Qt.WindowType.Dialog)
         self.ui_form = Ui_Form()
-
-        self.setWindowOpacity(0.99)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        blur(self.winId(), Dark='Dark' in os.environ['bckgrnd_theme'])
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 0)")
-
         self.parent = parent
         self.ui_form.setupUi(self)
         self.ui_form.tabWidget.setTabEnabled(1, False)

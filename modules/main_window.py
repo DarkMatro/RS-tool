@@ -112,6 +112,10 @@ class MainWindow(QMainWindow):
         self._ascending_input_table = False
         self._ascending_ignore_table = False
         self._ascending_deconv_lines_table = False
+        try:
+            check_recent_files()
+        except Exception as err:
+            self.show_error(err)
 
         splash_show_message(splash, 'Initializing attributes...')
         self.theme_bckgrnd = prefs[0]
@@ -194,10 +198,6 @@ class MainWindow(QMainWindow):
         self.set_smooth_parameters_disabled(self.default_values['smoothing_method_comboBox'])
         self.set_baseline_parameters_disabled(self.default_values['baseline_method_comboBox'])
         splash_show_message(splash, 'Loading preferences...')
-        try:
-            check_recent_files()
-        except Exception as err:
-            self.show_error(err)
         try:
             check_rs_tool_folder()
         except Exception as err:
@@ -2366,11 +2366,7 @@ class MainWindow(QMainWindow):
         self.timer_mem_update.start(1000)
         self.cpu_load = QTimer(self)
         self.cpu_load.timeout.connect(self.set_cpu_load)
-        self.cpu_load.start(200)
-        # есть подозрения что таймер сбрасывает процесс fit
-        # self.auto_save_timer = QTimer()
-        # self.auto_save_timer.timeout.connect(self.auto_save)
-        # self.auto_save_timer.start(1000 * 60 * self.auto_save_minutes)
+        self.cpu_load.start(300)
 
     def initial_ui_definitions(self) -> None:
         self.ui.maximizeRestoreAppBtn.setToolTip("Maximize")
@@ -4830,9 +4826,8 @@ class MainWindow(QMainWindow):
             for line in reversed(lines):
                 action = self.recent_menu.addAction(line)
                 action.triggered.connect(lambda checked=None, line=line: self.action_open_recent(path=line))
-        except Exception:
+        except FileNotFoundError:
             self.recent_menu.setDisabled(True)
-            raise
 
     def set_modified(self, b: bool = True) -> None:
         if not b:

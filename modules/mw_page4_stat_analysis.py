@@ -14,6 +14,7 @@ from asyncqtpy import asyncSlot
 from matplotlib.colors import LinearSegmentedColormap
 from pandas import DataFrame, Series
 from qtpy.QtGui import QColor
+from joblib import parallel_backend
 from qfluentwidgets import MessageBox
 from sklearn.inspection import DecisionBoundaryDisplay, permutation_importance, PartialDependenceDisplay
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay, roc_curve, auc, precision_recall_curve, \
@@ -1449,9 +1450,9 @@ class StatAnalysisLogic:
         ax = plot_widget.canvas.axes
         binary = len(estimator.classes_) == 2
         scoring = 'f1' if binary else 'f1_micro'
-
-        result = permutation_importance(estimator, x, y, scoring=scoring, n_repeats=10, n_jobs=-1,
-                                        random_state=self.get_random_state())
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            result = permutation_importance(estimator, x, y, scoring=scoring, n_repeats=10, n_jobs=-1,
+                                            random_state=self.get_random_state())
         sorted_importances_idx = result.importances_mean.argsort()
         importances = DataFrame(
             result.importances[sorted_importances_idx].T,
@@ -1480,8 +1481,9 @@ class StatAnalysisLogic:
         f1 = self.parent.ui.current_dep_feature1_comboBox.currentText()
         f2 = self.parent.ui.current_dep_feature2_comboBox.currentText()
         try:
-            PartialDependenceDisplay.from_estimator(clf, X, [f1, (f1, f2)], target=clf.classes_[0],
-                                                    feature_names=feature_names, ax=ax)
+            with parallel_backend('multiprocessing', n_jobs=-1):
+                PartialDependenceDisplay.from_estimator(clf, X, [f1, (f1, f2)], target=clf.classes_[0],
+                                                        feature_names=feature_names, ax=ax)
             plot_widget.canvas.draw()
             plot_widget.canvas.figure.tight_layout()
         except ValueError:
@@ -1491,7 +1493,8 @@ class StatAnalysisLogic:
         plot_widget = self.parent.ui.calibration_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
-        CalibrationDisplay.from_estimator(clf, X_test, y_test, pos_label=clf.classes_[0], ax=ax)
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            CalibrationDisplay.from_estimator(clf, X_test, y_test, pos_label=clf.classes_[0], ax=ax)
         try:
             plot_widget.canvas.draw()
             plot_widget.canvas.figure.tight_layout()
@@ -1502,7 +1505,8 @@ class StatAnalysisLogic:
         plot_widget = self.parent.ui.det_curve_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
-        DetCurveDisplay.from_estimator(clf, X_test, y_test, pos_label=clf.classes_[0], ax=ax)
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            DetCurveDisplay.from_estimator(clf, X_test, y_test, pos_label=clf.classes_[0], ax=ax)
         try:
             plot_widget.canvas.draw()
             plot_widget.canvas.figure.tight_layout()
@@ -1515,7 +1519,8 @@ class StatAnalysisLogic:
         ax.cla()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            LearningCurveDisplay.from_estimator(clf, X, y, ax=ax, verbose=0, cv=3)
+            with parallel_backend('multiprocessing', n_jobs=-1):
+                LearningCurveDisplay.from_estimator(clf, X, y, ax=ax, verbose=0, cv=3)
         try:
             plot_widget.canvas.draw()
             plot_widget.canvas.figure.tight_layout()

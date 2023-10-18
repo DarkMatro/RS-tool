@@ -15,7 +15,7 @@ class MaskDialogBase(QDialog):
         self._hBoxLayout = QHBoxLayout(self)
         self.windowMask = QWidget(self)
 
-        # dialog box in the center of mask, all widgets take it as parent
+        # # dialog box in the center of mask, all widgets take it as parent
         self.widget = QFrame(self, objectName='centerWidget')
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)

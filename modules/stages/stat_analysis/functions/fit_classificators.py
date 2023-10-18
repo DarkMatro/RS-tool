@@ -22,7 +22,7 @@ from sklearn.svm import NuSVC
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 from hyperopt import STATUS_OK
-from joblib import parallel_backend
+from joblib import parallel_backend, _memmapping_reducer
 
 
 def scorer_metrics() -> dict:

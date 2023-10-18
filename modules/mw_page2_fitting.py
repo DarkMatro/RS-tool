@@ -91,7 +91,6 @@ class FittingLogic:
         splitted_arrays = self._split_array_for_fitting(baseline_corrected_spectra)
         idx_type_param_count_legend_func = self.prepare_data_fitting()
         list_params_full = self._fitting_params_batch(idx_type_param_count_legend_func, baseline_corrected_spectra)
-        info(list_params_full)
         x_y_models_params = models_params_splitted_batch(splitted_arrays, list_params_full,
                                                          idx_type_param_count_legend_func)
         method_full_name = main_window.ui.fit_opt_method_comboBox.currentText()

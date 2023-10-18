@@ -12,6 +12,7 @@ from lmfit.model import ModelResult
 from pyqtgraph import mkPen, ROI
 from qtpy.QtCore import QModelIndex, Qt
 from qtpy.QtGui import QColor
+from joblib import parallel_backend
 from qtpy.QtWidgets import QUndoCommand, QStyledItemDelegate
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import GridSearchCV, HalvingGridSearchCV
@@ -2814,9 +2815,10 @@ class CommandAfterFittingStat(QUndoCommand):
         if result['features_in_2d'] is None:
             binary = True
         else:
-            classifier = OneVsRestClassifier(make_pipeline(StandardScaler(), result['model']))
-            classifier.fit(result['x_train'], result['y_train'])
-            y_score_dec_func = classifier.decision_function(result['x_test'])
+            with parallel_backend('multiprocessing', n_jobs=-1):
+                classifier = OneVsRestClassifier(make_pipeline(StandardScaler(), result['model']))
+                classifier.fit(result['x_train'], result['y_train'])
+                y_score_dec_func = classifier.decision_function(result['x_test'])
         metrics_result = model_metrics(result['y_test'], result['y_pred_test'], binary, result['target_names'])
         metrics_result['accuracy_score_train'] = result['accuracy_score_train']
         result['metrics_result'] = metrics_result
@@ -2845,7 +2847,8 @@ class CommandAfterFittingStat(QUndoCommand):
         metrics_result = model_metrics(y_test, self.result['y_pred_test'], binary, self.result['target_names'])
         metrics_result['accuracy_score_train'] = self.result['accuracy_score_train']
         result['metrics_result'] = metrics_result
-        label_binarizer = LabelBinarizer().fit(self.result['y_train'])
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            label_binarizer = LabelBinarizer().fit(self.result['y_train'])
         result['y_onehot_test'] = label_binarizer.transform(y_test)
         if not self.mw.ui.use_shapley_cb.isChecked():
             return result
@@ -2875,7 +2878,8 @@ class CommandAfterFittingStat(QUndoCommand):
         metrics_result = model_metrics(y_test, result['y_pred_test'], binary, result['target_names'])
         metrics_result['accuracy_score_train'] = result['accuracy_score_train']
         result['metrics_result'] = metrics_result
-        label_binarizer = LabelBinarizer().fit(result['y_train'])
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            label_binarizer = LabelBinarizer().fit(result['y_train'])
         result['y_onehot_test'] = label_binarizer.transform(y_test)
         if not self.mw.ui.use_shapley_cb.isChecked():
             return result
@@ -2883,8 +2887,7 @@ class CommandAfterFittingStat(QUndoCommand):
         med = x_train.median().values.reshape((1, x_train.shape[1]))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            explainer = Explainer(func, med, max_evals=2 * len(result['feature_names']) + 1,
-                                  feature_names=result['feature_names'])
+            explainer = Explainer(func, med, feature_names=result['feature_names'])
             kernel_explainer = KernelExplainer(func, med, feature_names=result['feature_names'])
             result['shap_values'] = explainer(result['X'])
             result['expected_value'] = kernel_explainer.expected_value

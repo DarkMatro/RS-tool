@@ -1,5 +1,4 @@
-import os
-from BlurWindow.blurWindow import blur
+
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtWidgets import QWidget, QMainWindow
 
@@ -13,11 +12,6 @@ class CurvePropertiesWindow(QWidget):
         super().__init__(parent, Qt.WindowType.Dialog)
         if style is None:
             style = {}
-
-        self.setWindowOpacity(0.99)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        blur(self.winId(), Dark='Dark' in os.environ['bckgrnd_theme'])
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 0)")
         self._style = style
         self.parent = parent
         self._idx = idx
