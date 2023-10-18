@@ -28,12 +28,14 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 - Optimization methods used for line decomposition: "Levenberg-Marquardt", "Least-Squares, 'Nelder-Mead', 'L-BFGS-B', 'Powell', 'Conjugate-Gradient', 'Cobyla', 'BFGS' , 'Truncated Newton', 'trust-region for constrained optimization', 'Sequential Linear Squares Programming'.
 - Automatic construction of all necessary graphs for articles and the ability to save them in various formats.
 - Averaged plot with confidence interval.
+  
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/8a683c0f-8293-46ea-9550-5da0ae9747da)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/c79fd0d1-052d-4590-8726-2060b387bc8b)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/78d2f2b0-c137-43f7-a0a8-f2a16bcf1ee1)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/62a4c385-430e-4b80-948d-7a5083274558)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/66d3cdc5-9ed6-4349-ba30-1eeb60669206)
 
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/2f82efaf-d55b-4498-a605-d47b366ebd32)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/89b3f8ba-6f73-4369-9332-3a21ea2d92ab)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/3088814b-31ad-427c-84c3-0e3d6d1df745)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/eb092df0-9f68-4f30-b684-c4655c404a8c)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/2ee50963-d23b-45a7-85d2-096d5528fc64)
+
 
 
 
