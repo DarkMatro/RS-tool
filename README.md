@@ -3,7 +3,7 @@
 ![splash](https://github.com/DarkMatro/RS-tool/assets/113565324/8e359ff6-0a3a-4628-b8ab-bd0364bc8bb2)
 
 Implementation of a full cycle of biomedical machine learning classification problem.
-The program is designed for a full cycle of processing Raman spectra: preprocessing, decomposition of spectra, creation of classifier models for further work with new measured spectra.
+The program is designed for a realtime full cycle of processing Raman spectra: preprocessing, decomposition of spectra, creation of classifier models for further work with new measured spectra.
 New original ExModPoly (Extended ModPoly algorithm for baseline correction) and decomposition methods available.
 
 # Installation
@@ -11,12 +11,12 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 2. Install Graphviz https://graphviz.org/download/. (only needed to display XGBoost trees).
 
 # Program functionality
-- Classifier training and measurement classification using models: 'LDA', 'QDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest' , 'AdaBoost', 'MLP' (neural network), XGBoost.
+- Classifier training and measurement classification using models: 'LDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest' , 'AdaBoost', 'MLP' (neural network), XGBoost, Voting and Stacking.
 - Data dimensionality reduction using PCA and PLS-DA methods.
 - Obtaining Variable importance in projections (VIP) PLS-DA values.
 - The ability to use the program to classify new measured spectra using trained models.
-- Raman spectrum decomposition algorithm.
-- Baseline correction with 42 methods: Poly, ModPoly, iModPoly, ExModPoly, Penalized poly, LOESS, Quantile regression, Goldindec, AsLS, iAsLS, arPLS, airPLS, drPLS, iarPLS, asPLS, psaLSA, DerPSALSA, MPLS, iMor, MorMol, AMorMol , MPSpline, JBCD, Mixture Model, IRSQR, Corner-Cutting, RIA, Dietrich, Golotvin, Std Distribution, FastChrom, FABC.
+- Raman spectrum auto decomposition algorithm.
+- Baseline correction with 42 methods: ExModPoly Poly, ModPoly, iModPoly, Penalized poly, LOESS, Quantile regression, Goldindec, AsLS, iAsLS, arPLS, airPLS, drPLS, iarPLS, asPLS, psaLSA, DerPSALSA, MPLS, iMor, MorMol, AMorMol , MPSpline, JBCD, Mixture Model, IRSQR, Corner-Cutting, RIA, Dietrich, Golotvin, Std Distribution, FastChrom, FABC.
 - Import files in .txt, .asc format as a two-dimensional array with spectra.
 - Saving all data in a .zip project file. All information is converted into binary format and compressed in a zip archive with the maximum compression ratio.
 - Interpolation to bring spectra with different wavelength ranges to the same nm range.
@@ -27,10 +27,15 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 - Used line profiles for decomposition: Gaussian, Split Gaussian, Skewed Gaussian, Lorentzian, Split Lorentzian, Voigt, Split Voigt, Skewed Voigt, Pseudo Voigt, Split Pseudo Voigt, Pearson4, Split Pearson4, Pearson7, Split Pearson7.
 - Optimization methods used for line decomposition: "Levenberg-Marquardt", "Least-Squares, 'Nelder-Mead', 'L-BFGS-B', 'Powell', 'Conjugate-Gradient', 'Cobyla', 'BFGS' , 'Truncated Newton', 'trust-region for constrained optimization', 'Sequential Linear Squares Programming'.
 - Automatic construction of all necessary graphs for articles and the ability to save them in various formats.
+- Averaged plot with confidence interval.
 
-![1](https://github.com/DarkMatro/RS-tool/assets/113565324/d449b6f3-fd60-4a62-afe1-941ec252d231)
-![2](https://github.com/DarkMatro/RS-tool/assets/113565324/f72cea02-f66f-41ba-aad6-ea1889b2deda)
-![3](https://github.com/DarkMatro/RS-tool/assets/113565324/52eb9c92-b2da-41cb-9c7d-acec6c8a246c)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/2f82efaf-d55b-4498-a605-d47b366ebd32)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/89b3f8ba-6f73-4369-9332-3a21ea2d92ab)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/3088814b-31ad-427c-84c3-0e3d6d1df745)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/eb092df0-9f68-4f30-b684-c4655c404a8c)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/2ee50963-d23b-45a7-85d2-096d5528fc64)
+
+
 
 
 
