@@ -33,7 +33,7 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 ![image](https://github.com/DarkMatro/RS-tool/assets/113565324/c79fd0d1-052d-4590-8726-2060b387bc8b)
 ![image](https://github.com/DarkMatro/RS-tool/assets/113565324/78d2f2b0-c137-43f7-a0a8-f2a16bcf1ee1)
 ![image](https://github.com/DarkMatro/RS-tool/assets/113565324/62a4c385-430e-4b80-948d-7a5083274558)
-![image](https://github.com/DarkMatro/RS-tool/assets/113565324/66d3cdc5-9ed6-4349-ba30-1eeb60669206)
+![image](https://github.com/DarkMatro/RS-tool/assets/113565324/a28d64f1-c419-460d-a2a4-8167eb5a8be9)
 
 
 
