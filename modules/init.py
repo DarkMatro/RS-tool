@@ -1,15 +1,15 @@
-import platform
-import sys
+from platform import system
+from sys import modules as sys_modules
 from logging import warning
-from os import environ
 from pathlib import Path
-from xml.dom.minidom import parse
-import jinja2
+from jinja2 import FileSystemLoader, Environment
 from qtpy.QtCore import QDir, Qt
 from qtpy.QtGui import QFontDatabase
-from qtpy.QtWidgets import QApplication, QComboBox
-from modules.default_values import program_version
+from qtpy.QtWidgets import QApplication
 from modules.resourse_generator import ResourseGenerator
+
+from modules.work_with_files.preferences_file import get_theme
+from qfluentwidgets import toggleTheme
 
 
 def update_svg_colors(theme: dict) -> None:
@@ -47,8 +47,8 @@ def update_svg_colors(theme: dict) -> None:
                 file.writelines(data)
 
 
-def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', None), invert_secondary: bool = False,
-                     parent: str = 'theme') -> str:
+def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', None), invert_secondary: bool = False) \
+        -> str:
 
     try:
         add_fonts()
@@ -61,13 +61,13 @@ def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', N
     if theme is None:
         return None
 
-    set_icons_theme(theme, parent=parent)
+    set_icons_theme(theme, parent='theme')
     # Render custom template
     parent = Path(__file__).parent.parent / 'material'
     template = parent / 'material.css.template'
     template = template.name
-    loader = jinja2.FileSystemLoader(parent)
-    env = jinja2.Environment(loader=loader)
+    loader = FileSystemLoader(parent)
+    env = Environment(loader=loader)
     env.filters['opacity'] = opacity
     env.filters['density'] = density
     stylesheet = env.get_template(template)
@@ -82,60 +82,19 @@ def build_stylesheet(theme_in: tuple[str, str, dict] = ('Mid Dark', 'Default', N
 
     update_svg_colors(theme)
 
-    environ = {
-        'linux': platform.system() == 'Linux',
-        'windows': platform.system() == 'Windows',
-        'darwin': platform.system() == 'Darwin',
+    env = {
+        'linux': system() == 'Linux',
+        'windows': system() == 'Windows',
+        'darwin': system() == 'Darwin',
         'isthemelight': invert_secondary,
-        'pyqt5': 'PyQt5' in sys.modules,
-        'pyqt6': 'PyQt6' in sys.modules,
-        'pyside2': 'PySide2' in sys.modules,
-        'pyside6': 'PySide6' in sys.modules,
+        'pyqt5': 'PyQt5' in sys_modules,
+        'pyqt6': 'PyQt6' in sys_modules,
+        'pyside2': 'PySide2' in sys_modules,
+        'pyside6': 'PySide6' in sys_modules,
     }
 
-    environ.update(theme)
-    return stylesheet.render(environ)
-
-
-def get_theme(theme: tuple[str, str, dict | None] = ('Mid Dark', 'Default', None), invert_secondary: bool = False) \
-        -> dict[str]:
-    theme_bckgrnd, theme_color, _ = theme
-
-    theme_bckgrnd_path = Path(__file__).parent.parent / 'material/themes' / (theme_bckgrnd + '.xml')
-    theme_color_path = Path(__file__).parent.parent / 'material/themes' / (theme_color + '.xml')
-
-    if not Path(theme_bckgrnd_path).exists:
-        warning(f"{theme_bckgrnd_path} not exist!")
-        return None
-    if not Path(theme_color_path).exists:
-        warning(f"{theme_color_path} not exist!")
-        return None
-
-    doc_bckgrnd = parse(str(theme_bckgrnd_path))
-    doc_color = parse(str(theme_color_path))
-    theme_dict = {child.getAttribute('name'): child.firstChild.nodeValue
-                  for child in doc_bckgrnd.getElementsByTagName('color')}
-    theme_color_dict = {child.getAttribute('name'): child.firstChild.nodeValue
-                        for child in doc_color.getElementsByTagName('color')}
-    theme_dict.update(theme_color_dict)
-
-    for k in theme_dict:
-        environ[str(k)] = theme_dict[k]
-
-    if invert_secondary:
-        theme_dict['secondaryColor'], theme_dict['secondaryLightColor'], theme_dict['secondaryDarkColor'] = \
-            theme_dict['secondaryColor'], theme_dict['secondaryDarkColor'], theme_dict['secondaryLightColor']
-
-    for color in ['primaryColor',
-                  'secondaryColor',
-                  'secondaryLightColor',
-                  'secondaryDarkColor',
-                  'primaryTextColor',
-                  'secondaryTextColor']:
-        environ[f'QTMATERIAL_{color.upper()}'] = theme_dict[color]
-    environ["QTMATERIAL_THEME"] = theme_bckgrnd + ' ' + theme_color
-
-    return theme_dict
+    env.update(theme)
+    return stylesheet.render(env)
 
 
 def add_fonts() -> None:
@@ -143,16 +102,25 @@ def add_fonts() -> None:
     folders = [f for f in fonts_path.iterdir() if f.is_dir()]
     for font_dir in folders:
         for font in font_dir.iterdir():
-            if str(font).endswith('.ttf'):
+            if str(font).endswith('.ttf') or str(font).endswith('.otf'):
                 QFontDatabase.addApplicationFont(str(font))
 
 
 def apply_stylesheet(app: QApplication, theme: tuple[str, str, dict] = ('Mid Dark', 'Default', {}),
-                     invert_secondary: bool = False, parent: str = 'theme') -> None:
-    stylesheet = build_stylesheet(theme, invert_secondary, parent)
+                     invert_secondary: bool = False) -> None:
+    stylesheet = build_stylesheet(theme, invert_secondary)
     if stylesheet is None:
         return
     app.setStyleSheet(stylesheet)
+    toggleTheme()
+
+
+
+def update_theme_event(parent, theme_bckgrnd: str = 'Dark', theme_color: str = 'Amber',
+                       theme_colors: dict = None) -> None:
+    invert = 'Light' in theme_bckgrnd and 'Dark' not in theme_bckgrnd
+    apply_stylesheet(parent, theme=(theme_bckgrnd, theme_color, theme_colors), invert_secondary=invert)
+    toggleTheme()
 
 
 def opacity(theme: dict, value: float = 0.5) -> str:
@@ -209,29 +177,8 @@ def list_themes(background: bool = True):
 
 
 def splash_show_message(splash, text) -> None:
-    splash_color = Qt.GlobalColor.black if environ['splash_color'] == 'black' else Qt.GlobalColor.white
-    splash.showMessage(program_version() + '\n' + text, Qt.AlignmentFlag.AlignBottom, splash_color)
+    splash.showMessage(text, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, Qt.GlobalColor.white)
 
 
-class QtStyleTools:
-    """"""
 
-    @staticmethod
-    def add_menu_combobox(combobox_ref: QComboBox, background: bool = True):
-        """"""
-        themes = list_themes(background)
-        for i in themes:
-            combobox_ref.addItem(i)
 
-    @staticmethod
-    def apply_stylesheet(parent, theme, invert_secondary=False, callable_=None):
-        """"""
-        apply_stylesheet(parent, theme=theme, invert_secondary=invert_secondary)
-
-        if callable_:
-            callable_()
-
-    def update_theme_event(self, parent, theme_bckgrnd: str = 'Dark', theme_color: str = 'Amber',
-                           theme_colors: dict = None) -> None:
-        invert = 'Light' in theme_bckgrnd and 'Dark' not in theme_bckgrnd
-        self.apply_stylesheet(parent, theme=(theme_bckgrnd, theme_color, theme_colors), invert_secondary=invert)

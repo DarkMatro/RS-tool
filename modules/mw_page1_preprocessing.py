@@ -1,8 +1,11 @@
+import pandas as pd
+import seaborn as sns
 from asyncqtpy import asyncSlot
-from qtpy.QtWidgets import QMessageBox
+from pyqtgraph import ArrowItem
 from datetime import datetime
+from multiprocessing import Manager
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from modules.static_functions import get_average_spectrum, random_rgb, find_first_right_local_minimum, \
+from modules import get_average_spectrum, random_rgb, find_first_right_local_minimum, \
     find_first_left_local_minimum, convert, find_fluorescence_beginning, \
     find_nearest_by_idx, subtract_cosmic_spikes_moll, interpolate
 from os import environ
@@ -10,19 +13,21 @@ from asyncio import gather
 from modules.undo_redo import CommandTrim, CommandBaselineCorrection, CommandSmooth, CommandNormalize, \
     CommandCutFirst, CommandConvert, CommandUpdateDespike, CommandUpdateInterpolated
 import numpy as np
-from modules.MultiLine import MultiLine
-from modules.dialogs import DialogListBox
+from modules.stages.preprocessing.MultiLine import MultiLine
+from modules import DialogListBox
 from qtpy.QtGui import QColor
 from qtpy.QtCore import Qt
-from modules.default_values import baseline_methods, smoothing_methods, normalize_methods
-from modules.functions_normalize import get_emsc_average_spectrum
-from modules.functions_cut_trim import cut_spectrum
-from modules.functions_for_arrays import nearest_idx, find_nearest
+from qfluentwidgets import MessageBox
+from modules.default_values import baseline_methods, normalize_methods, smoothing_methods
+from modules.stages.preprocessing.functions.normalization.normalization import get_emsc_average_spectrum
+from modules.stages.preprocessing.functions.cut_trim.cut_trim import cut_spectrum
+from modules.mutual_functions.work_with_arrays import nearest_idx, find_nearest
 
 
 class PreprocessingLogic:
 
     def __init__(self, parent):
+        self.av_df = None  # DataFrame of baseline_corrected spectra with class labels
         self.parent = parent
         self.BeforeDespike = dict()
         self.ConvertedDict = dict()
@@ -48,14 +53,16 @@ class PreprocessingLogic:
 
     # region Plots
     @asyncSlot()
-    async def update_plot_item(self, items: dict[str, np.ndarray], plot_item_id: int = 0) -> None:
+    async def update_plot_item(self, items, plot_item_id: int = 0) -> None:
         self.clear_plots_before_update(plot_item_id)
         if plot_item_id == 6:
-            group_styles = [x for x in self.parent.ui.GroupsTable.model().column_data(1)]
+            if self.parent.ui.GroupsTable.model().rowCount() == 0:
+                return
+            groups_styles = self.parent.ui.GroupsTable.model().groups_styles
             i = 0
             for key, arr in items:
                 if len(arr) != 0:
-                    self.add_lines(np.array([arr[:, 0]]), np.array([arr[:, 1]]), group_styles[i], key, plot_item_id)
+                    self.add_lines(np.array([arr[:, 0]]), np.array([arr[:, 1]]), groups_styles[i], key, plot_item_id)
                 i += 1
         else:
             arrays = self.get_arrays_by_group(items)
@@ -222,22 +229,14 @@ class PreprocessingLogic:
         mw = self.parent
         mw.time_start = datetime.now()
         if len(mw.ImportedArray) < 2:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setText("Нужно хотя бы 2 спектра с разными диапазонами для интерполяции.")
-            msg.setWindowTitle("Interpolation error")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Interpolation error.', 'Нужно хотя бы 2 спектра с разными диапазонами для интерполяции.',
+                       self.parent, {'Ok'}).exec()
             return
         result = self.check_ranges()
         different_shapes, _, _ = self.check_arrays_shape()
         if len(result) <= 1 and not different_shapes and not mw.predict_logic.is_production_project:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Все спектры в одинаковых диапазонах длин волн")
-            msg.setWindowTitle("Interpolation didn't started")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Interpolation didn't started.", 'Все спектры в одинаковых диапазонах длин волн.', self.parent,
+                       {'Ok'}).exec()
             return
         elif len(result) <= 1 and different_shapes and not mw.predict_logic.is_production_project:
             await self.interpolate_shapes()
@@ -288,14 +287,16 @@ class PreprocessingLogic:
         if n_files >= 10_000:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, interpolate, mw.ImportedArray[i], i, ref_file)
-                                  for i in filenames]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            interpolated = await gather(*mw.current_futures)
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, interpolate, mw.ImportedArray[i], i, ref_file)
+                                      for i in filenames]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                interpolated = await gather(*mw.current_futures)
 
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -367,12 +368,7 @@ class PreprocessingLogic:
     @asyncSlot()
     async def _do_despike(self) -> None:
         if len(self.parent.ImportedArray) <= 0:
-            message_box = QMessageBox()
-            message_box.setIcon(QMessageBox.Icon.Warning)
-            message_box.setText("Import spectra first")
-            message_box.setWindowTitle("Despike error")
-            message_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            message_box.exec()
+            MessageBox("Despike error.", 'Import spectra before despike.', self.parent, {'Ok'}).exec()
             return
         laser_wavelength = self.parent.ui.laser_wl_spinbox.value()
         maxima_count = self.parent.ui.maxima_count_despike_spin_box.value()
@@ -384,23 +380,25 @@ class PreprocessingLogic:
         n_files = len(items_to_despike)
         self.parent.open_progress_bar(max_value=n_files)
         self.parent.open_progress_dialog("Despiking...", "Cancel", maximum=n_files)
-        if self.parent.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        if self.parent.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             return
         self.parent.time_start = datetime.now()
         self.parent.current_executor = ThreadPoolExecutor()
         if n_files > 1000:
             self.parent.current_executor = ProcessPoolExecutor()
         fwhm_nm_df = self.parent.ui.input_table.model().get_column('FWHM, nm')
-        with self.parent.current_executor as executor:
-            self.parent.current_futures = [
-                self.parent.loop.run_in_executor(executor, subtract_cosmic_spikes_moll, i, fwhm_nm_df[i[0]],
-                                                 laser_wavelength, maxima_count, fwhm_width)
-                for i in items_to_despike]
-            for future in self.parent.current_futures:
-                future.add_done_callback(self.parent.progress_indicator)
-            result_of_despike = await gather(*self.parent.current_futures)
+        with Manager() as manager:
+            self.parent.break_event = manager.Event()
+            with self.parent.current_executor as executor:
+                self.parent.current_futures = [
+                    self.parent.loop.run_in_executor(executor, subtract_cosmic_spikes_moll, i, fwhm_nm_df[i[0]],
+                                                     laser_wavelength, maxima_count, fwhm_width)
+                    for i in items_to_despike]
+                for future in self.parent.current_futures:
+                    future.add_done_callback(self.parent.progress_indicator)
+                result_of_despike = await gather(*self.parent.current_futures)
 
-        if self.parent.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        if self.parent.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             self.parent.close_progress_bar()
             self.parent.ui.statusBar.showMessage('Cancelled.')
             return
@@ -413,12 +411,7 @@ class PreprocessingLogic:
         elif not self.parent.predict_logic.is_production_project:
             seconds = round((datetime.now() - self.parent.time_start).total_seconds())
             self.parent.ui.statusBar.showMessage('Action completed for ' + str(seconds) + ' sec.', 25000)
-            message_box = QMessageBox()
-            message_box.setIcon(QMessageBox.Icon.Warning)
-            message_box.setText("No peaks found")
-            message_box.setWindowTitle("Despike finished")
-            message_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            message_box.exec()
+            MessageBox("Despike finished.", 'No peaks found.', self.parent, {'Ok'}).exec()
 
     def get_items_to_despike(self) -> list[tuple[str, np.ndarray]]:
         current_row = self.parent.ui.input_table.selectionModel().currentIndex().row()
@@ -443,6 +436,34 @@ class PreprocessingLogic:
         filenames = rows.index
         return filenames
 
+    async def despike_history_add_plot(self) -> None:
+        """
+        Add arrows and BeforeDespike plot item to imported_plot for compare
+        """
+        # selected spectrum despiked
+        mw = self.parent
+        current_index = mw.ui.input_table.selectionModel().currentIndex()
+        group_number = mw.ui.input_table.model().cell_data(current_index.row(), 2)
+        arr = self.BeforeDespike[mw.current_spectrum_despiked_name]
+        if self.curveDespikedHistory:
+            mw.input_plot_widget_plot_item.removeItem(self.curveDespikedHistory)
+        self.curveDespikedHistory = mw.get_curve_plot_data_item(arr, group_number)
+        mw.input_plot_widget_plot_item.addItem(self.curveDespikedHistory, kargs=['ignoreBounds', 'skipAverage'])
+
+        all_peaks = mw.ui.input_table.model().cell_data(current_index.row(), 3)
+        all_peaks = all_peaks.split()
+        text_peaks = []
+        for i in all_peaks:
+            i = i.replace(',', '')
+            i = i.replace(' ', '')
+            text_peaks.append(i)
+        list_peaks = [float(s) for s in text_peaks]
+        for i in list_peaks:
+            idx = nearest_idx(arr[:, 0], i)
+            y_peak = arr[:, 1][idx]
+            arrow = ArrowItem(pos=(i, y_peak), angle=-45)
+            mw.input_plot_widget_plot_item.addItem(arrow)
+
     # endregion
 
     # region CONVERT
@@ -457,21 +478,12 @@ class PreprocessingLogic:
     async def _do_convert(self) -> None:
         mw = self.parent
         if len(mw.ImportedArray) > 1 and len(self.check_ranges()) > 1:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Spectra must be interpolated before convert")
-            msg.setWindowTitle("Convert stopped")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Convert stopped.", 'Spectra must be interpolated before convert.', self.parent, {'Ok'}).exec()
             return
         different_shapes, _, _ = self.check_arrays_shape()
         if different_shapes:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Files have different shapes, interpolation required")
-            msg.setWindowTitle("Convert stopped")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Convert stopped.", 'Files have different shapes, interpolation required.',
+                       self.parent, {'Ok'}).exec()
             return
 
         mw.time_start = datetime.now()
@@ -493,14 +505,16 @@ class PreprocessingLogic:
         if n_files >= 12_000:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with executor:
-            mw.current_futures = [
-                mw.loop.run_in_executor(executor, convert, i, near_idx, laser_nm, max_ccd_value)
-                for i in mw.ImportedArray.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            converted = await gather(*mw.current_futures)
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with executor:
+                mw.current_futures = [
+                    mw.loop.run_in_executor(executor, convert, i, near_idx, laser_nm, max_ccd_value)
+                    for i in mw.ImportedArray.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                converted = await gather(*mw.current_futures)
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -523,12 +537,14 @@ class PreprocessingLogic:
         value_right = find_nearest(x_axis, mw.ui.cm_range_end.value())
         mw.ui.cm_range_end.setValue(value_right)
         factor = mw.ui.neg_grad_factor_spinBox.value()
-        with ThreadPoolExecutor() as executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, find_fluorescence_beginning, i, factor)
-                                  for i in self.ConvertedDict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            result = await gather(*mw.current_futures)
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with ThreadPoolExecutor() as executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, find_fluorescence_beginning, i, factor)
+                                      for i in self.ConvertedDict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                result = await gather(*mw.current_futures)
         idx = max(result)
         value_left = find_nearest_by_idx(x_axis, idx)
         mw.ui.cm_range_start.setValue(value_left)
@@ -549,12 +565,8 @@ class PreprocessingLogic:
     @asyncSlot()
     async def _do_cut_first(self) -> None:
         if not self.ConvertedDict:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No converted plots")
-            msg.setWindowTitle("Cut failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Cut failed.", 'Files have different shapes, interpolation required.', self.parent,
+                       {'Ok'}).exec()
             return
         x_axis = next(iter(self.ConvertedDict.values()))[:, 0]
         mw = self.parent
@@ -562,10 +574,8 @@ class PreprocessingLogic:
         value_end = mw.ui.cm_range_end.value()
         if round(value_start, 5) == round(x_axis[0], 5) \
                 and round(value_end, 5) == round(x_axis[-1], 5):
-            msg = QMessageBox(QMessageBox.Icon.Information, 'Cut failed', 'Cut range is equal to actual spectrum range.'
-                                                                          ' No need to cut.',
-                              QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Cut failed.", 'Cut range is equal to actual spectrum range. No need to cut.', self.parent,
+                       {'Ok'}).exec()
             return
         mw.ui.statusBar.showMessage('Cut in progress...')
         mw.close_progress_bar()
@@ -578,13 +588,15 @@ class PreprocessingLogic:
         if n_files >= 16_000:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, cut_spectrum, i, value_start, value_end)
-                                  for i in self.ConvertedDict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            cutted_arrays = await gather(*mw.current_futures)
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, cut_spectrum, i, value_start, value_end)
+                                      for i in self.ConvertedDict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                cutted_arrays = await gather(*mw.current_futures)
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -593,6 +605,27 @@ class PreprocessingLogic:
             mw.undoStack.push(command)
         mw.close_progress_bar()
 
+    def cm_range_start_change_event(self, new_value: float) -> None:
+        mw = self.parent
+        mw.set_modified()
+        if self.ConvertedDict:
+            x_axis = next(iter(self.ConvertedDict.values()))[:, 0]
+            new_value = find_nearest(x_axis, new_value)
+            mw.ui.cm_range_start.setValue(new_value)
+        if new_value >= mw.ui.cm_range_end.value():
+            mw.ui.cm_range_start.setValue(mw.ui.cm_range_start.minimum())
+        mw.linearRegionCmConverted.setRegion((mw.ui.cm_range_start.value(), mw.ui.cm_range_end.value()))
+
+    def cm_range_end_change_event(self, new_value: float) -> None:
+        mw = self.parent
+        mw.set_modified()
+        if self.ConvertedDict:
+            x_axis = next(iter(self.ConvertedDict.values()))[:, 0]
+            new_value = find_nearest(x_axis, new_value)
+            mw.ui.cm_range_end.setValue(new_value)
+        if new_value <= mw.ui.cm_range_start.value():
+            mw.ui.cm_range_end.setValue(mw.ui.cm_range_end.maximum())
+        mw.linearRegionCmConverted.setRegion((mw.ui.cm_range_start.value(), mw.ui.cm_range_end.value()))
     # endregion
 
     # region Normalizing
@@ -606,12 +639,7 @@ class PreprocessingLogic:
     @asyncSlot()
     async def _do_normalize(self) -> None:
         if not self.CuttedFirstDict or len(self.CuttedFirstDict) == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No cutted spectra for normalization")
-            msg.setWindowTitle("Normalization stopped")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Normalization stopped.", 'No cutted spectra for normalization.', self.parent, {'Ok'}).exec()
             return
         mw = self.parent
         mw.time_start = datetime.now()
@@ -635,13 +663,15 @@ class PreprocessingLogic:
         if n_files >= n_limit:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with mw.current_executor as executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
-                                  for i in self.CuttedFirstDict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            normalized = await gather(*mw.current_futures)
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with mw.current_executor as executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+                                      for i in self.CuttedFirstDict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                normalized = await gather(*mw.current_futures)
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -664,12 +694,7 @@ class PreprocessingLogic:
     async def do_smooth(self) -> None:
         mw = self.parent
         if not self.NormalizedDict or len(self.NormalizedDict) == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No normalized spectra for smoothing")
-            msg.setWindowTitle("Smoothing stopped")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Smoothing stopped.", 'No normalized spectra for smoothing.', self.parent, {'Ok'}).exec()
             return
         mw.time_start = datetime.now()
         mw.ui.statusBar.showMessage('Smoothing...')
@@ -686,19 +711,20 @@ class PreprocessingLogic:
         if n_files >= n_samples_limit:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-
-        with executor:
-            if method == 'MLESG':
-                mw.current_futures = [mw.loop.run_in_executor(executor, func, i, (params[0], params[1],
-                                                                                  snr_df.at[i[0]]))
-                                      for i in self.NormalizedDict.items()]
-            else:
-                mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
-                                      for i in self.NormalizedDict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            smoothed = await gather(*mw.current_futures)
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with executor:
+                if method == 'MLESG':
+                    mw.current_futures = [mw.loop.run_in_executor(executor, func, i, (params[0], params[1],
+                                                                                      snr_df.at[i[0]]))
+                                          for i in self.NormalizedDict.items()]
+                else:
+                    mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+                                          for i in self.NormalizedDict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                smoothed = await gather(*mw.current_futures)
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -740,12 +766,8 @@ class PreprocessingLogic:
     @asyncSlot()
     async def baseline_correction(self):
         if not self.smoothed_spectra or len(self.smoothed_spectra) == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No spectra for baseline correction")
-            msg.setWindowTitle("Baseline correction stopped")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Baseline correction stopped.", 'No spectra for baseline correction.', self.parent,
+                       {'Ok'}).exec()
             return
         try:
             await self.do_baseline_correction()
@@ -769,13 +791,15 @@ class PreprocessingLogic:
         if n_files >= n_samples_limit:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
-                                  for i in self.smoothed_spectra.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            baseline_corrected = await gather(*mw.current_futures)
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+                                      for i in self.smoothed_spectra.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                baseline_corrected = await gather(*mw.current_futures)
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -796,8 +820,10 @@ class PreprocessingLogic:
                 params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
                           mw.ui.n_iterations_spinBox.value()]
             case 'ExModPoly':
+                # params = List()
                 params = [float(mw.ui.polynome_degree_spinBox.value()), mw.ui.grad_doubleSpinBox.value(),
-                          float(mw.ui.n_iterations_spinBox.value())]
+                           float(mw.ui.n_iterations_spinBox.value())]
+                # [params.append(x) for x in params_]
             case 'Penalized poly':
                 params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
                           mw.ui.n_iterations_spinBox.value(), mw.ui.alpha_factor_doubleSpinBox.value(),
@@ -864,22 +890,25 @@ class PreprocessingLogic:
         mw.close_progress_bar()
         mw.open_progress_bar(max_value=len(self.baseline_corrected_not_trimmed_dict))
         x_axis = next(iter(self.baseline_corrected_not_trimmed_dict.values()))[:, 0]  # any of dict
-        with ThreadPoolExecutor() as executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, find_first_right_local_minimum, i)
-                                  for i in self.baseline_corrected_not_trimmed_dict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            result = await gather(*mw.current_futures)
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with ThreadPoolExecutor() as executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, find_first_right_local_minimum, i)
+                                      for i in self.baseline_corrected_not_trimmed_dict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                result = await gather(*mw.current_futures)
         idx = int(np.percentile(result, 0.95))
         value_right = x_axis[idx]
         mw.ui.trim_end_cm.setValue(value_right)
-
-        with ThreadPoolExecutor() as executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, find_first_left_local_minimum, i)
-                                  for i in self.baseline_corrected_not_trimmed_dict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            result = await gather(*mw.current_futures)
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with ThreadPoolExecutor() as executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, find_first_left_local_minimum, i)
+                                      for i in self.baseline_corrected_not_trimmed_dict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                result = await gather(*mw.current_futures)
         idx = np.max(result)
         value_left = x_axis[idx]
         mw.ui.trim_start_cm.setValue(value_left)
@@ -899,24 +928,15 @@ class PreprocessingLogic:
     async def _do_trim(self) -> None:
         mw = self.parent
         if not self.baseline_corrected_not_trimmed_dict:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No baseline corrected plots")
-            msg.setWindowTitle("Trimming failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Trimming failed.", 'No baseline corrected plots.', self.parent, {'Ok'}).exec()
             return
         x_axis = next(iter(self.baseline_corrected_not_trimmed_dict.values()))[:, 0]
         value_start = mw.ui.trim_start_cm.value()
         value_end = mw.ui.trim_end_cm.value()
         if round(value_start, 5) == round(x_axis[0], 5) \
                 and round(value_end, 5) == round(x_axis[-1], 5):
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Trim range is equal to actual spectrum range. No need to cut.")
-            msg.setWindowTitle("Trim failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Trim failed.", 'Trim range is equal to actual spectrum range. No need to cut.', self.parent,
+                       {'Ok'}).exec()
             return
         mw.ui.statusBar.showMessage('Trimming in progress...')
         mw.close_progress_bar()
@@ -929,13 +949,15 @@ class PreprocessingLogic:
         if n_files >= 16_000:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, cut_spectrum, i, value_start, value_end)
-                                  for i in self.baseline_corrected_not_trimmed_dict.items()]
-            for future in mw.current_futures:
-                future.add_done_callback(mw.progress_indicator)
-            cutted_arrays = await gather(*mw.current_futures)
-        if mw.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            mw.break_event = manager.Event()
+            with executor:
+                mw.current_futures = [mw.loop.run_in_executor(executor, cut_spectrum, i, value_start, value_end)
+                                      for i in self.baseline_corrected_not_trimmed_dict.items()]
+                for future in mw.current_futures:
+                    future.add_done_callback(mw.progress_indicator)
+                cutted_arrays = await gather(*mw.current_futures)
+        if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
             return
@@ -944,31 +966,223 @@ class PreprocessingLogic:
             mw.undoStack.push(command)
         mw.close_progress_bar()
 
+    def trim_start_change_event(self, new_value: float) -> None:
+        mw = self.parent
+        mw.set_modified()
+        if self.baseline_corrected_not_trimmed_dict:
+            x_axis = next(iter(self.baseline_corrected_not_trimmed_dict.values()))[:, 0]
+            new_value = find_nearest(x_axis, new_value)
+            mw.ui.trim_start_cm.setValue(new_value)
+        if new_value >= mw.ui.trim_end_cm.value():
+            mw.ui.trim_start_cm.setValue(mw.ui.trim_start_cm.minimum())
+        mw.linearRegionBaseline.setRegion((mw.ui.trim_start_cm.value(), mw.ui.trim_end_cm.value()))
+
+    def trim_end_change_event(self, new_value: float) -> None:
+        mw = self.parent
+        mw.set_modified()
+        if self.baseline_corrected_not_trimmed_dict:
+            x_axis = next(iter(self.baseline_corrected_not_trimmed_dict.values()))[:, 0]
+            new_value = find_nearest(x_axis, new_value)
+            mw.ui.trim_end_cm.setValue(new_value)
+        if new_value <= mw.ui.trim_start_cm.value():
+            mw.ui.trim_end_cm.setValue(mw.ui.trim_end_cm.maximum())
+        mw.linearRegionBaseline.setRegion((mw.ui.trim_start_cm.value(), mw.ui.trim_end_cm.value()))
     # endregion
 
     # region Average spectrum
-    @asyncSlot()
     async def update_averaged(self) -> None:
+        """
+        Refresh averaged spectrum plot and self.averaged_dict.
+        Returns
+        -------
+            None
+        """
         mw = self.parent
-        if self.baseline_corrected_dict:
-            self.update_averaged_dict()
-            mw.fitting.update_template_combo_box()
-            await self.update_plot_item(self.averaged_dict.items(), 6)
-            if not mw.predict_logic.is_production_project:
-                mw.fitting.update_deconv_intervals_limits()
+        if not self.baseline_corrected_dict:
+            return
+        self.update_averaged_dict()
+        await self.update_plot_item(self.averaged_dict.items(), 6)
+        mw.fitting.update_template_combo_box()
+        if not mw.predict_logic.is_production_project:
+            mw.fitting.update_deconv_intervals_limits()
 
     def update_averaged_dict(self) -> None:
+        """
+        self.averaged_dict with key = group_id
+        and values = averages spectrum of this group
+        Returns
+        -------
+            None
+        """
         mw = self.parent
-        groups_count = mw.ui.GroupsTable.model().rowCount()
+        n_groups = mw.ui.GroupsTable.model().rowCount()
         self.averaged_dict.clear()
-        method = mw.ui.average_method_cb.currentText()
-        for i in range(groups_count):
-            group = i + 1
-            names = mw.ui.input_table.model().names_of_group(group)
-            if len(names) == 0:
+        averaging_method = mw.ui.average_method_cb.currentText()
+        for i in range(n_groups):
+            group_id = i + 1
+            filenames = mw.ui.input_table.model().names_of_group(group_id)
+            if len(filenames) == 0:
                 continue
-            arrays_list = [self.baseline_corrected_dict[x] for x in names]
-            arrays_list_av = get_average_spectrum(arrays_list, method)
-            self.averaged_dict[group] = arrays_list_av
+            arrays_list = [self.baseline_corrected_dict[x] for x in filenames]
+            arrays_list_av = get_average_spectrum(arrays_list, averaging_method)
+            self.averaged_dict[group_id] = arrays_list_av
+
+    async def refresh_averaged_spectrum_plot(self) -> None:
+        """
+        Function updates averaged seaborn line plot.
+
+        Returns
+        -------
+        None
+        """
+        if not self.baseline_corrected_dict:
+            return
+        error_method = self.parent.ui.average_errorbar_method_combo_box.currentText()
+        error_level = self.parent.ui.average_level_spin_box.value()
+        n_boot = self.parent.ui.average_n_boot_spin_box.value()
+        ax = self.parent.ui.average_sns_plot_widget.canvas.axes
+        ax.cla()
+        self.av_df = self.create_averaged_df()
+        colors = self.parent.ui.GroupsTable.model().groups_colors
+        palette = sns.color_palette(colors)
+        sns.lineplot(data=self.av_df, x='Raman shift, cm\N{superscript minus}\N{superscript one}',
+                     y='Intensity, rel. un.', hue='Label', size='Label', style='Label', palette=palette,
+                     sizes=self.parent.ui.GroupsTable.model().groups_width, errorbar=(error_method, error_level),
+                     dashes=self.parent.ui.GroupsTable.model().groups_dashes, legend='full', ax=ax, n_boot=n_boot)
+        self.parent.ui.average_sns_plot_widget.canvas.figure.tight_layout()
+        self.parent.ui.average_sns_plot_widget.canvas.draw()
+
+    def create_averaged_df(self) -> pd.DataFrame:
+        """
+        Function creates DataFrame for seaborn line plot.
+
+        Returns
+        -------
+        av_df: pd.DataFrame
+            DataFrame with 3 columns:
+                Label: group_id
+                Raman shift: cm-1 for x-axis
+                Intensity, rel. un.: y-axis value
+        """
+        mw = self.parent
+        av_df = pd.DataFrame(columns=['Label', 'Raman shift, cm\N{superscript minus}\N{superscript one}',
+                                      'Intensity, rel. un.'])
+        n_groups = mw.ui.GroupsTable.model().rowCount()
+        for i in range(n_groups):
+            group_id = i + 1
+            filenames = mw.ui.input_table.model().names_of_group(group_id)
+            n_spectrum = len(filenames)
+            if n_spectrum == 0:
+                continue
+            arrays_y = [self.baseline_corrected_dict[x][:, 1] for x in filenames]
+            arrays_y = np.array(arrays_y).flatten()
+            x_axis = next(iter(self.baseline_corrected_dict.values()))[:, 0]
+            x_axis = np.array(x_axis)
+            x_axis = np.tile(x_axis, n_spectrum)
+            label = mw.ui.GroupsTable.model().get_group_name_by_int(group_id)
+            labels = [label] * arrays_y.size
+            df = pd.DataFrame({'Label': labels, 'Raman shift, cm\N{superscript minus}\N{superscript one}': x_axis,
+                               'Intensity, rel. un.': arrays_y})
+            av_df = pd.concat([av_df, df])
+        return av_df
 
     # endregion
+
+    def compare_baseline_methods(self):
+        """
+        Delete later после диссертации
+        Returns
+        -------
+
+        """
+        mw = self.parent
+        from numpy.polynomial.polynomial import polyval
+        from modules.stages.preprocessing.functions.baseline_correction import baseline_penalized_poly, baseline_goldindec, ex_mod_poly, \
+            baseline_imodpoly, baseline_modpoly
+        from sklearn.metrics import mean_squared_error
+        from matplotlib import pyplot as plt
+        coefs = [1.27321927e+04, -7.62029464e+01, 2.81669762e-01, -5.66507200e-04, 6.52691243e-07,
+                 -4.38362720e-10, 1.66449516e-13, -3.21147214e-17]
+        x_axis, y_raman = mw.fitting.sum_array()
+        baseline_test = polyval(x_axis, coefs)
+        baseline_and_raman = baseline_test + y_raman
+        test_arr = np.vstack((x_axis, baseline_and_raman)).T
+        _, _, corrected_plus = ex_mod_poly(('1', test_arr), [7., 1e-10, 1000.])
+        _, _, corrected_imod = baseline_imodpoly(('3', test_arr), [7, 1e-8, 1000])
+        _, _, corrected_modp = baseline_modpoly(('3', test_arr), [7, 1e-10, 1000])
+        _, _, corrected_quant = baseline_penalized_poly(('3', test_arr), [7, 1e-8, 1000, 0.999,
+                                                                          'asymmetric_truncated_quadratic'])
+        _, _, corrected_goldin = baseline_goldindec(('3', test_arr),
+                                                    [7, 1e-9, 1000, 'asymmetric_truncated_quadratic', 0.5,
+                                                     .999])
+        corr_matrix_plus = np.corrcoef(y_raman, corrected_plus[:, 1])
+        corr1 = corr_matrix_plus[0, 1] ** 2
+        rms1 = mean_squared_error(corrected_plus[:, 1], y_raman, squared=False)
+        rms2 = mean_squared_error(corrected_imod[:, 1], y_raman, squared=False)
+        rms3 = mean_squared_error(corrected_modp[:, 1], y_raman, squared=False)
+        rms6 = mean_squared_error(corrected_quant[:, 1], y_raman, squared=False)
+        rms7 = mean_squared_error(corrected_goldin[:, 1], y_raman, squared=False)
+        corrected_plus1 = corrected_plus[corrected_plus < 0]
+        corrected_imod1 = corrected_imod[corrected_imod < 0]
+        corrected_modp1 = corrected_modp[corrected_modp < 0]
+        corrected_quant1 = corrected_quant[corrected_quant < 0]
+        corrected_goldin1 = corrected_goldin[corrected_goldin < 0]
+        area0 = np.trapz(corrected_plus1)
+        area1 = np.trapz(corrected_imod1)
+        area2 = np.trapz(corrected_modp1)
+        area3 = np.trapz(corrected_quant1)
+        area4 = np.trapz(corrected_goldin1)
+        print('r2 EX-Mod-Poly+ ', corr1, 'rms ', rms1, 'area ', area0)
+        corr_matrix_imod = np.corrcoef(y_raman, corrected_imod[:, 1])
+        corr2 = corr_matrix_imod[0, 1] ** 2
+        print('r2 I-Mod-Poly ', corr2, 'area ', area1)
+        corr_matrix_modp = np.corrcoef(y_raman, corrected_modp[:, 1])
+        corr3 = corr_matrix_modp[0, 1] ** 2
+        print('r2 Mod-Poly ', corr3, 'area ', area2)
+        corr_matrix_quant = np.corrcoef(y_raman, corrected_quant[:, 1])
+        corr6 = corr_matrix_quant[0, 1] ** 2
+        print('r2 Penalized Poly ', corr6, 'area ', area3)
+        corr_matrix_goldin = np.corrcoef(y_raman, corrected_goldin[:, 1])
+        corr7 = corr_matrix_goldin[0, 1] ** 2
+        print('r2 Goldindec ', corr7, 'area ', area4)
+        fig, ax = plt.subplots()
+        ax.plot(x_axis, y_raman, label='Synthesized spectrum', color='black')
+        ax.plot(x_axis, corrected_plus[:, 1],
+                label='Ex-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr1 * 100, 3)) + '. RMSE=' + str(
+                    np.round(rms1, 2)), color='red')
+        ax.plot(x_axis, corrected_imod[:, 1],
+                label='I-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr2 * 100, 3)) + '. RMSE=' + str(
+                    np.round(rms2, 2)), color='green')
+        ax.plot(x_axis, corrected_modp[:, 1],
+                label='Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr3 * 100, 3)) + '. RMSE=' + str(
+                    np.round(rms3, 2)), color='blue', dashes=[6, 2])
+        ax.plot(x_axis, corrected_quant[:, 1],
+                label='Penalized Poly. $\mathregular{r^2}$=' + str(np.round(corr6 * 100, 3)) + '. RMSE=' + str(
+                    np.round(rms6, 2)), color='c', dashes=[8, 4])
+        ax.plot(x_axis, corrected_goldin[:, 1],
+                label='Goldindec. $\mathregular{r^2}$=' + str(np.round(corr7 * 100, 3)) + '. RMSE=' + str(
+                    np.round(rms7, 2)), color='m', dashes=[8, 4])
+        ax.legend()
+        ax.grid()
+        plt.show()
+
+    def ex_mod_poly_build_dev(self):
+        """
+        Delete later после диссертации
+        Returns
+        -------
+
+        """
+        from matplotlib import pyplot as plt
+        from modules.stages.preprocessing.functions.baseline_correction import ex_mod_poly
+        before = datetime.now()
+        devs = []
+        for k, v in self.smoothed_spectra.items():
+            _, baseline_plus_tru, corrected_tru, pitches = ex_mod_poly((k, v), [12., 1e-12, 1000.])
+            devs.append(pitches)
+        print(datetime.now() - before)
+        fig, ax = plt.subplots()
+        for i in devs:
+            ax.plot(i)
+        ax.grid()
+        plt.show()

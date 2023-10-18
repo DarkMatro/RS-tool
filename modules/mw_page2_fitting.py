@@ -1,4 +1,4 @@
-import copy
+from copy import deepcopy
 from asyncio import gather
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from multiprocessing import Manager
@@ -15,19 +15,19 @@ from pandas import DataFrame, Series, MultiIndex, concat
 from pyqtgraph import PlotCurveItem, ROI, mkBrush, PlotDataItem
 from qtpy.QtCore import QTimer
 from qtpy.QtGui import QMouseEvent, QColor
-from qtpy.QtWidgets import QMessageBox
+from scipy.signal import argrelmin
+from qfluentwidgets import MessageBox
 
-from modules.default_values import peak_shapes_params, peak_shape_params_limits, fitting_methods
-from modules.static_functions import packed_current_line_parameters, models_params_splitted_batch, fit_model_batch,\
-    eval_uncert, models_params_splitted, get_curve_for_deconvolution, curve_pen_brush_by_style, set_roi_size,\
+from modules.default_values import peak_shape_params_limits, fitting_methods, peak_shapes_params
+from modules import packed_current_line_parameters, models_params_splitted_batch, fit_model_batch, \
+    eval_uncert, models_params_splitted, get_curve_for_deconvolution, curve_pen_brush_by_style, set_roi_size, \
     set_roi_size_pos, get_average_spectrum
 from modules.undo_redo import CommandAfterBatchFitting, CommandAfterFitting, CommandAfterGuess, \
-    CommandDeconvLineDragged, CommandDeconvLineTypeChanged
-from modules.functions_cut_trim import cut_full_spectrum, cut_axis
-from modules.functions_for_arrays import nearest_idx
-from modules.functions_guess_raman_lines import clustering_lines_intervals, intervals_by_borders, \
+    CommandDeconvLineDragged, CommandDeconvLineTypeChanged, CommandEndIntervalChanged, CommandStartIntervalChanged
+from modules import nearest_idx, find_nearest
+from modules.stages.preprocessing import cut_full_spectrum, cut_axis
+from modules import split_by_borders, fitting_model, fit_model, clustering_lines_intervals, intervals_by_borders, \
     create_intervals_data, params_func_legend, legend_from_float, update_fit_parameters, guess_peaks
-from modules.functions_fitting import split_by_borders, fitting_model, fit_model
 
 
 class FittingLogic:
@@ -39,7 +39,7 @@ class FittingLogic:
         self.rad = None
         self.parent = parent
         self.is_template = False
-        self.averaged_array = None
+        self.averaged_spectrum = None
         self.peak_shapes_params = peak_shapes_params()
         self.peak_shape_params_limits = peak_shape_params_limits()
         self.fitting_methods = fitting_methods()
@@ -54,7 +54,7 @@ class FittingLogic:
         self.sum_style = None
         self.residual_style = None
         self.sigma3_style = None
-        self.fill = None
+        self.sigma3_fill = None
         self.report_result = dict()
         self.sigma3 = dict()
         self.sigma3_top = PlotCurveItem(name='sigma3_top')
@@ -76,23 +76,24 @@ class FittingLogic:
         main_window.time_start = datetime.now()
         main_window.ui.statusBar.showMessage('Batch fitting...')
         main_window.close_progress_bar()
-        arrays = {}
+        baseline_corrected_spectra = {}
 
         if main_window.predict_logic.is_production_project \
                 and main_window.ui.deconvoluted_dataset_table_view.model().rowCount() != 0:
             filenames_in_dataset = list(main_window.ui.deconvoluted_dataset_table_view.model().column_data(1).values)
             for key, arr in main_window.preprocessing.baseline_corrected_dict.items():
                 if key not in filenames_in_dataset:
-                    arrays[key] = [arr]
+                    baseline_corrected_spectra[key] = [arr]
         else:
             for key, arr in main_window.preprocessing.baseline_corrected_dict.items():
-                arrays[key] = [arr]
-        splitted_arrays = self._split_array_for_fitting(arrays)
+                baseline_corrected_spectra[key] = [arr]
+        # baseline_corrected_spectra = {'1 Miner peripulpal 1_1.asc': baseline_corrected_spectra['1 Miner peripulpal 1_1.asc']}
+        splitted_arrays = self._split_array_for_fitting(baseline_corrected_spectra)
         idx_type_param_count_legend_func = self.prepare_data_fitting()
-        list_params_full = self._fitting_params_batch(idx_type_param_count_legend_func, arrays)
+        list_params_full = self._fitting_params_batch(idx_type_param_count_legend_func, baseline_corrected_spectra)
+        info(list_params_full)
         x_y_models_params = models_params_splitted_batch(splitted_arrays, list_params_full,
                                                          idx_type_param_count_legend_func)
-        info(x_y_models_params)
         method_full_name = main_window.ui.fit_opt_method_comboBox.currentText()
         method = self.fitting_methods[method_full_name]
         executor = ProcessPoolExecutor()
@@ -104,13 +105,15 @@ class FittingLogic:
         intervals = len(key_x_y_models_params)
         main_window.open_progress_bar(max_value=intervals if intervals > 1 else 0)
         main_window.open_progress_dialog("Batch Fitting...", "Cancel", maximum=intervals if intervals > 1 else 0)
-        with executor:
-            main_window.current_futures = [
-                main_window.loop.run_in_executor(executor, fit_model_batch, model, y, params, x, method, key)
-                for key, x, y, model, params in key_x_y_models_params]
-            for future in main_window.current_futures:
-                future.add_done_callback(main_window.progress_indicator)
-            result = await gather(*main_window.current_futures)
+        with Manager() as manager:
+            main_window.break_event = manager.Event()
+            with main_window.current_executor as ex:
+                main_window.current_futures = [main_window.loop.run_in_executor(ex, fit_model_batch, model, y, params,
+                                                                                x, method, key)
+                                               for key, x, y, model, params in key_x_y_models_params]
+                for future in main_window.current_futures:
+                    future.add_done_callback(main_window.progress_indicator)
+                result = await gather(*main_window.current_futures)
         if main_window.cancelled_by_user():
             return
         main_window.close_progress_bar()
@@ -119,15 +122,18 @@ class FittingLogic:
         main_window.open_progress_bar(max_value=n_files if n_files > 1 else 0)
         main_window.open_progress_dialog("Calculating uncertainties...", "Cancel",
                                          maximum=n_files if n_files > 1 else 0)
+        # if not self.parent.predict_logic.is_production_project
         executor = ProcessPoolExecutor()
         main_window.current_executor = executor
-        with executor:
-            main_window.current_futures = [
-                main_window.loop.run_in_executor(main_window.current_executor, eval_uncert, i)
-                for i in result]
-            for future in main_window.current_futures:
-                future.add_done_callback(main_window.progress_indicator)
-            dely = await gather(*main_window.current_futures)
+        with Manager() as manager:
+            main_window.break_event = manager.Event()
+            with executor:
+                main_window.current_futures = [
+                    main_window.loop.run_in_executor(main_window.current_executor, eval_uncert, i)
+                    for i in result]
+                for future in main_window.current_futures:
+                    future.add_done_callback(main_window.progress_indicator)
+                dely = await gather(*main_window.current_futures)
         main_window.close_progress_bar()
         main_window.open_progress_bar(max_value=0)
         main_window.open_progress_dialog("updating data...", "Cancel", maximum=0)
@@ -219,7 +225,7 @@ class FittingLogic:
         n_files = len(sliced_arrays)
         n_files = 0 if n_files == 1 else n_files
         mw.open_progress_bar(max_value=n_files)
-        mw.open_progress_dialog("Analyze...", "Cancel", maximum=n_files)
+        mw.open_progress_dialog("Fitting each spectrum", "Cancel", maximum=n_files)
         mw.current_executor = ProcessPoolExecutor()
         with Manager() as manager:
             mw.break_event = manager.Event()
@@ -235,22 +241,27 @@ class FittingLogic:
         if mw.cancelled_by_user():
             return
         if mw.ui.guess_method_cb.currentText() != 'Average':
-            x_y_models_params = self._analyze_guess_results(latest_guess_result,
-                                                            parameters_to_guess['param_names'], line_type)
+            mw.close_progress_bar()
+            mw.open_progress_bar(max_value=0)
+            mw.open_progress_dialog("Creating mutual model...", "Cancel")
+            x_y_models_params = await self._analyze_guess_results(latest_guess_result,
+                                                                  parameters_to_guess['param_names'], line_type)
             mw.close_progress_bar()
             mw.progressBar.setValue(0)
             intervals = len(x_y_models_params)
             mw.open_progress_bar(max_value=intervals if intervals > 1 else 0)
             mw.open_progress_dialog("Fitting...", "Cancel", maximum=intervals if intervals > 1 else 0)
             mw.current_executor = ProcessPoolExecutor()
-            with mw.current_executor:
-                mw.current_futures = [
-                    mw.loop.run_in_executor(mw.current_executor, fit_model, i[2], i[1], i[3], i[0],
-                                            parameters_to_guess['method'])
-                    for i in x_y_models_params]
-                for future in mw.current_futures:
-                    future.add_done_callback(mw.progress_indicator)
-                result = await gather(*mw.current_futures)
+            with Manager() as manager:
+                mw.break_event = manager.Event()
+                with mw.current_executor:
+                    mw.current_futures = [
+                        mw.loop.run_in_executor(mw.current_executor, fit_model, i[2], i[1], i[3], i[0],
+                                                parameters_to_guess['method'])
+                        for i in x_y_models_params]
+                    for future in mw.current_futures:
+                        future.add_done_callback(mw.progress_indicator)
+                    result = await gather(*mw.current_futures)
         else:
             result = latest_guess_result
         if mw.cancelled_by_user():
@@ -307,7 +318,7 @@ class FittingLogic:
                 split_arrays[key] = [cut_full_spectrum(arr[0], self.parent.ui.interval_start_dsb.value(),
                                                        self.parent.ui.interval_end_dsb.value())]
         elif self.parent.ui.intervals_gb.isChecked():
-            borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
+            borders = list(self.parent.ui.fit_borders_TableView.model().column_data(0))
             x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
             intervals_idx = intervals_by_borders(borders, x_axis, idx=True)
             for key, arr in arrays.items():
@@ -344,11 +355,14 @@ class FittingLogic:
 
     def _fitting_params_batch(self, idx_type_param_count_legend_func: list[tuple[int, str, int, str, callable]],
                               arrays: dict[str, list[np.ndarray]]) -> dict:
-        x_axis = next(iter(arrays.values()))[0][:, 0]
+        try:
+            x_axis = next(iter(arrays.values()))[0][:, 0]
+        except StopIteration:
+            x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
         params_mutual = self.fitting_params(idx_type_param_count_legend_func, 1000., x_axis[0], x_axis[-1])
         list_params_full = {}
         for key, item in arrays.items():
-            this_key_params = copy.deepcopy(params_mutual)
+            this_key_params = deepcopy(params_mutual)
             y_axis = item[0][:, 1]
             for par in this_key_params:
                 par_splitted = par.split('_', 2)
@@ -439,10 +453,10 @@ class FittingLogic:
                     min_v = bound_min_v if min_v < bound_min_v else min_v
                 if bound_max_v is not None:
                     max_v = bound_max_v if max_v > bound_max_v else max_v
-                v = min_v if v < min_v else v
-                v = max_v if v > max_v else v
+                v = min_v + 1e-4 if v <= min_v else v
+                v = max_v - 1e-4 if v >= max_v else v
                 if min_v == max_v:
-                    max_v += 0.001
+                    max_v += 1e-4
                 if param_name == 'a':
                     max_v = bound_max_a
                 params.add(legend + param_name, v, min=min_v, max=max_v)
@@ -469,7 +483,7 @@ class FittingLogic:
         arr = None
         if self.is_template:
             if self.parent.ui.template_combo_box.currentText() == 'Average':
-                arr = self.averaged_array
+                arr = self.averaged_spectrum
             elif self.parent.preprocessing.averaged_dict and self.parent.preprocessing.averaged_dict != {}:
                 arr = self.parent.preprocessing.averaged_dict[
                     int(self.parent.ui.template_combo_box.currentText().split('.')[0])]
@@ -528,9 +542,16 @@ class FittingLogic:
         self.parent.ui.report_text_edit.setText(report)
 
     def update_template_combo_box(self) -> None:
+        """
+        template_combo_box always has 0-element 'Average'
+        next elements are groups names
+        Returns
+        -------
+        None
+        """
         self.parent.ui.template_combo_box.clear()
         self.parent.ui.template_combo_box.addItem('Average')
-        if not self.parent.preprocessing.averaged_dict:
+        if not self.parent.preprocessing.averaged_dict or self.parent.ui.GroupsTable.model().rowCount() == 0:
             return
         for i in self.parent.preprocessing.averaged_dict:
             group_name = self.parent.ui.GroupsTable.model().row_data(i - 1)['Group name']
@@ -682,7 +703,7 @@ class FittingLogic:
 
     def update_ignore_features_table(self):
         features = self.parent.ui.deconvoluted_dataset_table_view.model().features
-        df = DataFrame(features, columns=['Feature'])
+        df = DataFrame({'Feature': features}, columns=['Feature', 'Score', 'P value'])
         self.parent.ui.ignore_dataset_table_view.model().set_dataframe(df)
 
     # region GUESS
@@ -732,7 +753,7 @@ class FittingLogic:
         init_model_params = self._init_model_params(line_type)
         min_fwhm = self.parent.ui.input_table.model().min_fwhm()
         mean_snr = np.mean(self.parent.ui.input_table.model().get_column('SNR').values)
-        noise_level = np.max(self.averaged_array[:, 1]) / mean_snr
+        noise_level = np.max(self.averaged_spectrum[:, 1]) / mean_snr
         noise_level = max(noise_level, self.parent.ui.max_noise_level_dsb.value())
         method = self.fitting_methods[self.parent.ui.fit_opt_method_comboBox.currentText()]
         max_dx = self.parent.ui.max_dx_dsb.value()
@@ -746,8 +767,7 @@ class FittingLogic:
         used_legends = []
         used_legends_dead_zone = {}
         if len(visible_lines) > 0 and not self.parent.ui.interval_checkBox.isChecked():
-            static_parameters = param_names, min_fwhm, self.peak_shape_params_limits,\
-                self.parent.ui.l_ratio_doubleSpinBox.value()
+            static_parameters = param_names, min_fwhm, self.peak_shape_params_limits
             func_legend, params, used_legends, used_legends_dead_zone = self._initial_template(visible_lines, func,
                                                                                                static_parameters,
                                                                                                init_model_params)
@@ -825,7 +845,7 @@ class FittingLogic:
         dx = 10.0
         arr = None
         if self.parent.ui.template_combo_box.currentText() == 'Average':
-            arr = self.averaged_array
+            arr = self.averaged_spectrum
             dx = np.max(self.parent.ui.input_table.model().column_data(6)) * np.pi / 2
         elif self.current_spectrum_deconvolution_name != '':
             arr = self.parent.preprocessing.baseline_corrected_dict[self.current_spectrum_deconvolution_name]
@@ -950,7 +970,7 @@ class FittingLogic:
             sliced spectra for guess peaks
         """
         guess_method = self.parent.ui.guess_method_cb.currentText()
-        arrays = {'Average': [self.averaged_array]}
+        arrays = {'Average': [self.averaged_spectrum]}
 
         if guess_method == 'Average groups':
             arrays = {}
@@ -967,7 +987,9 @@ class FittingLogic:
                 result.append(j)
         return result
 
-    def _analyze_guess_results(self, result: list[ModelResult], param_names: list[str], line_type: str) -> list[tuple]:
+    @asyncSlot()
+    async def _analyze_guess_results(self, result: list[ModelResult], param_names: list[str], line_type: str) \
+            -> ndarray | Model:
         """
         The function creates structure for final fitting. After final fitting we have final template for deconvolution.
 
@@ -990,8 +1012,8 @@ class FittingLogic:
             result of self.models_params_after_guess()
         """
         self.intervals_data = self._create_intervals_data(result, len(param_names))
-        self.all_ranges_clustered_x0_sd = clustering_lines_intervals(self.intervals_data,
-                                                                     self.parent.ui.max_dx_dsb.value())
+        self.all_ranges_clustered_x0_sd = await clustering_lines_intervals(self.intervals_data,
+                                                                           self.parent.ui.max_dx_dsb.value())
         x_y_models_params = self._models_params_after_guess(self.all_ranges_clustered_x0_sd, param_names, line_type)
         return x_y_models_params
 
@@ -1020,7 +1042,7 @@ class FittingLogic:
             x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
             intervals = [(x_axis[0], x_axis[-1])]
         else:
-            borders = list(self.parent.ui.fit_intervals_table_view.model().column_data(0))
+            borders = list(self.parent.ui.fit_borders_TableView.model().column_data(0))
             x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
             intervals = intervals_by_borders(borders, x_axis)
 
@@ -1052,7 +1074,7 @@ class FittingLogic:
         x_y_models_params: list[tuple[np.ndarray, np.ndarray, Model, Parameters]]
             tuples with x_axis, y_axis, fitting model, params for fitting model. For each cm-1 range.
         """
-        sliced_average_array_by_ranges = self._split_array_for_fitting({'Average': [self.averaged_array]})['Average']
+        sliced_average_array_by_ranges = self._split_array_for_fitting({'Average': [self.averaged_spectrum]})['Average']
 
         # form static_params for all ranges
         init_params = self.initial_peak_parameters(line_type)
@@ -1070,6 +1092,15 @@ class FittingLogic:
             model = fitting_model(func_legend)
             x_y_model_params.append((x_axis, y_axis, model, params))
         return x_y_model_params
+
+    def auto_search_borders(self) -> None:
+        if self.averaged_spectrum is None:
+            return
+        x = self.averaged_spectrum[:, 0]
+        y = self.averaged_spectrum[:, 1]
+        minima_idx = argrelmin(y, order=int(y.shape[0] / 10))
+        x_minima = np.round(x[minima_idx], 3)
+        self.parent.ui.fit_borders_TableView.model().add_auto_found_borders(x_minima)
 
     # endregion
 
@@ -1463,10 +1494,9 @@ class FittingLogic:
             filename = "" if self.is_template or self.current_spectrum_deconvolution_name == '' \
                 else self.current_spectrum_deconvolution_name
         if filename not in self.sigma3:
-            self.fill.setVisible(False)
+            self.sigma3_fill.setVisible(False)
             return
-        self.fill.setVisible(self.parent.ui.sigma3_checkBox.isChecked())
-
+        self.sigma3_fill.setVisible(self.parent.ui.sigma3_checkBox.isChecked())
         self.sigma3_top.setData(x=self.sigma3[filename][0], y=self.sigma3[filename][1])
         self.sigma3_bottom.setData(x=self.sigma3[filename][0], y=self.sigma3[filename][2])
 
@@ -1491,7 +1521,7 @@ class FittingLogic:
                 arrays_list = [mw.preprocessing.baseline_corrected_dict[x] for x in
                                mw.preprocessing.baseline_corrected_dict]
                 arr = get_average_spectrum(arrays_list, mw.ui.average_method_cb.currentText())
-                self.averaged_array = arr
+                self.averaged_spectrum = arr
                 mw.ui.max_noise_level_dsb.setValue(np.max(arr[:, 1]) / 99.)
             elif mw.preprocessing.averaged_dict:
                 arr = mw.preprocessing.averaged_dict[int(current_spectrum_name.split('.')[0])]
@@ -1540,7 +1570,7 @@ class FittingLogic:
 
     def redraw_curves_for_filename(self) -> None:
         """
-        Redraw all curves by parameters of current selected spectrum
+        Redraw all curves by parameters of current selected spectrum.
         """
         filename = "" if self.is_template or self.current_spectrum_deconvolution_name == '' \
             else self.current_spectrum_deconvolution_name
@@ -1552,13 +1582,8 @@ class FittingLogic:
         if line_types.empty:
             return None
         if len(line_indexes) != len(filename_lines_indexes):
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Состав линий этого спектра отличается от шаблона. Некоторые линии не будут отрисованы "
-                        "правильно.")
-            msg.setWindowTitle("Template error")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox("Template error", "Состав линий этого спектра отличается от шаблона. Некоторые линии не"
+                                         " будут отрисованы правильно.", self.parent, {'Ok'}).exec()
             line_indexes = filename_lines_indexes
         params = self.current_filename_lines_parameters(list(line_indexes), filename, line_types)
         if params is None or not params:
@@ -1593,7 +1618,7 @@ class FittingLogic:
             self.parent.deconvolution_plotItem.removeItem(i.parentItem())
             self.parent.deconvolution_plotItem.removeItem(i)
         self.parent.deconvolution_plotItem.addItem(self.parent.linearRegionDeconv)
-        self.parent.deconvolution_plotItem.addItem(self.fill)
+        self.parent.deconvolution_plotItem.addItem(self.sigma3_fill)
         self.parent.deconvolution_plotItem.getViewBox().updateAutoRange()
 
     async def draw_all_curves(self) -> None:
@@ -1645,6 +1670,15 @@ class FittingLogic:
         for i in self.parent.deconvolution_plotItem.listDataItems():
             if isinstance(i, PlotCurveItem):
                 i.parentItem().show()
+
+    def cut_data_interval(self) -> None:
+        mw = self.parent
+        n_array = self.array_of_current_filename_in_deconvolution()
+        if n_array is None:
+            return
+        n_array = cut_full_spectrum(n_array, mw.ui.interval_start_dsb.value(), mw.ui.interval_end_dsb.value())
+        self.data_curve.setData(x=n_array[:, 0], y=n_array[:, 1])
+
     # endregion
 
     # region copy template
@@ -1656,12 +1690,7 @@ class FittingLogic:
         if idx is None:
             row = self.parent.ui.deconv_lines_table.selectionModel().currentIndex().row()
             if row == -1:
-                msg = QMessageBox()
-                msg.setIcon(QMessageBox.Icon.Information)
-                msg.setText("Select line")
-                msg.setWindowTitle("Line isn't selected")
-                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg.exec()
+                MessageBox("Line isn't selected", 'Select line', self.parent, {'Ok'}).exec()
                 return
             idx = self.parent.ui.deconv_lines_table.model().row_data(row).name
 
@@ -1691,12 +1720,79 @@ class FittingLogic:
         if not model.is_query_result_empty(query_text):
             model.delete_rows_by_multiindex(selected_filename)
         executor = ThreadPoolExecutor()
-        with executor:
-            self.parent.current_futures = [
-                self.parent.loop.run_in_executor(executor, self.copy_line_parameters_from_template, i,
-                                                 selected_filename)
-                for i in line_indexes]
-            await gather(*self.parent.current_futures)
+        with Manager() as manager:
+            self.parent.break_event = manager.Event()
+            with executor:
+                self.parent.current_futures = [
+                    self.parent.loop.run_in_executor(executor, self.copy_line_parameters_from_template, i,
+                                                     selected_filename)
+                    for i in line_indexes]
+                await gather(*self.parent.current_futures)
+
     # endregion
 
+    # region GUI
+    def interval_start_dsb_change_event(self, new_value: float) -> None:
+        """
+        executing when value of self.ui.interval_start_dsb was changed by user or by code
+        self.old_start_interval_value contains previous value
 
+        Parameters
+        ----------
+        new_value : float
+            New value of self.ui.interval_start_dsb
+        """
+        mw = self.parent
+        mw.set_modified()
+        corrected_value = None
+        # correct value - take nearest from x_axis
+        if mw.preprocessing.averaged_dict != {} and mw.preprocessing.averaged_dict:
+            x_axis = next(iter(mw.preprocessing.averaged_dict.values()))[:, 0]
+            corrected_value = find_nearest(x_axis, new_value)
+        if corrected_value is not None and round(corrected_value, 5) != new_value:
+            mw.ui.interval_start_dsb.setValue(corrected_value)
+            return
+        if new_value >= mw.ui.interval_end_dsb.value():
+            mw.ui.interval_start_dsb.setValue(mw.ui.interval_start_dsb.minimum())
+            return
+        if mw.CommandStartIntervalChanged_allowed:
+            command = CommandStartIntervalChanged(mw, new_value, mw.old_start_interval_value,
+                                                  'Change start-interval value')
+            mw.undoStack.push(command)
+        mw.linearRegionDeconv.setRegion((mw.ui.interval_start_dsb.value(), mw.ui.interval_end_dsb.value()))
+        # if interval checked - change cut interval
+        if mw.ui.interval_checkBox.isChecked():
+            mw.cut_data_sum_residual_interval()
+
+    def interval_end_dsb_change_event(self, new_value: float) -> None:
+        """
+        executing when value of self.ui.interval_end_dsb was changed by user or by code
+        self.old_end_interval_value contains previous value
+
+        Parameters
+        ----------
+        new_value : float
+            New value of self.ui.interval_end_dsb
+        """
+        mw = self.parent
+        mw.set_modified()
+        corrected_value = None
+        # correct value - take nearest from x_axis
+        if mw.preprocessing.averaged_dict != {} and mw.preprocessing.averaged_dict:
+            x_axis = next(iter(mw.preprocessing.averaged_dict.values()))[:, 0]
+            corrected_value = find_nearest(x_axis, new_value)
+        if corrected_value is not None and round(corrected_value, 5) != new_value:
+            mw.ui.interval_end_dsb.setValue(corrected_value)
+            return
+        if new_value <= mw.ui.interval_start_dsb.value():
+            mw.ui.interval_end_dsb.setValue(mw.ui.interval_end_dsb.minimum())
+            return
+        if mw.CommandEndIntervalChanged_allowed:
+            command = CommandEndIntervalChanged(mw, new_value, mw.old_end_interval_value,
+                                                'Change end-interval value')
+            mw.undoStack.push(command)
+        mw.linearRegionDeconv.setRegion((mw.ui.interval_start_dsb.value(), mw.ui.interval_end_dsb.value()))
+        # if interval checked - change cut interval
+        if mw.ui.interval_checkBox.isChecked():
+            mw.cut_data_sum_residual_interval()
+    # endregion

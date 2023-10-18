@@ -1,11 +1,10 @@
 import numpy as np
-import pandas as pd
-from pandas import DataFrame, MultiIndex, concat, ExcelWriter
+from pandas import DataFrame, MultiIndex, concat, ExcelWriter, Series
 from qtpy.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal, Slot as pyqtSlot, QPoint
 from qtpy.QtGui import QColor, QCursor
-from qtpy.QtWidgets import QDoubleSpinBox, QStyledItemDelegate, QListWidget, \
-    QListWidgetItem
-
+from qtpy.QtWidgets import QDoubleSpinBox, QStyledItemDelegate, QListWidget, QListWidgetItem
+from qfluentwidgets import TableItemDelegate
+from modules.default_values import peak_shape_params_limits
 from modules.undo_redo import CommandUpdateTableCell, CommandDeconvLineParameterChanged, CommandFitIntervalChanged
 
 
@@ -46,7 +45,6 @@ class PandasModel(QAbstractTableModel):
 
         Return data cell from the pandas DataFrame
         """
-        # print(str(index.row()) + '----' + str(index.column()))
         if not index.isValid():
             return None
         value = self._dataframe.iloc[index.row(), index.column()]
@@ -115,6 +113,9 @@ class PandasModel(QAbstractTableModel):
     def column_data(self, column: int):
         return self._dataframe.iloc[:, column]
 
+    def column_data_by_indexes(self, indexes: list, column: str) -> list:
+        return list(self._dataframe[column][indexes])
+
     def get_column(self, column: str):
         return self._dataframe[column]
 
@@ -137,7 +138,7 @@ class PandasModel(QAbstractTableModel):
             self._dataframe.at[row, column] = value
         self.modelReset.emit()
 
-    def set_dataframe(self, df: pd.DataFrame) -> None:
+    def set_dataframe(self, df: DataFrame) -> None:
         self._dataframe = df.copy()
         self.modelReset.emit()
 
@@ -197,6 +198,14 @@ class PandasModel(QAbstractTableModel):
     def idx_by_column_value(self, column_name: str, value) -> int:
         return self._dataframe.loc[self._dataframe[column_name] == value].index[0]
 
+    def set_column_data(self, col: str, ser: list):
+        self._dataframe[col] = Series(ser)
+        self.modelReset.emit()
+
+    def sort_values(self, current_name: str, ascending: bool) -> None:
+        self._dataframe = self._dataframe.sort_values(by=current_name, ascending=ascending)
+        self.modelReset.emit()
+
 
 class PandasModelInputTable(PandasModel):
     """A model to interface a Qt view with pandas dataframe """
@@ -210,7 +219,6 @@ class PandasModelInputTable(PandasModel):
 
         Return data cell from the pandas DataFrame
         """
-        # print(str(index.row()) + '----' + str(index.column()))
         if not index.isValid():
             return None
         value = self._dataframe.iloc[index.row(), index.column()]
@@ -271,6 +279,42 @@ class PandasModelInputTable(PandasModel):
 
     def min_fwhm(self) -> float:
         return np.min(self.get_column('FWHM, cm\N{superscript minus}\N{superscript one}').values)
+
+    def save_nm_files_to_csv(self, filepath: str, raw_spectra: dict) -> None:
+        """
+        Function creates dataframe like
+        Group_id         | Filename | x_nm_0        | x_nm_1 .... x_nm_n
+        int                 str      y_intensity_0  ....  y_intensity_n
+
+        and saves it into filepath.csv file
+
+        Parameters
+        ----------
+        filepath: str
+            Path to save .csv file
+        raw_spectra: dict
+            key: str - filename
+            value: 2D ndarray - x_axis - nanometers, y_axis - intensity
+
+        Returns
+        -------
+            None
+        """
+        x_axis = next(iter(raw_spectra.values()))[:, 0]
+        nm_params = []
+        for i in x_axis:
+            nm_params.append('%s' % np.round(i, 2))
+        df = DataFrame(columns=nm_params)
+        class_ids = []
+        filename_group = self._dataframe.iloc[:, 2]
+        for filename, n_array in raw_spectra.items():
+            class_ids.append(filename_group.loc[filename])
+            df2 = DataFrame(n_array[:, 1].reshape(1, -1), columns=nm_params)
+            df = concat([df, df2], ignore_index=True)
+        indexes = list(filename_group.index)
+        df2 = DataFrame({'Class': class_ids, 'Filename': indexes})
+        df = concat([df2, df], axis=1)
+        df.to_csv(filepath)
 
 
 class PandasModelGroupsTable(PandasModel):
@@ -363,6 +407,43 @@ class PandasModelGroupsTable(PandasModel):
         else:
             return False
 
+    @property
+    def groups_styles(self) -> list:
+        return [x for x in self._dataframe.iloc[:, 1]]
+
+    @property
+    def groups_colors(self) -> list:
+        colors = []
+        for style in self.groups_styles:
+            colors.append(style['color'].name())
+        return colors
+
+    @property
+    def groups_width(self) -> list:
+        width = []
+        for style in self.groups_styles:
+            width.append(style['width'])
+        return width
+
+    @property
+    def groups_dashes(self) -> list:
+        dashes = []
+        for style in self.groups_styles:
+            match style['style']:
+                case Qt.PenStyle.SolidLine:
+                    dashes.append('')
+                case Qt.PenStyle.DotLine:
+                    dashes.append((1, 1))
+                case Qt.PenStyle.DashLine:
+                    dashes.append((4, 4))
+                case Qt.PenStyle.DashDotLine:
+                    dashes.append((4, 1.25, 1.5, 1.25))
+                case Qt.PenStyle.DashDotDotLine:
+                    dashes.append((4, 1.25, 1.5, 1.25, 1.5, 1.25))
+                case _:
+                    dashes.append('')
+        return dashes
+
 
 class PandasModelDeconvTable(PandasModel):
     """A model to interface a Qt view with pandas dataframe """
@@ -389,7 +470,6 @@ class PandasModelDeconvTable(PandasModel):
 
         Return data cell from the pandas DataFrame
         """
-        # print(str(index.row()) + '----' + str(index.column()))
         if not index.isValid():
             return None
         value = self._dataframe.iloc[index.row(), index.column()]
@@ -423,7 +503,6 @@ class PandasModelFitIntervals(PandasModel):
 
         Return data cell from the pandas DataFrame
         """
-        # print(str(index.row()) + '----' + str(index.column()))
         if not index.isValid():
             return None
         value = self._dataframe.iloc[index.row(), index.column()]
@@ -440,6 +519,10 @@ class PandasModelFitIntervals(PandasModel):
     def sort_by_border(self) -> None:
         self._dataframe = self._dataframe.sort_values(by=['Border'])
         self._dataframe.index = np.arange(1, len(self._dataframe) + 1)
+        self.modelReset.emit()
+
+    def add_auto_found_borders(self, borders: np.ndarray) -> None:
+        self._dataframe = DataFrame({'Border': borders})
         self.modelReset.emit()
 
 
@@ -612,6 +695,7 @@ class PandasModelFitParamsTable(PandasModel):
         # limits in self.parent.deconv_line_params_limits
         min_value = param_value
         max_value = param_value
+        par_limits = peak_shape_params_limits()
         if param_name == 'a':
             min_value = 0
             max_value = param_value * 2
@@ -621,9 +705,9 @@ class PandasModelFitParamsTable(PandasModel):
         elif param_name == 'dx':
             min_value = np.round(param_value - param_value / np.pi, 5)
             max_value = np.round(param_value + param_value / np.pi, 5)
-        elif param_name in self.parent.fitting.peak_shape_params_limits:
-            min_value = self.parent.fitting.peak_shape_params_limits[param_name][0]
-            max_value = self.parent.fitting.peak_shape_params_limits[param_name][1]
+        elif param_name in par_limits:
+            min_value = par_limits[param_name][0]
+            max_value = par_limits[param_name][1]
         min_value = min_value if not min_v else min_v
         max_value = max_value if not max_v else max_v
         tuples = [(filename, line_index, param_name)]
@@ -940,6 +1024,23 @@ class PandasModelDeconvolutedDataset(PandasModel):
     def features(self) -> list[str]:
         return list(self._dataframe.columns.values[2:])
 
+    def delete_rows_by_filenames(self, filenames: list[str]) -> None:
+        """
+        Drop table rows by Filename column
+
+        Parameters
+        ---------
+        filenames : list[str]
+            filename, line_index, param_name
+        """
+        rows = self._dataframe.loc[self._dataframe['Filename'].isin(filenames)]
+        self._dataframe = self._dataframe.drop(rows.index)
+        self.modelReset.emit()
+        self._dataframe.reset_index(drop=True, inplace=True)
+
+    def describe_by_group(self, group_id: int) -> DataFrame:
+        return self._dataframe[self._dataframe['Class'] == group_id].describe().iloc[:, 1:]
+
 
 class PandasModelIgnoreDataset(PandasModel):
 
@@ -967,8 +1068,7 @@ class PandasModelIgnoreDataset(PandasModel):
             return str(value)
         if role == Qt.CheckStateRole:
             checked_name = self._dataframe.iloc[index.row()].Feature
-            return Qt.Checked if checked_name not in self._checked or self._checked[checked_name] is True \
-                else Qt.Unchecked
+            return Qt.Checked if checked_name not in self._checked or self._checked[checked_name] else Qt.Unchecked
         return None
 
     def setData(self, index, value, role):
@@ -987,14 +1087,29 @@ class PandasModelIgnoreDataset(PandasModel):
     def set_checked(self, checked: dict) -> None:
         self._checked = checked
 
+    def set_all_features_checked(self) -> None:
+        """
+        self._checked has features which was changed and has structure like {'k1001.00_a': False,  ....}
+        This function sets all values to True
+
+        Returns
+        -------
+        None
+        """
+        for k in self._checked.keys():
+            self._checked[k] = True
+
     @property
     def ignored_features(self) -> list[str]:
-        checked = self._checked
-        ignored_features = []
-        for k, v in checked.items():
-            if not v and k in self._dataframe.columns:
-                ignored_features.append(k)
-        return ignored_features
+        return [k for k, v in self._checked.items() if not v]
+
+    def features_by_order(self) -> list[str]:
+        """
+        Returns sorted by Score activated features.
+        """
+        df_sort = self._dataframe.sort_values(by='Score', ascending=False)
+        active_features = [k for k, v in self._checked.items() if v]
+        return df_sort['Feature'][df_sort['Feature'].isin(active_features)]
 
 
 class PandasModelDescribeDataset(PandasModel):
@@ -1048,24 +1163,13 @@ class PandasModelPredictTable(PandasModel):
 
         if role == Qt.DisplayRole:
             return str(value)
-        elif role == Qt.ItemDataRole.EditRole:
-            double_spinbox = QDoubleSpinBox()
-            double_spinbox.setValue(float(value))
-            double_spinbox.setDecimals(5)
-            return float(value)
         elif role == Qt.ItemDataRole.ForegroundRole and index.column() != 0:
             class_str = str(value).split(' ')[0]
             return self.parent.get_color_by_group_number(class_str)
         return None
 
     def setData(self, index, value, role):
-        if role == Qt.EditRole:
-            self._dataframe.iloc[index.row(), index.column()] = float(value)
-            self.dataChanged.emit(index, index)
-            return True
-
-        else:
-            return False
+        return False
 
 
 class PandasModelPCA(PandasModel):
@@ -1142,10 +1246,10 @@ class DoubleSpinBoxDelegate(QStyledItemDelegate):
         self.commitData.emit(self.sender())
 
 
-class IntervalsTableDelegate(QStyledItemDelegate):
+class IntervalsTableDelegate(TableItemDelegate):
 
-    def __init__(self, rs):
-        super().__init__()
+    def __init__(self, parent, rs):
+        super().__init__(parent)
         self.rs = rs
 
     def createEditor(self, parent, option, index):
@@ -1175,7 +1279,7 @@ class IntervalsTableDelegate(QStyledItemDelegate):
 class ComboDelegate(QStyledItemDelegate):
     sigLineTypeChanged = Signal(str, str, int)
 
-    def __init__(self, line_types: list[str]):
+    def __init__(self, line_types: set[str]):
         super().__init__()
         self.editorItems = line_types
         self.height = 30
@@ -1211,3 +1315,5 @@ class ComboDelegate(QStyledItemDelegate):
     @pyqtSlot()
     def current_item_changed(self):
         self.commitData.emit(self.sender())
+
+

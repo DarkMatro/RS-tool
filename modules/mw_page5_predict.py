@@ -2,13 +2,14 @@ from asyncio import gather
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from os import environ
+from multiprocessing import Manager
 
 import numpy as np
 import winsound
 from asyncqtpy import asyncSlot
 from pandas import DataFrame, concat
 
-from modules.functions_classificators import clf_predict
+from modules.stages.stat_analysis.functions.fit_classificators import clf_predict
 from modules.undo_redo import CommandUpdateInterpolated
 
 
@@ -26,7 +27,7 @@ class PredictLogic:
         main_window = self.parent
         main_window.time_start = datetime.now()
         filenames = list(main_window.ImportedArray.keys())
-        interpolated = await main_window.get_interpolated(filenames, self.interp_ref_array)
+        interpolated = await main_window.preprocessing.get_interpolated(filenames, self.interp_ref_array)
         if interpolated:
             command = CommandUpdateInterpolated(main_window, interpolated, "Interpolate files")
             main_window.undoStack.push(command)
@@ -56,7 +57,7 @@ class PredictLogic:
         await main_window.batch_fit()
         df = main_window.ui.deconvoluted_dataset_table_view.model().dataframe().reset_index(drop=True)
         main_window.ui.deconvoluted_dataset_table_view.model().set_dataframe(df)
-        await main_window.do_predict()
+        await main_window.predict_logic.do_predict()
         main_window.set_modified(True)
         main_window.close_progress_bar()
         main_window.ui.statusBar.showMessage('Predicting completed (d)', 100000)
@@ -83,23 +84,26 @@ class PredictLogic:
         main_window.open_progress_dialog("Predicting...", "Cancel", maximum=len(clfs))
 
         X, _, _, _, filenames = main_window.stat_analysis_logic.dataset_for_ml()
+        X = X.iloc[:, 1:]
         executor = ThreadPoolExecutor()
         # Для БОльших датасетов возможно лучше будет ProcessPoolExecutor. Но таких пока нет
         main_window.current_executor = executor
-        with executor:
-            if self.is_production_project:
-                main_window.current_futures = [main_window.loop.run_in_executor(executor, clf_predict, X,
-                                                                                self.stat_models[i], i)
-                                               for i in clfs]
-            else:
-                main_window.current_futures = [main_window.loop.run_in_executor(executor, clf_predict, X,
-                                                                                latest_stat_result[i][
-                                                                                    'model'], i)
-                                               for i in clfs]
-            for future in main_window.current_futures:
-                future.add_done_callback(main_window.progress_indicator)
-            result = await gather(*main_window.current_futures)
-        if main_window.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        with Manager() as manager:
+            main_window.break_event = manager.Event()
+            with executor:
+                if self.is_production_project:
+                    main_window.current_futures = [main_window.loop.run_in_executor(executor, clf_predict, X,
+                                                                                    self.stat_models[i], i)
+                                                   for i in clfs]
+                else:
+                    main_window.current_futures = [main_window.loop.run_in_executor(executor, clf_predict, X,
+                                                                                    latest_stat_result[i][
+                                                                                        'model'], i)
+                                                   for i in clfs]
+                for future in main_window.current_futures:
+                    future.add_done_callback(main_window.progress_indicator)
+                result = await gather(*main_window.current_futures)
+        if main_window.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             main_window.close_progress_bar()
             main_window.ui.statusBar.showMessage('Fitting cancelled.')
             return

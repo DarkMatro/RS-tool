@@ -1,27 +1,30 @@
-import copy
+from copy import deepcopy
 from asyncio import create_task, gather, sleep
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from gc import collect
 from logging import info, debug
-from sklearn.model_selection import GridSearchCV
-import lmfit.model
 import numpy as np
-import pandas as pd
-import shap
+from pandas import DataFrame, concat
+from shap import Explainer, KernelExplainer
 from asyncqtpy import asyncSlot
 from lmfit.model import ModelResult
 from pyqtgraph import mkPen, ROI
 from qtpy.QtCore import QModelIndex, Qt
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import QUndoCommand, QStyledItemDelegate
+from sklearn.experimental import enable_halving_search_cv
+from sklearn.model_selection import GridSearchCV, HalvingGridSearchCV
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import LabelBinarizer, StandardScaler
 
-from modules.functions_classificators import model_metrics
-from modules.static_functions import random_rgb, random_line_style, curve_pen_brush_by_style, set_roi_size_pos, \
+import modules.default_values
+from modules.stages.stat_analysis.functions.fit_classificators import model_metrics
+from modules.mutual_functions.static_functions import random_rgb, random_line_style, curve_pen_brush_by_style, set_roi_size_pos, \
     calculate_vips
+import warnings
+warnings.filterwarnings('ignore')
 
 
 class CommandImportFiles(QUndoCommand):
@@ -570,7 +573,6 @@ class CommandUpdateInterpolated(QUndoCommand):
 
     def __init__(self, rs, interpolated: list[tuple[str, np.ndarray]], description: str) -> None:
         super(CommandUpdateInterpolated, self).__init__(description)
-        # print('CommandUpdateInterpolated')
         self.setText(description)
         self.Interpolated = interpolated  # 0 - name, 1 - array
         self.rs = rs
@@ -666,7 +668,6 @@ class CommandUpdateDespike(QUndoCommand):
     def __init__(self, rs, despiked_list: list[tuple[str, np.ndarray, list[float]]],
                  description: str) -> None:
         super(CommandUpdateDespike, self).__init__(description)
-        # print('CommandUpdateDespike')
         self.rs = rs
         self.despiked_list = despiked_list
         self.setText(description)
@@ -1035,29 +1036,29 @@ class CommandSmooth(QUndoCommand):
         self.params = params
         self.method_old = rs.smooth_method
         self.method_new = self.generate_title_text()
-        self.smoothed_dataset_old = copy.deepcopy(rs.ui.smoothed_dataset_table_view.model().dataframe())
-        self.smoothed_dataset_new = copy.deepcopy(self.create_smoothed_dataset_new())
+        self.smoothed_dataset_old = deepcopy(rs.ui.smoothed_dataset_table_view.model().dataframe())
+        self.smoothed_dataset_new = deepcopy(self.create_smoothed_dataset_new())
         self.SmoothedDictBefore = rs.preprocessing.smoothed_spectra.copy()
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
         self.loop = rs.loop
 
-    def create_smoothed_dataset_new(self) -> pd.DataFrame:
+    def create_smoothed_dataset_new(self) -> DataFrame:
         filename_group = self.rs.ui.input_table.model().column_data(2)
         x_axis = self.smoothed_list[0][1][:, 0]
         columns_params = []
         for i in x_axis:
             columns_params.append('k%s' % np.round(i, 2))
-        df = pd.DataFrame(columns=columns_params)
+        df = DataFrame(columns=columns_params)
         class_ids = []
         indexes = list(filename_group.index)
         for filename, n_array in self.smoothed_list:
             class_ids.append(filename_group.loc[filename])
-            df2 = pd.DataFrame(n_array[:, 1].reshape(1, -1), columns=columns_params)
-            df = pd.concat([df, df2], ignore_index=True)
-        df2 = pd.DataFrame({'Class': class_ids, 'Filename': indexes})
-        df = pd.concat([df2, df], axis=1)
+            df2 = DataFrame(n_array[:, 1].reshape(1, -1), columns=columns_params)
+            df = concat([df, df2], ignore_index=True)
+        df2 = DataFrame({'Class': class_ids, 'Filename': indexes})
+        df = concat([df2, df], axis=1)
         return df
 
     def generate_title_text(self) -> str:
@@ -1161,28 +1162,28 @@ class CommandBaselineCorrection(QUndoCommand):
         self.method_new = self.generate_title_text()
         self.baseline_corrected_dict_before = rs.preprocessing.baseline_corrected_dict.copy()
         self.baseline_dict_before = rs.preprocessing.baseline_dict.copy()
-        self.dataset_old = copy.deepcopy(rs.ui.baselined_dataset_table_view.model().dataframe())
-        self.dataset_new = copy.deepcopy(self.create_baseline_corrected_dataset_new())
+        self.dataset_old = deepcopy(rs.ui.baselined_dataset_table_view.model().dataframe())
+        self.dataset_new = deepcopy(self.create_baseline_corrected_dataset_new())
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
         self.loop = rs.loop
 
-    def create_baseline_corrected_dataset_new(self) -> pd.DataFrame:
+    def create_baseline_corrected_dataset_new(self) -> DataFrame:
         filename_group = self.rs.ui.input_table.model().column_data(2)
         x_axis = self.baseline_corrected_list[0][1][:, 0]
         columns_params = []
         for i in x_axis:
             columns_params.append('k%s' % np.round(i, 2))
-        df = pd.DataFrame(columns=columns_params)
+        df = DataFrame(columns=columns_params)
         class_ids = []
         indexes = list(filename_group.index)
         for filename, _, n_array in self.baseline_corrected_list:
             class_ids.append(filename_group.loc[filename])
-            df2 = pd.DataFrame(n_array[:, 1].reshape(1, -1), columns=columns_params)
-            df = pd.concat([df, df2], ignore_index=True)
-        df2 = pd.DataFrame({'Class': class_ids, 'Filename': indexes})
-        df = pd.concat([df2, df], axis=1)
+            df2 = DataFrame(n_array[:, 1].reshape(1, -1), columns=columns_params)
+            df = concat([df, df2], ignore_index=True)
+        df2 = DataFrame({'Class': class_ids, 'Filename': indexes})
+        df = concat([df2, df], axis=1)
         return df
 
     def generate_title_text(self) -> str:
@@ -1372,7 +1373,6 @@ class CommandTrim(QUndoCommand):
         seconds = round((datetime.now() - time_end).total_seconds())
         self.rs.time_start = None
         self.rs.ui.statusBar.showMessage('Action completed for ' + str(seconds) + ' sec.', 25000)
-        # print('CommandTrim')
         self.rs.set_modified()
         collect(2)
         await self.rs.preprocessing.update_averaged()
@@ -1433,7 +1433,6 @@ class CommandAddDeconvLine(QUndoCommand):
         self.RS.set_buttons_ability()
 
     async def _stop(self) -> None:
-        # print('CommandAddDeconvLine')
         self.update_undo_redo_tooltips()
         self.RS.set_modified()
         collect(2)
@@ -1489,13 +1488,55 @@ class CommandDeleteDeconvLines(QUndoCommand):
         self.RS.set_buttons_ability()
 
     async def _stop(self) -> None:
-        # print('CommandDeleteDeconvLines')
         self.RS.fitting.draw_sum_curve()
         self.RS.fitting.draw_residual_curve()
         self.RS.fitting.deselect_selected_line()
         self.update_undo_redo_tooltips()
         self.RS.set_modified()
         collect(2)
+        await sleep(0)
+
+
+class CommandDeleteDatasetRow(QUndoCommand):
+    """ delete row in deconvoluted_dataset_table_view"""
+
+    def __init__(self, rs, description: str) -> None:
+        super().__init__(description)
+        self.setText(description)
+        self.dataset_table = rs.ui.deconvoluted_dataset_table_view
+        self._df_backup = deepcopy(self.dataset_table.model().dataframe())
+        selected_rows = [x.row() for x in self.dataset_table.selectionModel().selectedRows()]
+        self._selected_filenames = self.dataset_table.model().column_data_by_indexes(selected_rows, 'Filename')
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.RS = rs
+        self.loop = rs.loop
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.dataset_table.model().delete_rows_by_filenames(self._selected_filenames)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.dataset_table.model().set_dataframe(self._df_backup)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        self.update_undo_redo_tooltips()
+        self.RS.set_modified()
         await sleep(0)
 
 
@@ -1534,10 +1575,10 @@ class CommandDeconvLineTypeChanged(QUndoCommand):
         create_task(self._stop())
 
     def update_params_table(self, line_type_new: str, line_type_old: str) -> None:
-        params_old = self.RS.peak_shapes_params[line_type_old]['add_params'] \
-            if 'add_params' in self.RS.peak_shapes_params[line_type_old] else None
-        params_new = self.RS.peak_shapes_params[line_type_new]['add_params'] \
-            if 'add_params' in self.RS.peak_shapes_params[line_type_new] else None
+        params_old = modules.default_values.peak_shapes_params[line_type_old]['add_params'] \
+            if 'add_params' in modules.default_values.peak_shapes_params[line_type_old] else None
+        params_new = modules.default_values.peak_shapes_params[line_type_new]['add_params'] \
+            if 'add_params' in modules.default_values.peak_shapes_params[line_type_new] else None
         if params_old == params_new or (params_old is None and params_new is None):
             return
         params_to_add = []
@@ -1572,7 +1613,6 @@ class CommandDeconvLineTypeChanged(QUndoCommand):
         self.RS.set_buttons_ability()
 
     async def _stop(self) -> None:
-        # print('CommandDeconvLineTypeChanged')
         self.RS.fitting.draw_sum_curve()
         self.RS.fitting.draw_residual_curve()
         self.update_undo_redo_tooltips()
@@ -1625,7 +1665,6 @@ class CommandUpdateDataCurveStyle(QUndoCommand):
 
     def __init__(self, rs, style: dict, old_style: dict, curve_type: str, description: str) -> None:
         super(CommandUpdateDataCurveStyle, self).__init__(description)
-        # print('CommandUpdateDataCurveStyle')
         self.setText(description)
         self._style = style
         self._old_style = old_style
@@ -1663,8 +1702,8 @@ class CommandUpdateDataCurveStyle(QUndoCommand):
             self.RS.fitting.residual_style = style
         elif self._curve_type == 'sigma3':
             pen, brush = curve_pen_brush_by_style(style)
-            self.RS.fitting.fill.setPen(pen)
-            self.RS.fitting.fill.setBrush(brush)
+            self.RS.fitting.sigma3_fill.setPen(pen)
+            self.RS.fitting.sigma3_fill.setBrush(brush)
             self.RS.sigma3_style_button_style_sheet(color.name())
             self.RS.fitting.sigma3_style = style
 
@@ -1679,7 +1718,6 @@ class CommandUpdateDataCurveStyle(QUndoCommand):
             self.RedoAction.setToolTip('')
 
     async def _stop(self) -> None:
-        # print('CommandUpdateDataCurveStyle')
         self.update_undo_redo_tooltips()
         self.RS.set_modified()
         collect(2)
@@ -1692,7 +1730,6 @@ class CommandUpdateTableCell(QUndoCommand):
     def __init__(self, obj, rs, index: QModelIndex, value: str,
                  old_value: str, description: str) -> None:
         super(CommandUpdateTableCell, self).__init__(description)
-        # print('init CommandUpdateTableCell')
         self.setText(description)
         self._obj = obj
         self._index = index
@@ -1715,7 +1752,6 @@ class CommandUpdateTableCell(QUndoCommand):
         self.update_undo_redo_tooltips()
 
     def update_undo_redo_tooltips(self) -> None:
-        # print('CommandUpdateTableCell')
         if self.UndoStack.canUndo():
             self.UndoAction.setToolTip(self.text())
         else:
@@ -1732,7 +1768,6 @@ class CommandDeconvLineDragged(QUndoCommand):
     def __init__(self, rs, params: tuple[float, float, float],
                  old_params: tuple[float, float, float], roi: ROI, description: str) -> None:
         super(CommandDeconvLineDragged, self).__init__(description)
-        # print('init CommandDeconvLineDragged')
         self.setText(description)
         self._params = params
         self._old_params = old_params
@@ -1753,7 +1788,6 @@ class CommandDeconvLineDragged(QUndoCommand):
         self.update_undo_redo_tooltips()
 
     def update_undo_redo_tooltips(self) -> None:
-        # print('CommandDeconvLineDragged')
         self.RS.fitting.draw_sum_curve()
         self.RS.fitting.draw_residual_curve()
         if self.UndoStack.canUndo():
@@ -1772,7 +1806,6 @@ class CommandDeconvLineParameterChanged(QUndoCommand):
                  old_value: float,
                  model, line_index: int, param_name: str, description: str) -> None:
         super(CommandDeconvLineParameterChanged, self).__init__(description)
-        # print('init CommandDeconvLineParameterChanged')
         self.setText(description)
         self.delegate = delegate
         self._index = index
@@ -1799,7 +1832,6 @@ class CommandDeconvLineParameterChanged(QUndoCommand):
         self.update_undo_redo_tooltips()
 
     def update_undo_redo_tooltips(self) -> None:
-        # print('CommandDeconvLineParameterChanged')
         self.RS.fitting.draw_sum_curve()
         self.RS.fitting.draw_residual_curve()
         if self.UndoStack.canUndo():
@@ -1822,7 +1854,7 @@ class CommandClearAllDeconvLines(QUndoCommand):
         self._checked = rs.ui.deconv_lines_table.model().checked()
         self._deconv_params_table_df = rs.ui.fit_params_table.model().dataframe()
         self.report_result_old = rs.fitting.report_result.copy()
-        self.sigma3_dict = copy.deepcopy(rs.fitting.sigma3)
+        self.sigma3_dict = deepcopy(rs.fitting.sigma3)
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
@@ -1868,7 +1900,6 @@ class CommandClearAllDeconvLines(QUndoCommand):
         self.rs.set_buttons_ability()
 
     async def _stop(self) -> None:
-        # print('CommandClearAllDeconvLines')
         self.rs.fitting.draw_sum_curve()
         try:
             self.rs.fitting.draw_residual_curve()
@@ -1943,7 +1974,6 @@ class CommandStartIntervalChanged(QUndoCommand):
         info('stop CommandStartIntervalChanged')
         self.RS.CommandStartIntervalChanged_allowed = True
         self.update_undo_redo_tooltips()
-        # print('CommandStartIntervalChanged')
         self.RS.set_modified()
         collect(2)
         await sleep(0)
@@ -2012,7 +2042,6 @@ class CommandEndIntervalChanged(QUndoCommand):
         info('stop CommandEndIntervalChanged')
         self.RS.CommandEndIntervalChanged_allowed = True
         self.update_undo_redo_tooltips()
-        # print('CommandEndIntervalChanged')
         self.RS.set_modified()
         collect(2)
         await sleep(0)
@@ -2096,7 +2125,7 @@ class CommandAfterFitting(QUndoCommand):
         self.rs.ui.report_text_edit.setText(self.report_text)
         create_task(self._stop())
 
-    def edited_fit_report(self, fit_report: str, res: lmfit.model.ModelResult) -> str:
+    def edited_fit_report(self, fit_report: str, res: ModelResult) -> str:
         param_legend = []
         line_types = self.rs.ui.deconv_lines_table.model().get_visible_line_types()
         for key in res.best_values.keys():
@@ -2128,7 +2157,7 @@ class CommandAfterFitting(QUndoCommand):
             self.rs.fitting.sigma3[self.filename] = self.sigma3[0], self.sigma3[1], self.sigma3[2]
         else:
             del self.rs.fitting.sigma3[self.filename]
-            self.rs.fitting.fill.setVisible(False)
+            self.rs.fitting.sigma3_fill.setVisible(False)
         self.rs.fitting.update_sigma3_curves(self.filename)
         create_task(self._stop())
 
@@ -2143,16 +2172,15 @@ class CommandAfterFitting(QUndoCommand):
             self.RedoAction.setToolTip('')
 
     async def _stop(self) -> None:
-        # print('stop CommandAfterFitting')
-        info('stop CommandAfterFitting')
+        self.rs.fitting.show_all_roi()
+        self.rs.ui.fit_params_table.model().sort_index()
+        self.rs.ui.fit_params_table.model().model_reset_emit()
         self.rs.fitting.redraw_curves_for_filename()
         self.rs.fitting.draw_sum_curve()
         self.rs.fitting.draw_residual_curve()
         self.rs.fitting.show_current_report_result()
         self.rs.fitting.update_sigma3_curves()
         self.rs.fitting.set_rows_visibility()
-        self.rs.ui.fit_params_table.model().sort_index()
-        self.rs.ui.fit_params_table.model().model_reset_emit()
         self.update_undo_redo_tooltips()
         time_end = self.rs.time_start
         if not self.rs.time_start:
@@ -2189,14 +2217,14 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.dely = dely
         self.rs = rs
         self.results = results
-        self.idx_type_param_count_legend_func = copy.deepcopy(idx_type_param_count_legend_func)
-        self.df_fit_params = copy.deepcopy(rs.ui.fit_params_table.model().dataframe())
-        self.dataset_old = copy.deepcopy(rs.ui.deconvoluted_dataset_table_view.model().dataframe())
+        self.idx_type_param_count_legend_func = deepcopy(idx_type_param_count_legend_func)
+        self.df_fit_params = deepcopy(rs.ui.fit_params_table.model().dataframe())
+        self.dataset_old = deepcopy(rs.ui.deconvoluted_dataset_table_view.model().dataframe())
         self.dataset_new = None
         self.sum_ar = rs.fitting.sum_array()
         self.fit_report = ''
-        self.report_result_old = copy.deepcopy(rs.fitting.report_result)
-        self.sigma3 = copy.deepcopy(rs.fitting.sigma3)
+        self.report_result_old = deepcopy(rs.fitting.report_result)
+        self.sigma3 = deepcopy(rs.fitting.sigma3)
         self.setText(description)
         self.fit_reports = {}
         self.chisqr_av = {}
@@ -2231,6 +2259,8 @@ class CommandAfterBatchFitting(QUndoCommand):
         line_types = self.rs.ui.deconv_lines_table.model().get_visible_line_types()
         x_axis, _ = self.sum_ar
         for key, fit_result in self.results:
+            if not fit_result:
+                continue
             self.fit_reports[key] += self.edited_fit_report(fit_result, line_types) + '\n'
             if fit_result.chisqr != 1e-250:
                 self.chisqr_av[key].append(fit_result.chisqr)
@@ -2241,10 +2271,11 @@ class CommandAfterBatchFitting(QUndoCommand):
             try:
                 self.rsquared_av[key].append(fit_result.rsquared)
             except:
-                # print("fit_result.rsquared error")
                 debug("fit_result.rsquared error")
         for i, item in enumerate(self.results):
             key, fit_result = item
+            if not self.dely[i] or not fit_result:
+                continue
             self.sigma3_conc_up[key] = np.concatenate((self.sigma3_conc_up[key], fit_result.best_fit + self.dely[i][1]))
             self.sigma3_conc_bottom[key] = np.concatenate((self.sigma3_conc_bottom[key],
                                                            fit_result.best_fit - self.dely[i][1]))
@@ -2304,18 +2335,19 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
         self.rs.ui.statusBar.showMessage('Redo...' + self.text())
         info('redo CommandAfterBatchFitting')
-        # print('redo CommandAfterBatchFitting')
         self.rs.fitting.report_result.clear()
         self.rs.ui.fit_params_table.model().delete_rows_by_filenames(self.keys)
         self.rs.fitting.add_line_params_from_template_batch(self.keys)
         for key, fit_result in self.results:
+            if not fit_result:
+                continue
             self.rs.fitting.set_parameters_after_fit_for_spectrum(fit_result, key)
         x_axis, _ = self.sum_ar
         for key in self.keys:
             self.rs.fitting.sigma3[key] = x_axis, self.sigma3_conc_up[key], self.sigma3_conc_bottom[key]
         for key in self.keys:
             self.rs.fitting.report_result[key] = self.report_text[key]
-        self.dataset_new = copy.deepcopy(self.rs.fitting.create_deconvoluted_dataset_new())
+        self.dataset_new = deepcopy(self.rs.fitting.create_deconvoluted_dataset_new())
         self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.dataset_new)
         for i in self.rs.fitting.report_result:
             self.rs.fitting.report_result[i] += '\n' + '\n' + self.av_text
@@ -2323,7 +2355,7 @@ class CommandAfterBatchFitting(QUndoCommand):
         create_task(self._stop())
 
     @staticmethod
-    def edited_fit_report(fit_result: lmfit.model.ModelResult, line_types: pd.DataFrame) -> str:
+    def edited_fit_report(fit_result: ModelResult, line_types: DataFrame) -> str:
         fit_report = fit_result.fit_report(show_correl=False)
         param_legend = []
         for key in fit_result.best_values.keys():
@@ -2347,12 +2379,12 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.rs.ui.statusBar.showMessage('Undo...' + self.text())
         info('Undo CommandAfterFitting')
         self.rs.ui.fit_params_table.model().set_dataframe(self.df_fit_params)
-        self.rs.fitting.report_result = copy.deepcopy(self.report_result_old)
+        self.rs.fitting.report_result = deepcopy(self.report_result_old)
         if self.sigma3 is not None:
-            self.rs.fitting.sigma3 = copy.deepcopy(self.sigma3)
+            self.rs.fitting.sigma3 = deepcopy(self.sigma3)
         else:
             self.rs.fitting.sigma3.clear()
-            self.rs.fitting.fill.setVisible(False)
+            self.rs.fitting.sigma3_fill.setVisible(False)
         self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.dataset_old)
         create_task(self._stop())
 
@@ -2376,7 +2408,6 @@ class CommandAfterBatchFitting(QUndoCommand):
         self.rs.fitting.update_ignore_features_table()
         self.rs.ui.fit_params_table.model().sort_index()
         self.rs.ui.fit_params_table.model().model_reset_emit()
-        # print('stop CommandAfterBatchFitting')
         info('stop CommandAfterBatchFitting')
         self.update_undo_redo_tooltips()
         time_end = self.rs.time_start
@@ -2490,12 +2521,12 @@ class CommandAfterGuess(QUndoCommand):
             self._mw.fitting.sigma3[''] = self.sigma3_old[0], self.sigma3_old[1], self.sigma3_old[2]
         else:
             del self._mw.fitting.sigma3['']
-            self._mw.fitting.fill.setVisible(False)
+            self._mw.fitting.sigma3_fill.setVisible(False)
         self._mw.fitting.update_sigma3_curves('')
         await self._mw.fitting.draw_all_curves()
         create_task(self._stop())
 
-    def process_result(self, fit_result: lmfit.model.ModelResult) -> None:
+    def process_result(self, fit_result: ModelResult) -> None:
         params = fit_result.params
         idx = 0
         line_params = {}
@@ -2542,7 +2573,7 @@ class CommandAfterGuess(QUndoCommand):
 
 class CommandFitIntervalAdded(QUndoCommand):
     """
-    undo / redo add row to fit_intervals_table_view
+    undo / redo add row to fit_borders_TableView
 
     Parameters
     ----------
@@ -2556,7 +2587,7 @@ class CommandFitIntervalAdded(QUndoCommand):
         super(CommandFitIntervalAdded, self).__init__(description)
         info('init FitIntervalAdded {!s}:'.format(str(description)))
         self.setText(description)
-        self.df = rs.ui.fit_intervals_table_view.model().dataframe()
+        self.df = rs.ui.fit_borders_TableView.model().dataframe()
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
@@ -2565,13 +2596,13 @@ class CommandFitIntervalAdded(QUndoCommand):
     @asyncSlot()
     async def redo(self) -> None:
         debug('redo FitIntervalAdded')
-        self.rs.ui.fit_intervals_table_view.model().append_row()
+        self.rs.ui.fit_borders_TableView.model().append_row()
         create_task(self._stop())
 
     @asyncSlot()
     async def undo(self) -> None:
         info('undo FitIntervalAdded')
-        self.rs.ui.fit_intervals_table_view.model().set_dataframe(self.df)
+        self.rs.ui.fit_borders_TableView.model().set_dataframe(self.df)
         create_task(self._stop())
 
     def update_undo_redo_tooltips(self) -> None:
@@ -2588,7 +2619,6 @@ class CommandFitIntervalAdded(QUndoCommand):
     async def _stop(self) -> None:
         info('stop FitIntervalAdded')
         self.update_undo_redo_tooltips()
-        # print('stop FitIntervalAdded')
         self.rs.set_modified()
         collect(2)
         await sleep(0)
@@ -2596,7 +2626,7 @@ class CommandFitIntervalAdded(QUndoCommand):
 
 class CommandFitIntervalDeleted(QUndoCommand):
     """
-    undo / redo delete row to fit_intervals_table_view
+    undo / redo delete row to fit_borders_TableView
 
     Parameters
     ----------
@@ -2613,7 +2643,7 @@ class CommandFitIntervalDeleted(QUndoCommand):
         info('init FitIntervalDeleted {!s}:'.format(str(description)))
         self.setText(description)
         self.interval_number = interval_number
-        self.df = rs.ui.fit_intervals_table_view.model().dataframe()
+        self.df = rs.ui.fit_borders_TableView.model().dataframe()
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
@@ -2622,13 +2652,13 @@ class CommandFitIntervalDeleted(QUndoCommand):
     @asyncSlot()
     async def redo(self) -> None:
         debug('redo FitIntervalDeleted')
-        self.rs.ui.fit_intervals_table_view.model().delete_row(self.interval_number)
+        self.rs.ui.fit_borders_TableView.model().delete_row(self.interval_number)
         create_task(self._stop())
 
     @asyncSlot()
     async def undo(self) -> None:
         info('undo FitIntervalDeleted')
-        self.rs.ui.fit_intervals_table_view.model().set_dataframe(self.df)
+        self.rs.ui.fit_borders_TableView.model().set_dataframe(self.df)
         create_task(self._stop())
 
     def update_undo_redo_tooltips(self) -> None:
@@ -2645,7 +2675,6 @@ class CommandFitIntervalDeleted(QUndoCommand):
     async def _stop(self) -> None:
         info('stop FitIntervalDeleted')
         self.update_undo_redo_tooltips()
-        # print('stop FitIntervalDeleted')
         self.rs.set_modified()
         collect(2)
         await sleep(0)
@@ -2653,7 +2682,7 @@ class CommandFitIntervalDeleted(QUndoCommand):
 
 class CommandFitIntervalChanged(QUndoCommand):
     """
-    undo / redo change value of fit_intervals_table_view row
+    undo / redo change value of fit_borders_TableView row
 
     Parameters
     ----------
@@ -2677,7 +2706,7 @@ class CommandFitIntervalChanged(QUndoCommand):
         self.index = index
         self.new_value = new_value
         self.model = model
-        self.df = rs.ui.fit_intervals_table_view.model().dataframe().copy()
+        self.df = rs.ui.fit_borders_TableView.model().dataframe().copy()
         self.UndoAction = rs.action_undo
         self.RedoAction = rs.action_redo
         self.UndoStack = rs.undoStack
@@ -2692,7 +2721,7 @@ class CommandFitIntervalChanged(QUndoCommand):
     @asyncSlot()
     async def undo(self) -> None:
         info('undo FitIntervalChanged {!s}'.format(self.df))
-        self.rs.ui.fit_intervals_table_view.model().set_dataframe(self.df)
+        self.rs.ui.fit_borders_TableView.model().set_dataframe(self.df)
         create_task(self._stop())
 
     def update_undo_redo_tooltips(self) -> None:
@@ -2710,7 +2739,6 @@ class CommandFitIntervalChanged(QUndoCommand):
         info('stop FitIntervalChanged')
         self.update_undo_redo_tooltips()
         self.model.sort_by_border()
-        # print('stop FitIntervalChanged')
         self.rs.set_modified()
         collect(2)
         await sleep(0)
@@ -2742,7 +2770,7 @@ class CommandAfterFittingStat(QUndoCommand):
         if cl_type not in main_window.stat_analysis_logic.latest_stat_result:
             self.stat_result_old = None
         else:
-            self.stat_result_old = copy.deepcopy(main_window.stat_analysis_logic.latest_stat_result[cl_type])
+            self.stat_result_old = deepcopy(main_window.stat_analysis_logic.latest_stat_result[cl_type])
         self.UndoAction = main_window.action_undo
         self.RedoAction = main_window.action_redo
         self.UndoStack = main_window.undoStack
@@ -2752,34 +2780,27 @@ class CommandAfterFittingStat(QUndoCommand):
     def create_stat_result(self) -> dict:
         if self.cl_type == 'LDA':
             stat_result_new = self.create_stat_result_lda()
-        elif self.cl_type == 'QDA':
-            stat_result_new = self.create_stat_result_lda()
-        elif self.cl_type == 'Logistic regression':
-            stat_result_new = self.create_stat_result_lr()
-        elif self.cl_type == 'NuSVC':
-            stat_result_new = self.create_stat_result_svc()
-        elif self.cl_type == 'Nearest Neighbors' or self.cl_type == 'GPC' or self.cl_type == 'Decision Tree' \
-                or self.cl_type == 'Naive Bayes' \
-                or self.cl_type == 'Random Forest' \
-                or self.cl_type == 'AdaBoost' or self.cl_type == 'MLP' or self.cl_type == 'XGBoost':
-            stat_result_new = self.create_stat_result_rf()
-        elif self.cl_type == 'Torch':
-            stat_result_new = self.create_stat_result_torch()
+        elif self.cl_type in ['Logistic regression', 'NuSVC']:
+            stat_result_new = self.create_stat_result_lr_svc(self.cl_type)
         elif self.cl_type == 'PCA':
             stat_result_new = self.create_stat_result_pca()
         elif self.cl_type == 'PLS-DA':
             stat_result_new = self.create_stat_result_plsda()
+        else:
+            stat_result_new = self.create_stat_result_rest()
         if self.mw.ui.dataset_type_cb.currentText() == 'Smoothed':
             X_display = self.mw.ui.smoothed_dataset_table_view.model().dataframe()
         elif self.mw.ui.dataset_type_cb.currentText() == 'Baseline corrected':
             X_display = self.mw.ui.baselined_dataset_table_view.model().dataframe()
         else:
             X_display = self.mw.ui.deconvoluted_dataset_table_view.model().dataframe()
+            ignored_features = self.mw.ui.ignore_dataset_table_view.model().ignored_features
+            X_display = X_display.drop(ignored_features, axis=1)
         stat_result_new['X_display'] = X_display
         return stat_result_new
 
     def create_stat_result_lda(self) -> dict:
-        result = copy.deepcopy(self.result)
+        result = deepcopy(self.result)
         if 'y_pred_2d' in result:
             y_pred_2d = result['y_pred_2d']
         else:
@@ -2790,7 +2811,7 @@ class CommandAfterFittingStat(QUndoCommand):
         label_binarizer = LabelBinarizer().fit(result['y_train'])
         result['y_onehot_test'] = label_binarizer.transform(result['y_test'])
         binary = False
-        if result['features_in_2d'].shape[1] == 1:
+        if result['features_in_2d'] is None:
             binary = True
         else:
             classifier = OneVsRestClassifier(make_pipeline(StandardScaler(), result['model']))
@@ -2799,28 +2820,26 @@ class CommandAfterFittingStat(QUndoCommand):
         metrics_result = model_metrics(result['y_test'], result['y_pred_test'], binary, result['target_names'])
         metrics_result['accuracy_score_train'] = result['accuracy_score_train']
         result['metrics_result'] = metrics_result
-        result['y_train_plus_test'] = np.concatenate((result['y_train'], result['y_test']))
+
         result['y_score_dec_func'] = y_score_dec_func
         if not self.mw.ui.use_shapley_cb.isChecked():
             return result
-        if self.cl_type == 'LDA':
-            explainer = shap.Explainer(result['model'].best_estimator_, X)
-            shap_values = explainer(X)
-            shap_values_legacy = explainer.shap_values(X)
-        else:
-            explainer = shap.Explainer(result['model'].predict, X, max_evals=2 * len(result['feature_names']) + 1)
-            shap_values = explainer(X)
-            shap_values_legacy = explainer.__call__(X)
-            explainer = None
+
+        model = result['model']
+        model = model.best_estimator_ if isinstance(model, GridSearchCV) or isinstance(model, HalvingGridSearchCV) \
+            else model
+        explainer = Explainer(model, X)
+        shap_values = explainer(X)
+        shap_values_legacy = explainer.shap_values(X)
         result['explainer'] = explainer
         result['shap_values'] = shap_values
         result['shap_values_legacy'] = shap_values_legacy
 
         return result
 
-    def create_stat_result_lr(self) -> dict:
+    def create_stat_result_lr_svc(self, cl_type: str) -> dict:
+        result = deepcopy(self.result)
         y_test = self.result['y_test']
-        result = copy.deepcopy(self.result)
         result['y_train_plus_test'] = np.concatenate((self.result['y_train'], y_test))
         binary = True if len(self.result['model'].classes_) == 2 else False
         metrics_result = model_metrics(y_test, self.result['y_pred_test'], binary, self.result['target_names'])
@@ -2830,34 +2849,22 @@ class CommandAfterFittingStat(QUndoCommand):
         result['y_onehot_test'] = label_binarizer.transform(y_test)
         if not self.mw.ui.use_shapley_cb.isChecked():
             return result
-        explainer = shap.Explainer(self.result['model'].best_estimator_, self.result['X'])
-        result['shap_values'] = explainer(self.result['X'])
-        result['explainer'] = explainer
-        result['shap_values_legacy'] = explainer.shap_values(self.result['X'])
+        if cl_type == 'Logistic regression':
+            explainer = Explainer(self.result['model'].best_estimator_, self.result['X'])
+            result['shap_values'] = explainer(self.result['X'])
+            result['explainer'] = explainer
+            result['shap_values_legacy'] = explainer.shap_values(self.result['X'])
+        else:
+            kernel_explainer = KernelExplainer(self.result['model'].best_estimator_.predict_proba, self.result['X'])
+            explainer = Explainer(self.result['model'].best_estimator_, self.result['X'],
+                                  max_evals=2 * len(self.result['feature_names']) + 1)
+            result['shap_values'] = explainer(self.result['X'])
+            result['explainer'] = kernel_explainer
+            result['shap_values_legacy'] = kernel_explainer.shap_values(self.result['X'])
         return result
 
-    def create_stat_result_svc(self) -> dict:
-        y_test = self.result['y_test']
-        result = copy.deepcopy(self.result)
-        result['y_train_plus_test'] = np.concatenate((self.result['y_train'], y_test))
-        binary = True if len(self.result['model'].classes_) == 2 else False
-        metrics_result = model_metrics(y_test, self.result['y_pred_test'], binary, self.result['target_names'])
-        metrics_result['accuracy_score_train'] = self.result['accuracy_score_train']
-        result['metrics_result'] = metrics_result
-        label_binarizer = LabelBinarizer().fit(self.result['y_train'])
-        result['y_onehot_test'] = label_binarizer.transform(y_test)
-        if not self.mw.ui.use_shapley_cb.isChecked():
-            return result
-        kernel_explainer = shap.KernelExplainer(self.result['model'].best_estimator_.predict_proba, self.result['X'])
-        explainer = shap.Explainer(self.result['model'].best_estimator_, self.result['X'],
-                                   max_evals=2 * len(self.result['feature_names']) + 1)
-        result['shap_values'] = explainer(self.result['X'])
-        result['explainer'] = kernel_explainer
-        result['shap_values_legacy'] = kernel_explainer.shap_values(self.result['X'])
-        return result
-
-    def create_stat_result_rf(self) -> dict:
-        result = copy.deepcopy(self.result)
+    def create_stat_result_rest(self) -> dict:
+        result = deepcopy(self.result)
         y_test = result['y_test']
         x_train = result['x_train']
         model = result['model']
@@ -2874,47 +2881,25 @@ class CommandAfterFittingStat(QUndoCommand):
             return result
         func = lambda x: model.predict_proba(x)[:, 1]
         med = x_train.median().values.reshape((1, x_train.shape[1]))
-        explainer = shap.Explainer(func, med, max_evals=2 * len(result['feature_names']) + 1)
-        kernel_explainer = shap.KernelExplainer(func, med)
-        result['shap_values'] = explainer(result['X'])
-        result['expected_value'] = kernel_explainer.expected_value
-        result['shap_values_legacy'] = kernel_explainer.shap_values(result['X'])
-        return result
-
-    def create_stat_result_torch(self) -> dict:
-        result = copy.deepcopy(self.result)
-        y_test = result['y_test']
-        x_train = result['x_train']
-        model = result['model']
-        if isinstance(model, GridSearchCV):
-            model = model.best_estimator_
-        result['y_train_plus_test'] = np.concatenate((result['y_train'], y_test))
-        binary = True if len(model.classes_) == 2 else False
-        metrics_result = model_metrics(np.array(y_test) - 1, result['y_pred_test'], binary, result['target_names'])
-        metrics_result['accuracy_score_train'] = result['accuracy_score_train']
-        result['metrics_result'] = metrics_result
-        label_binarizer = LabelBinarizer().fit(result['y_train'])
-        result['y_onehot_test'] = label_binarizer.transform(y_test)
-        if not self.mw.ui.use_shapley_cb.isChecked():
-            return result
-        func = lambda x: model.predict_proba(x.astype(np.float32))[:, 1]
-        med = x_train.median().values.reshape((1, x_train.shape[1])).astype(np.float32)
-        explainer = shap.Explainer(func, med, max_evals=2 * len(result['feature_names']) + 1)
-        kernel_explainer = shap.KernelExplainer(func, med)
-        result['shap_values'] = explainer(result['X'])
-        result['expected_value'] = kernel_explainer.expected_value
-        result['shap_values_legacy'] = kernel_explainer.shap_values(result['X'])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            explainer = Explainer(func, med, max_evals=2 * len(result['feature_names']) + 1,
+                                  feature_names=result['feature_names'])
+            kernel_explainer = KernelExplainer(func, med, feature_names=result['feature_names'])
+            result['shap_values'] = explainer(result['X'])
+            result['expected_value'] = kernel_explainer.expected_value
+            result['shap_values_legacy'] = kernel_explainer.shap_values(result['X'])
         return result
 
     def create_stat_result_pca(self) -> dict:
-        result = copy.deepcopy(self.result)
+        result = deepcopy(self.result)
         result['y_train_plus_test'] = np.concatenate((self.result['y_train'], self.result['y_test']))
-        result['loadings'] = pd.DataFrame(result['model'].components_.T, columns=['PC1', 'PC2'],
+        result['loadings'] = DataFrame(result['model'].components_.T, columns=['PC1', 'PC2'],
                                           index=result['feature_names'])
         return result
 
     def create_stat_result_plsda(self) -> dict:
-        result = copy.deepcopy(self.result)
+        result = deepcopy(self.result)
         result['y_train_plus_test'] = np.concatenate((self.result['y_train'], self.result['y_test']))
         result['vips'] = calculate_vips(result['model'])
         return result
@@ -2951,11 +2936,13 @@ class CommandAfterFittingStat(QUndoCommand):
             self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plsda_plots)
         elif self.cl_type != 'PCA' and self.cl_type != 'PLS-DA' \
                 and self.mw.stat_analysis_logic.latest_stat_result[self.cl_type] is not None:
-            self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plots, self.cl_type)
-
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                warnings.filterwarnings('once')
+                self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plots, self.cl_type)
         self.mw.stat_analysis_logic.update_force_single_plots(self.cl_type)
         self.mw.stat_analysis_logic.update_force_full_plots(self.cl_type)
-        self.mw.stat_analysis_logic.update_stat_report_text()
+        self.mw.stat_analysis_logic.update_stat_report_text(self.cl_type)
         info('stop CommandAfterFittingStat')
         self.update_undo_redo_tooltips()
         self.mw.set_modified()
@@ -2982,6 +2969,8 @@ def fitting_metrics(fit_results: list[ModelResult]) \
     sigma3_bottom = np.array([])
     av_text = ''
     for fit_result in fit_results:
+        if not fit_result:
+            continue
         ranges += 1
         chisqr_av.append(fit_result.chisqr)
         redchi_av.append(fit_result.redchi)

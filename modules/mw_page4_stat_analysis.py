@@ -1,43 +1,48 @@
-import os
 import re
 from asyncio import gather
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from logging import error, warning
 from os import environ
-
 
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
 import xgboost
+from multiprocessing import Manager
 from asyncqtpy import asyncSlot
 from matplotlib.colors import LinearSegmentedColormap
 from pandas import DataFrame, Series
-from pyqtgraph import BarGraphItem, InfiniteLine
 from qtpy.QtGui import QColor
-from sklearn.inspection import DecisionBoundaryDisplay
+from qfluentwidgets import MessageBox
+from sklearn.inspection import DecisionBoundaryDisplay, permutation_importance, PartialDependenceDisplay
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay, roc_curve, auc, precision_recall_curve, \
-    average_precision_score, ConfusionMatrixDisplay
-from sklearn.model_selection import train_test_split, GridSearchCV
+    average_precision_score, ConfusionMatrixDisplay, DetCurveDisplay
+from sklearn.model_selection import train_test_split, GridSearchCV, HalvingGridSearchCV, LearningCurveDisplay
 from sklearn.preprocessing import label_binarize
 from sklearn.tree import plot_tree
+from sklearn.calibration import CalibrationDisplay
 from imblearn.over_sampling import RandomOverSampler
-
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import NuSVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neural_network import MLPClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.feature_selection import SelectPercentile
+from xgboost import XGBClassifier
+from hyperopt import Trials, fmin, hp, tpe
+from seaborn import histplot, color_palette
 from modules.default_values import classificator_funcs
-from modules.static_functions import insert_table_to_text_edit
+from modules.mutual_functions.static_functions import insert_table_to_text_edit
 from modules.undo_redo import CommandAfterFittingStat
+from modules.stages.stat_analysis.functions.fit_classificators import objective
+import warnings
 
-
-def update_plot_tree(clf, plot_widget, feature_names, class_names) -> None:
-    ax = plot_widget.canvas.axes
-    ax.cla()
-    plot_tree(clf, feature_names=feature_names, class_names=class_names, ax=ax)
-    try:
-        plot_widget.canvas.draw()
-    except ValueError:
-        pass
-    plot_widget.canvas.figure.tight_layout()
+warnings.filterwarnings('ignore')
 
 
 def lda_coef_equation(model) -> str:
@@ -56,9 +61,10 @@ def lda_coef_equation(model) -> str:
     out : str
         Equation
     """
-    for n_ld in range(len(model.best_estimator_.coef_)):
-        coef = model.best_estimator_.coef_[n_ld]
-        feature_names = model.best_estimator_.feature_names_in_
+    model = model.best_estimator_ if isinstance(model, GridSearchCV) else model
+    for n_ld in range(len(model.coef_)):
+        coef = model.coef_[n_ld]
+        feature_names = model.feature_names_in_
         name_coef = {}
         for i, n in enumerate(feature_names):
             name_coef[n] = coef[i]
@@ -78,58 +84,14 @@ class StatAnalysisLogic:
         self.top_features = {}
         self.old_labels = None
         self.new_labels = None
-        self.params = {'score_plots': {'QDA': self.parent.ui.qda_scores_plot_widget,
-                                       'Logistic regression': self.parent.ui.lr_scores_plot_widget,
-                                       'NuSVC': self.parent.ui.svc_scores_plot_widget,
-                                       'Nearest Neighbors': self.parent.ui.nearest_scores_plot_widget,
-                                       'GPC': self.parent.ui.gpc_scores_plot_widget,
-                                       'Decision Tree': self.parent.ui.dt_scores_plot_widget,
-                                       'Naive Bayes': self.parent.ui.nb_scores_plot_widget,
-                                       'Random Forest': self.parent.ui.rf_scores_plot_widget,
-                                       'AdaBoost': self.parent.ui.ab_scores_plot_widget,
-                                       'MLP': self.parent.ui.mlp_scores_plot_widget,
-                                       'XGBoost': self.parent.ui.xgboost_scores_plot_widget,
-                                       'Torch': self.parent.ui.torch_scores_plot_widget},
-                       'feature_plots': {'LDA': self.parent.ui.lda_features_plot_widget,
-                                         'Logistic regression': self.parent.ui.lr_features_plot_widget,
-                                         'NuSVC': self.parent.ui.svc_features_plot_widget},
-                       'dm_plots': {'LDA': self.parent.ui.lda_dm_plot, 'QDA': self.parent.ui.qda_dm_plot,
-                                    'Logistic regression': self.parent.ui.lr_dm_plot,
-                                    'NuSVC': self.parent.ui.svc_dm_plot,
-                                    'Nearest Neighbors': self.parent.ui.nearest_dm_plot,
-                                    'GPC': self.parent.ui.gpc_dm_plot,
-                                    'Decision Tree': self.parent.ui.dt_dm_plot,
-                                    'Naive Bayes': self.parent.ui.nb_dm_plot,
-                                    'Random Forest': self.parent.ui.rf_dm_plot,
-                                    'AdaBoost': self.parent.ui.ab_dm_plot,
-                                    'MLP': self.parent.ui.mlp_dm_plot,
-                                    'XGBoost': self.parent.ui.xgboost_dm_plot,
-                                    'Torch': self.parent.ui.torch_dm_plot},
-                       'pr_plots': {'LDA': self.parent.ui.lda_pr_plot, 'QDA': self.parent.ui.qda_pr_plot,
-                                    'Logistic regression': self.parent.ui.lr_pr_plot,
-                                    'NuSVC': self.parent.ui.svc_pr_plot,
-                                    'Nearest Neighbors': self.parent.ui.nearest_pr_plot,
-                                    'GPC': self.parent.ui.gpc_pr_plot,
-                                    'Decision Tree': self.parent.ui.dt_pr_plot,
-                                    'Naive Bayes': self.parent.ui.nb_pr_plot,
-                                    'Random Forest': self.parent.ui.rf_pr_plot,
-                                    'AdaBoost': self.parent.ui.ab_pr_plot,
-                                    'MLP': self.parent.ui.mlp_pr_plot,
-                                    'XGBoost': self.parent.ui.xgboost_pr_plot,
-                                    'Torch': self.parent.ui.torch_pr_plot},
-                       'roc_plots': {'LDA': self.parent.ui.lda_roc_plot, 'QDA': self.parent.ui.qda_roc_plot,
-                                     'Logistic regression': self.parent.ui.lr_roc_plot,
-                                     'NuSVC': self.parent.ui.svc_roc_plot,
-                                     'Nearest Neighbors': self.parent.ui.nearest_roc_plot,
-                                     'GPC': self.parent.ui.gpc_roc_plot,
-                                     'Decision Tree': self.parent.ui.dt_roc_plot,
-                                     'Naive Bayes': self.parent.ui.nb_roc_plot,
-                                     'Random Forest': self.parent.ui.rf_roc_plot,
-                                     'AdaBoost': self.parent.ui.ab_roc_plot,
-                                     'MLP': self.parent.ui.mlp_roc_plot,
-                                     'XGBoost': self.parent.ui.xgboost_roc_plot,
-                                     'Torch': self.parent.ui.torch_roc_plot},
-                       }
+        self.params = {'feature_plots': {'LDA', 'Logistic regression', 'NuSVC'}}
+
+    def get_random_state(self) -> None | int:
+        main_window = self.parent
+        rng = None
+        if main_window.ui.random_state_cb.isChecked():
+            rng = np.random.RandomState(main_window.ui.random_state_sb.value())
+        return rng
 
     @asyncSlot()
     async def do_fit_classificator(self, cl_type: str) -> None:
@@ -143,14 +105,14 @@ class StatAnalysisLogic:
         main_window.ui.statusBar.showMessage('Fitting model...')
         main_window.close_progress_bar()
         main_window.open_progress_bar(max_value=0)
-        main_window.open_progress_dialog("Fitting %s Classificator..." % cl_type, "Cancel", maximum=0)
+        t = "Fitting %s Classificator..." % cl_type if cl_type not in ['PCA', 'PLS-DA'] else "Fitting %s ..." % cl_type
+        main_window.open_progress_dialog(t, "Cancel", maximum=0)
         X, Y, feature_names, target_names, _ = self.dataset_for_ml()
-        if main_window.ui.random_state_cb.isChecked():
-            rng = np.random.RandomState(main_window.ui.random_state_sb.value())
-        else:
-            rng = None
-        ros = RandomOverSampler(random_state=rng)
+        rnd_state = self.get_random_state()
+        ros = RandomOverSampler(random_state=rnd_state)
         X, Y = ros.fit_resample(X, Y)
+        filenames = X['Filename']
+        X = X.iloc[:, 1:]
         if cl_type == 'XGBoost':
             Y = self.corrected_class_labels(Y)
         y_test_bin = None
@@ -159,45 +121,26 @@ class StatAnalysisLogic:
             Y_bin = label_binarize(Y, classes=list(np.unique(Y)))
             _, _, _, y_test_bin = train_test_split(X, Y_bin, test_size=test_size)
 
-        x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rng)
+        x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rnd_state)
+
         executor = ProcessPoolExecutor()
         func = self.classificator_funcs[cl_type]
         # Для БОльших датасетов возможно лучше будет ProcessPoolExecutor. Но таких пока нет
         main_window.current_executor = executor
-        params = {}
-        cl_types_using_pca_plsda = list(self.classificator_funcs.keys())
-        cl_types_using_pca_plsda.remove('LDA')
-        cl_types_using_pca_plsda.remove('PCA')
-        cl_types_using_pca_plsda.remove('PLS-DA')
-        use_pca = self.parent.ui.use_pca_checkBox.isChecked()
-        if cl_type == 'MLP' and main_window.ui.groupBox_mlp.isChecked():
-            params = {'activation': main_window.ui.activation_comboBox.currentText(),
-                      'solver': main_window.ui.solver_mlp_combo_box.currentText(),
-                      'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
-                      'max_epoch': main_window.ui.max_epoch_spinBox.value(),
-                      'learning_rate': main_window.ui.learning_rate_doubleSpinBox.value(),
-                      'use_pca': use_pca}
-        # elif cl_type == 'Torch' and main_window.ui.groupBox_mlp.isChecked():
-        #     params = {'activation': main_window.ui.activation_comboBox.currentText(),
-        #               'solver': main_window.ui.solver_mlp_combo_box.currentText(),
-        #               'hidden_layer_sizes': main_window.ui.mlp_layer_size_spinBox.value(),
-        #               'max_epoch': main_window.ui.max_epoch_spinBox.value(),
-        #               'learning_rate': main_window.ui.learning_rate_doubleSpinBox.value(),
-        #               'use_pca': use_pca}
-        elif cl_type == 'MLP' and not main_window.ui.groupBox_mlp.isChecked():
-            params = {'max_epoch': main_window.ui.max_epoch_spinBox.value(),
-                      'use_pca': use_pca}
-        elif cl_type in cl_types_using_pca_plsda:
-            params = {'use_pca': use_pca}
-        params['refit'] = self.parent.ui.refit_score.currentText()
-        with executor:
-            main_window.current_futures = [main_window.loop.run_in_executor(executor, func, x_train, y_train, x_test,
-                                                                            y_test, params)]
-
-            for future in main_window.current_futures:
-                future.add_done_callback(main_window.progress_indicator)
-            result = await gather(*main_window.current_futures)
-        if main_window.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        params = {'use_pca': self.parent.ui.use_pca_checkBox.isChecked(),
+                  'refit': self.parent.ui.refit_score.currentText(),
+                  'use_GridSearchCV': self.parent.ui.use_grid_search_checkBox.isChecked(), 'random_state': rnd_state}
+        self.add_params(params, cl_type, input_layer_size=x_train.shape[1])
+        with Manager() as manager:
+            main_window.break_event = manager.Event()
+            with executor:
+                main_window.current_futures = [
+                    main_window.loop.run_in_executor(executor, func, x_train, y_train, x_test,
+                                                     y_test, params)]
+                for future in main_window.current_futures:
+                    future.add_done_callback(main_window.progress_indicator)
+                result = await gather(*main_window.current_futures)
+        if main_window.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             main_window.close_progress_bar()
             main_window.ui.statusBar.showMessage('Fitting cancelled.')
             return
@@ -205,17 +148,323 @@ class StatAnalysisLogic:
         result['X'] = X
         result['Y'] = Y
         result['y_train'] = y_train
-        result['use_pca'] = use_pca
+        result['use_pca'] = self.parent.ui.use_pca_checkBox.isChecked()
         result['y_test'] = y_test
         result['x_train'] = x_train
         result['x_test'] = x_test
         result['target_names'] = target_names
         result['feature_names'] = feature_names
         result['y_test_bin'] = y_test_bin
+        result['filenames'] = filenames
         command = CommandAfterFittingStat(main_window, result, cl_type, "Fit model %s" % cl_type)
         main_window.undoStack.push(command)
         main_window.close_progress_bar()
         main_window.ui.statusBar.showMessage('Fitting completed', 10000)
+
+    def add_params(self, params: dict, cl_type: str, **kwargs) -> None:
+        """
+        Function adds hyperparameters for currently selected classificator cl_type
+        Parameters
+        ----------
+        params: dict
+        cl_type: str classificator name
+
+        Returns
+        -------
+            None
+        """
+        parameters = [{}]
+        if cl_type == 'LDA':
+            parameters = self.create_lda_gridsearch_params()
+        elif cl_type == 'Logistic regression':
+            parameters = self.create_lr_gridsearch_params()
+        elif cl_type == 'NuSVC':
+            parameters = self.create_nusvc_gridsearch_params()
+        elif cl_type == 'Nearest Neighbors':
+            parameters = self.create_nn_gridsearch_params()
+        elif cl_type == 'MLP':
+            parameters = self.create_mlp_gridsearch_params(**kwargs)
+            params['max_epoch'] = self.parent.ui.max_epoch_spinBox.value()
+        elif cl_type == 'Decision Tree':
+            parameters = self.create_dt_gridsearch_params()
+        elif cl_type == 'Random Forest':
+            parameters = self.create_rf_gridsearch_params()
+        elif cl_type == 'AdaBoost':
+            parameters = self.create_ab_gridsearch_params()
+        elif cl_type == 'XGBoost':
+            parameters = self.create_xgb_gridsearch_params()
+        elif cl_type in ['Voting', 'Stacking']:
+            params['estimators'] = self.create_voting_gridsearch_params()
+        params['grid_search_parameters'] = parameters
+
+    def get_lda_shrinkage_parameter_value(self):
+        v_shrinkage = self.parent.ui.lineEdit_lda_shrinkage.text()
+        if v_shrinkage.lower() == 'none':
+            shrinkage = None
+        elif v_shrinkage.lower() == 'auto':
+            shrinkage = 'auto'
+        else:
+            try:
+                v = float(v_shrinkage)
+                v = .0 if v < .0 else v
+                v = 1. if v > 1. else v
+                shrinkage = v
+            except ValueError:
+                shrinkage = None
+        return shrinkage
+
+    def create_lda_gridsearch_params(self) -> list[dict]:
+        v_solver = self.parent.ui.comboBox_lda_solver.currentText()
+        shrinkage = self.get_lda_shrinkage_parameter_value()
+        if not self.parent.ui.lda_solver_check_box.isChecked() \
+                and not self.parent.ui.lda_shrinkage_check_box.isChecked():
+            parameters = [{'solver': ['svd']},
+                          {'solver': ['eigen', 'lsqr'], 'shrinkage': [None, 'auto']},
+                          {'solver': ['eigen', 'lsqr'], 'shrinkage': np.arange(0, 1.1, 0.1)}]
+        elif self.parent.ui.lda_solver_check_box.isChecked() \
+                and not self.parent.ui.lda_shrinkage_check_box.isChecked():
+            if v_solver == 'svd':
+                parameters = [{'solver': ['svd'], 'shrinkage': [None]}]
+            else:
+                parameters = [{'solver': [v_solver], 'shrinkage': [None, 'auto']},
+                              {'solver': [v_solver], 'shrinkage': np.arange(0, 1.1, 0.1)}]
+        elif not self.parent.ui.lda_solver_check_box.isChecked() \
+                and self.parent.ui.lda_shrinkage_check_box.isChecked():
+            if shrinkage is None:
+                parameters = [{'solver': ['svd']},
+                              {'solver': ['eigen', 'lsqr'], 'shrinkage': [shrinkage]}]
+            else:
+                parameters = [{'solver': ['eigen', 'lsqr'], 'shrinkage': [shrinkage]}]
+        else:
+            parameters = [{'solver': [v_solver], 'shrinkage': [shrinkage]}]
+        return parameters
+
+    def create_lr_gridsearch_params(self) -> list[dict]:
+        solver_penalty = {'lbfgs': ['l2', None], 'liblinear': ['l1', 'l2'], 'newton-cg': ['l2', None],
+                          'newton-cholesky': ['l2', None], 'sag': ['l2', None],
+                          'saga': ['elasticnet', 'l1', 'l2', None]}
+        penalty_solver = {'l2': ['lbfgs', 'liblinear', 'newton-cg', 'newton-cholesky', 'sag', 'saga'],
+                          'l1': ['liblinear', 'saga'],
+                          'elasticnet': ['saga'], None: ['lbfgs', 'newton-cg', 'newton-cholesky', 'sag', 'saga']}
+
+        c_range = [.01, .1, 1, 10, 100, 1000, 10_000, 100_000]
+        c = self.parent.ui.lr_c_doubleSpinBox.value()
+        penalty = self.parent.ui.lr_penalty_comboBox.currentText()
+        penalty = None if penalty == 'None' else penalty
+        solver = self.parent.ui.lr_solver_comboBox.currentText()
+        penalty_checked = self.parent.ui.lr_penalty_checkBox.isChecked()
+        solver_checked = self.parent.ui.lr_solver_checkBox.isChecked()
+        c_checked = self.parent.ui.lr_c_checkBox.isChecked()
+        c = [c] if c_checked else c_range
+        if penalty_checked and solver_checked:
+            parameters = [{'penalty': [penalty], 'C': c, 'solver': [solver]}]
+        elif penalty_checked and not solver_checked:
+            parameters = [{'penalty': [penalty], 'C': c, 'solver': penalty_solver[penalty]}]
+        elif not penalty_checked and solver_checked:
+            parameters = [{'penalty': solver_penalty[solver], 'C': c, 'solver': [solver]}]
+        else:
+            parameters = [{'penalty': ('l2', None), 'C': c,
+                           'solver': ['lbfgs', 'newton-cg', 'newton-cholesky', 'sag']},
+                          {'penalty': ['l2', 'l1'], 'C': c, 'solver': ['liblinear']},
+                          {'penalty': ['elasticnet', 'l1', 'l2', None], 'C': c, 'solver': ['saga']}
+                          ]
+        return parameters
+
+    def create_nusvc_gridsearch_params(self) -> dict:
+        nu_checked = self.parent.ui.svc_nu_check_box.isChecked()
+        nu = self.parent.ui.svc_nu_doubleSpinBox.value()
+        if nu_checked:
+            parameters = {'nu': [nu]}
+        else:
+            parameters = {'nu': np.arange(0.05, 1.05, 0.05)}
+        return parameters
+
+    def create_nn_gridsearch_params(self):
+        n_neighbors_checked = self.parent.ui.n_neighbors_checkBox.isChecked()
+        weights_checked = self.parent.ui.nn_weights_checkBox.isChecked()
+        n_neighbors = self.parent.ui.n_neighbors_spinBox.value()
+        weights = self.parent.ui.nn_weights_comboBox.currentText()
+        if n_neighbors_checked and not weights_checked:
+            parameters = {'n_neighbors': [n_neighbors], 'weights': ['uniform', 'distance']}
+        elif not n_neighbors_checked and weights_checked:
+            parameters = {'n_neighbors': np.arange(2, 11, 1), 'weights': [weights]}
+        elif n_neighbors_checked and weights_checked:
+            parameters = {'n_neighbors': [n_neighbors], 'weights': [weights]}
+        else:
+            parameters = {'n_neighbors': np.arange(2, 11, 1), 'weights': ['uniform', 'distance']}
+        return parameters
+
+    def create_mlp_gridsearch_params(self, input_layer_size: int):
+        activation_checked = self.parent.ui.activation_checkBox.isChecked()
+        solver_checked = self.parent.ui.mlp_solve_checkBox.isChecked()
+        hidden_layer_sizes_checked = self.parent.ui.mlp_layer_size_checkBox.isChecked()
+        learning_rate_init_checked = self.parent.ui.learning_rate_checkBox.isChecked()
+        activation = [self.parent.ui.activation_comboBox.currentText()] if activation_checked \
+            else ['identity', 'logistic', 'tanh', 'relu']
+        solver = self.parent.ui.solver_mlp_combo_box.currentText()
+        hidden_layer_sizes = self.parent.ui.mlp_layer_size_spinBox.value()
+        learning_rate_init = self.parent.ui.learning_rate_doubleSpinBox.value()
+        h_sizes = np.arange(1, 11) * input_layer_size
+        h_sizes = list(h_sizes)
+        h_sizes = [hidden_layer_sizes] if hidden_layer_sizes_checked else h_sizes
+        learning_rate_init_range = [learning_rate_init] if learning_rate_init_checked else [.1, .01, .02, 1e-3]
+
+        if solver_checked and solver == 'lbfgs':
+            parameters = [{'solver': [solver], 'activation': activation, 'hidden_layer_sizes': h_sizes}]
+        elif solver_checked and solver != 'lbfgs':
+            parameters = [{'solver': [solver], 'activation': activation, 'hidden_layer_sizes': h_sizes,
+                           'learning_rate_init': learning_rate_init_range}]
+        else:
+            parameters = [{'solver': ['lbfgs'], 'activation': [activation], 'hidden_layer_sizes': h_sizes},
+                          {'activation': activation, 'solver': ['sgd', 'adam'],
+                           'hidden_layer_sizes': h_sizes, 'learning_rate_init': learning_rate_init_range}]
+        return parameters
+
+    def create_dt_gridsearch_params(self):
+        criterion_checked = self.parent.ui.criterion_checkBox.isChecked()
+        criterion = self.parent.ui.criterion_comboBox.currentText()
+        if criterion_checked:
+            parameters = {'criterion': [criterion]}
+        else:
+            parameters = {'criterion': ["gini", "entropy", "log_loss"]}
+        return parameters
+
+    def create_rf_gridsearch_params(self):
+        criterion_checked = self.parent.ui.rf_criterion_checkBox.isChecked()
+        min_samples_split_checked = self.parent.ui.rf_min_samples_split_checkBox.isChecked()
+        n_estimators_checked = self.parent.ui.rf_n_estimators_checkBox.isChecked()
+        max_features_checked = self.parent.ui.rf_max_features_checkBox.isChecked()
+        criterion = self.parent.ui.rf_criterion_comboBox.currentText()
+        min_samples_split = self.parent.ui.rf_min_samples_split_spinBox.value()
+        n_estimators = self.parent.ui.rf_n_estimators_spinBox.value()
+        max_features = self.parent.ui.rf_max_features_comboBox.currentText()
+        max_features = None if max_features == 'None' else max_features
+        criterion = [criterion] if criterion_checked else ["gini", "entropy", "log_loss"]
+        min_samples_split = [min_samples_split] if min_samples_split_checked else [2, 3, 5, 10]
+        n_estimators = [n_estimators] if n_estimators_checked else [2, 3, 5, 10]
+        max_features = [max_features] if max_features_checked else ["sqrt", "log2", None]
+        parameters = {'criterion': criterion, 'min_samples_split': min_samples_split,
+                      'n_estimators': n_estimators, 'max_features': max_features}
+        return parameters
+
+    def create_ab_gridsearch_params(self) -> dict:
+        """
+        Hyperparameters for GridSearchCV.
+        n_estimators and learning_rate
+
+        Returns
+        -------
+            Parameters: dict
+
+        """
+        n_estimators_checked = self.parent.ui.ab_n_estimators_checkBox.isChecked()
+        learning_rate_checked = self.parent.ui.ab_learning_rate_checkBox.isChecked()
+        n_estimators = self.parent.ui.ab_n_estimators_spinBox.value()
+        learning_rate = self.parent.ui.ab_learning_rate_doubleSpinBox.value()
+        n_estimators = [n_estimators] if n_estimators_checked else np.arange(50, 1050, 50)
+        learning_rate = [learning_rate] if learning_rate_checked \
+            else [.001, .01, .1, 1., 10., 100., 1000., 10_000., 100_000.]
+        return {'n_estimators': n_estimators, 'learning_rate': learning_rate}
+
+    def create_xgb_gridsearch_params(self) -> dict:
+        """
+        Hyperparameters for GridSearchCV.
+
+        Returns
+        -------
+            Parameters: dict
+        """
+        eta_checked = self.parent.ui.xgb_eta_checkBox.isChecked()
+        gamma_checked = self.parent.ui.xgb_gamma_checkBox.isChecked()
+        max_depth_checked = self.parent.ui.xgb_max_depth_checkBox.isChecked()
+        min_child_weight_checked = self.parent.ui.xgb_min_child_weight_checkBox.isChecked()
+        colsample_bytree_checked = self.parent.ui.xgb_colsample_bytree_checkBox.isChecked()
+        lambda_checked = self.parent.ui.xgb_lambda_checkBox.isChecked()
+        eta = self.parent.ui.xgb_eta_doubleSpinBox.value()
+        gamma = self.parent.ui.xgb_gamma_spinBox.value()
+        max_depth = self.parent.ui.xgb_max_depth_spinBox.value()
+        min_child_weight = self.parent.ui.xgb_min_child_weight_spinBox.value()
+        colsample_bytree = self.parent.ui.xgb_colsample_bytree_doubleSpinBox.value()
+        reg_lambda = self.parent.ui.xgb_lambda_doubleSpinBox.value()
+        n_estimators = self.parent.ui.xgb_n_estimators_spinBox.value()
+        eta = [eta] if eta_checked else [.001, .01, .1, .2, .3, .4, .5]
+        gamma = [gamma] if gamma_checked else [0., .25, .5, 1., 2., 3., 5., 7., 10.]
+        max_depth = [max_depth] if max_depth_checked else np.arange(3, 18)
+        min_child_weight = [min_child_weight] if min_child_weight_checked else [.0, .5, 1., 2., 3., 4., 5., 6., 7., 10.]
+        colsample_bytree = [colsample_bytree] if colsample_bytree_checked else [0.5, 0.6, 0.7, 0.8, 0.9, 1.]
+        reg_lambda = [reg_lambda] if lambda_checked else [.1, .25, .5, .75, 1., 5., 10., 50., 100., 1000.]
+        return {'n_estimators': [n_estimators], 'eta': eta, 'gamma': gamma, 'max_depth': max_depth,
+                'min_child_weight': min_child_weight, 'colsample_bytree': colsample_bytree, 'reg_lambda': reg_lambda}
+
+    def create_voting_gridsearch_params(self) -> list:
+        """
+        Hyperparameters for GridSearchCV.
+
+        Returns
+        -------
+            Parameters: dict
+        """
+        estimators = []
+        if 'LDA' in self.latest_stat_result:
+            best_params = self.latest_stat_result['LDA']['model'].best_params_
+            shrinkage = best_params['shrinkage'] if 'shrinkage' in best_params \
+                else self.get_lda_shrinkage_parameter_value()
+            clf = LinearDiscriminantAnalysis(solver=best_params['solver'], shrinkage=shrinkage)
+            estimators.append(('LDA', clf))
+        if 'Logistic regression' in self.latest_stat_result:
+            best_params = self.latest_stat_result['Logistic regression']['model'].best_params_
+            clf = LogisticRegression(best_params['penalty'], C=best_params['C'], solver=best_params['solver'],
+                                     max_iter=10_000, n_jobs=-1, random_state=self.get_random_state())
+            estimators.append(('Logistic regression', clf))
+        if 'NuSVC' in self.latest_stat_result:
+            best_params = self.latest_stat_result['NuSVC']['model'].best_params_
+            clf = NuSVC(nu=best_params['nu'], kernel='linear', probability=True, random_state=self.get_random_state())
+            estimators.append(('NuSVC', clf))
+        if 'Nearest Neighbors' in self.latest_stat_result:
+            best_params = self.latest_stat_result['Nearest Neighbors']['model'].best_params_
+            clf = KNeighborsClassifier(best_params['n_neighbors'], weights=best_params['weights'], n_jobs=-1)
+            estimators.append(('Nearest Neighbors', clf))
+        if 'GPC' in self.latest_stat_result:
+            clf = GaussianProcessClassifier(random_state=self.get_random_state(), n_jobs=-1)
+            estimators.append(('GPC', clf))
+        if 'Naive Bayes' in self.latest_stat_result:
+            clf = GaussianNB()
+            estimators.append(('Naive Bayes', clf))
+        if 'MLP' in self.latest_stat_result:
+            best_params = self.latest_stat_result['MLP']['model'].best_params_
+            learning_rate_init = best_params['learning_rate_init'] if 'learning_rate_init' in best_params \
+                else self.parent.ui.learning_rate_doubleSpinBox.value()
+            clf = MLPClassifier(best_params['hidden_layer_sizes'], best_params['activation'],
+                                solver=best_params['solver'], learning_rate='adaptive',
+                                learning_rate_init=learning_rate_init,
+                                max_iter=self.parent.ui.max_epoch_spinBox.value(),
+                                random_state=self.get_random_state())
+            estimators.append(('MLP', clf))
+        if 'Decision Tree' in self.latest_stat_result:
+            best_params = self.latest_stat_result['Decision Tree']['model'].best_params_
+            clf = DecisionTreeClassifier(criterion=best_params['criterion'], random_state=self.get_random_state())
+            estimators.append(('Decision Tree', clf))
+        if 'Random Forest' in self.latest_stat_result:
+            best_params = self.latest_stat_result['Random Forest']['model'].best_params_
+            clf = RandomForestClassifier(best_params['n_estimators'], criterion=best_params['criterion'],
+                                         min_samples_split=best_params['min_samples_split'],
+                                         max_features=best_params['max_features'],
+                                         random_state=self.get_random_state(), n_jobs=-1)
+            estimators.append(('Random Forest', clf))
+        if 'AdaBoost' in self.latest_stat_result:
+            best_params = self.latest_stat_result['AdaBoost']['model'].best_params_
+            clf = AdaBoostClassifier(n_estimators=best_params['n_estimators'],
+                                     learning_rate=best_params['learning_rate'], random_state=self.get_random_state())
+            estimators.append(('AdaBoost', clf))
+        if 'XGBoost' in self.latest_stat_result:
+            best_params = self.latest_stat_result['XGBoost']['model'].best_params_
+            clf = XGBClassifier(n_estimators=best_params['n_estimators'], eta=best_params['eta'],
+                                gamma=best_params['gamma'], max_depth=best_params['max_depth'],
+                                min_child_weight=best_params['min_child_weight'],
+                                colsample_bytree=best_params['colsample_bytree'], reg_lambda=best_params['reg_lambda'],
+                                random_state=self.get_random_state(), n_jobs=-1)
+            estimators.append(('XGBoost', clf))
+        return estimators
 
     def corrected_class_labels(self, Y: list[int]) -> list[int]:
         uniq = np.unique(Y)
@@ -275,7 +524,7 @@ class StatAnalysisLogic:
         else:
             target_names = main_window.ui.GroupsTable.model().dataframe().loc[classes]['Group name'].values
 
-        return q_res.iloc[:, 2:], y, list(q_res.axes[1][2:]), target_names, q_res.iloc[:, 1]
+        return q_res.iloc[:, 1:], y, list(q_res.axes[1][2:]), target_names, q_res.iloc[:, 1]
 
     def _get_plot_colors(self, classes: list[int]) -> list[str]:
         plt_colors = []
@@ -296,12 +545,11 @@ class StatAnalysisLogic:
         else:
             return None
 
-    def update_stat_report_text(self):
-        idx = self.parent.ui.stat_tab_widget.currentIndex()
-        if idx > 14 or idx < 0:
+    def update_stat_report_text(self, cl_type: str):
+        if self.parent.ui.current_classificator_comboBox.currentText() in ['PCA', 'PLS-DA']:
             self.parent.ui.stat_report_text_edit.setText('')
             return
-        classificator_type = list(self.classificator_funcs.keys())[idx]
+        classificator_type = cl_type
         if classificator_type not in self.latest_stat_result or 'metrics_result' \
                 not in self.latest_stat_result[classificator_type]:
             self.parent.ui.stat_report_text_edit.setText('')
@@ -311,22 +559,25 @@ class StatAnalysisLogic:
         else:
             top = None
         model_results = self.latest_stat_result[classificator_type]
+        misclassified_filenames = np.unique(model_results['filenames'].values[model_results['misclassified']])
         self.update_report_text(model_results['metrics_result'], model_results['cv_scores'], top,
-                                model_results['model'], classificator_type)
+                                model_results['model'], classificator_type, misclassified_filenames)
 
-    def update_report_text(self, metrics_result: dict, cv_scores=None, top=None, model=None, classificator_type=None) \
-            -> None:
+    def update_report_text(self, metrics_result: dict, cv_scores=None, top=None, model=None, classificator_type=None,
+                           misclassified_filenames=None) -> None:
         """
         Set report text
-        @param model:
-        @param cv_scores:
-        @param metrics_result:
-        @param top: top 5 features for each class
-        @return:
 
         Parameters
         ----------
+        metrics_result: dict
+        cv_scores:
+        top:
+        model:
         classificator_type
+        misclassified_filenames: ndarray
+            filenames which was classified wrong and will be shown in --Misclassified-- section
+
         """
         text = '\n' + 'Accuracy score (test data): {!s}%'.format(metrics_result['accuracy_score']) + '\n' \
                + 'Accuracy score (train data): {!s}%'.format(metrics_result['accuracy_score_train']) + '\n' \
@@ -340,16 +591,23 @@ class StatAnalysisLogic:
         if top is not None:
             text += 'top 5 features per class:' + '\n' + str(top) + '\n'
         if cv_scores is not None:
-            text += '\n' + "Cross validated %0.2f accuracy with a standard deviation of %0.2f" \
-                    % (cv_scores.mean(), cv_scores.std()) + '\n'
-        if model is not None and isinstance(model, GridSearchCV):
+            text += '\n' + cv_scores + '\n'
+        if model is not None and not isinstance(model, HalvingGridSearchCV):
+            model = model.best_estimator_ if isinstance(model, GridSearchCV) else model
+            evr = model.explained_variance_ratio_
+            text += '\n' + 'Explained variance ratio : %s' % evr + '\n'
+        if model is not None and (isinstance(model, GridSearchCV) or isinstance(model, HalvingGridSearchCV)):
             text += '\n' + 'Mean Accuracy of best estimator: %.3f' % model.best_score_ + '\n'
             text += 'Config: %s' % model.best_params_ + '\n'
-        if classificator_type == 'Random Forest':
+        if classificator_type in ['Random Forest', 'AdaBoost']:
             text += 'N Trees: %s' % len(model.best_estimator_.estimators_) + '\n'
-        elif classificator_type == 'AdaBoost':
-            text += 'N Trees: %s' % len(model.estimators_) + '\n'
+
+        if misclassified_filenames is not None and misclassified_filenames.any():
+            text += '\n' + '--Misclassified--'
+            text += str(list(misclassified_filenames)) + '\n'
         if classificator_type == 'LDA' and model:
+            model = model.best_estimator_ if (isinstance(model, GridSearchCV) or
+                                              isinstance(model, HalvingGridSearchCV)) else model
             text += lda_coef_equation(model) + '\n'
         self.parent.ui.stat_report_text_edit.setText(text)
         if metrics_result['classification_report'] is None:
@@ -375,24 +633,45 @@ class StatAnalysisLogic:
         insert_table_to_text_edit(self.parent.ui.stat_report_text_edit.textCursor(), headers, rows)
 
     # region plots update
-    def update_scores_plot(self, features_in_2d: np.ndarray, y: list[int], y_pred: list[int], model,
-                           model_2d, plot_widget, explained_variance_ratio, use_pca: bool) -> None:
+    def update_scores_plot(self, features_in_2d: np.ndarray, y: list[int], y_pred: list[int], classes,
+                           model_2d, explained_variance_ratio, dr_method: str) -> None:
         """
-        @param plot_widget:
-        @param features_in_2d: transformed 2d
-        @param y: true labels
-        @param y_pred: predicted labels
-        @param model: classificator
-        @param model_2d: 2d model classificator
-        @param explained_variance_ratio:
-        @return:
+        Build DecisionBoundaryDisplay if features_in_2d has 2 or more columns
+
+        Parameters
+        ----------
+        features_in_2d: {ndarray, sparse matrix} of shape (n_samples, n_features)
+            `X` transformed in the new space based on the estimator with
+            the best found parameters.
+        y: list[int]
+            targets
+        y_pred: list[int]
+            Y predicted by estimator
+        classes: array-like of shape (n_classes,)
+            Unique class labels.
+        model_2d:
+            model fitted on transformed data features_in_2d
+        explained_variance_ratio : ndarray of shape (n_components,)
+            Percentage of variance explained by each of the selected components.
+            If ``n_components`` is not set then all components are stored and the
+            sum of explained variances is equal to 1.0. Only available when eigen
+            or svd solver is used.
+        dr_method: str
+            'LD', 'PC' or 'PLS-DA'
+
+        Returns
+        ----------
+            None
         """
+
+        plot_widget = self.parent.ui.decision_boundary_plot_widget
         plot_widget.canvas.axes.cla()
         if explained_variance_ratio is None:
             explained_variance_ratio = [0, 0]
-        classes = model.classes_
         plt_colors = []
         for cls in classes:
+            if self.parent.ui.current_classificator_comboBox.currentText() == 'XGBoost':
+                cls = self.get_old_class_label(cls)
             clr = self.parent.get_color_by_group_number(cls)
             plt_colors.append(clr.lighter(140).name())
         tp = y == y_pred  # True Positive
@@ -406,26 +685,27 @@ class StatAnalysisLogic:
             x_tp = x_i[true_positive_of_class]
             x_fp = x_i[~true_positive_of_class]
             mrkr = markers[cls]
-            if plot_widget == self.parent.ui.xgboost_scores_plot_widget:
+            if self.parent.ui.current_classificator_comboBox.currentText() == 'XGBoost':
                 cls = self.get_old_class_label(cls)
             color = self.parent.ui.GroupsTable.model().cell_data_by_idx_col_name(cls, 'Style')['color'].name()
             plot_widget.canvas.axes.scatter(x_tp[:, 0], x_tp[:, 1], marker=mrkr, color=color,
                                             edgecolor='black', s=60)
             plot_widget.canvas.axes.scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60, color=color, edgecolor='black')
-        dr_method = 'PC' if use_pca else 'PLS-DA'
-        plot_widget.canvas.axes.set_xlabel(dr_method + '-1 (%.2f%%)' % (explained_variance_ratio[0] * 100),
-                                           fontsize=self.parent.axis_label_font_size)
-        plot_widget.canvas.axes.set_ylabel(dr_method + '-2 (%.2f%%)' % (explained_variance_ratio[1] * 100),
-                                           fontsize=self.parent.axis_label_font_size)
+        title1 = dr_method + '-1 (%.2f%%)' % (explained_variance_ratio[0] * 100) if explained_variance_ratio[0] != .0 \
+            else dr_method + '-1'
+        title2 = dr_method + '-2 (%.2f%%)' % (explained_variance_ratio[1] * 100) if explained_variance_ratio[1] != .0 \
+            else dr_method + '-2'
+        plot_widget.canvas.axes.set_xlabel(title1, fontsize=self.parent.axis_label_font_size)
+        plot_widget.canvas.axes.set_ylabel(title2, fontsize=self.parent.axis_label_font_size)
         try:
+            plot_widget.canvas.figure.tight_layout()
             plot_widget.canvas.draw()
+            plt.close()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
-        plt.close()
 
     def update_features_plot(self, X_train: DataFrame, model, feature_names: list[str], target_names: list[str],
-                             plt_colors, plot_widget) -> DataFrame:
+                             plt_colors) -> DataFrame:
         """
         Update features plot
 
@@ -439,8 +719,9 @@ class StatAnalysisLogic:
         """
 
         # learned coefficients weighted by frequency of appearance
+        plot_widget = self.parent.ui.features_plot_widget
         feature_names = np.array(feature_names)
-        if isinstance(model, GridSearchCV):
+        if isinstance(model, GridSearchCV) or isinstance(model, HalvingGridSearchCV):
             model = model.best_estimator_
         average_feature_effects = model.coef_ * np.asarray(X_train.mean(axis=0)).ravel()
         for i, label in enumerate(target_names):
@@ -473,17 +754,17 @@ class StatAnalysisLogic:
         ax.set_ylabel("Feature", fontsize=self.parent.axis_label_font_size)
         try:
             plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
         return top
 
-    def update_roc_plot_bin(self, model, x_test, y_test, target_names, plot_widget) -> None:
+    def update_roc_plot_bin(self, model, x_test, y_test, target_names) -> None:
+        plot_widget = self.parent.ui.roc_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
         ax.plot([0, 1], [0, 1], "--", label="chance level (AUC = 0.5)", color=self.parent.theme_colors['primaryColor'])
-        RocCurveDisplay.from_estimator(model, x_test, y_test,
-                                       name=target_names[0], color='darkorange', ax=ax, )
+        RocCurveDisplay.from_estimator(model, x_test, y_test, name=target_names[0], color='darkorange', ax=ax)
         ax.axis("square")
         ax.set_xlabel("False Positive Rate", fontsize=self.parent.axis_label_font_size)
         ax.set_ylabel("True Positive Rate", fontsize=self.parent.axis_label_font_size)
@@ -491,11 +772,12 @@ class StatAnalysisLogic:
         ax.legend(loc="best", prop={'size': self.parent.plot_font_size})
         try:
             plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
 
-    def update_roc_plot(self, y_score, y_onehot_test, target_names, plt_colors, plot_widget) -> None:
+    def update_roc_plot(self, y_score, y_onehot_test, target_names, plt_colors) -> None:
+        plot_widget = self.parent.ui.roc_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
         # store the fpr, tpr, and roc_auc for all averaging strategies
@@ -538,11 +820,12 @@ class StatAnalysisLogic:
         ax.legend(loc="best", prop={'size': self.parent.plot_font_size})
         try:
             plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
 
-    def update_pr_plot_bin(self, y_score_dec_func, y_test, pos_label: int, plot_widget, name=None) -> None:
+    def update_pr_plot_bin(self, y_score_dec_func, y_test, pos_label: int, name=None) -> None:
+        plot_widget = self.parent.ui.pr_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
         if len(y_score_dec_func.shape) > 1 and y_score_dec_func.shape[1] > 1:
@@ -553,11 +836,12 @@ class StatAnalysisLogic:
         ax.legend(loc="best", prop={'size': self.parent.plot_font_size})
         try:
             plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
 
-    def update_pr_plot(self, classes: list[int], Y_test, y_score, colors, plot_widget, target_names) -> None:
+    def update_pr_plot(self, classes: list[int], Y_test, y_score, colors, target_names) -> None:
+        plot_widget = self.parent.ui.pr_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
         # The average precision score in multi-label settings
@@ -601,7 +885,8 @@ class StatAnalysisLogic:
             pass
         plot_widget.canvas.figure.tight_layout()
 
-    def update_dm_plot(self, y_test, x_test, target_names, model, plot_widget) -> None:
+    def update_dm_plot(self, y_test, x_test, target_names, model) -> None:
+        plot_widget = self.parent.ui.dm_plot_widget
         plot_widget.canvas.axes.cla()
         ax = plot_widget.canvas.axes
         # ConfusionMatrixDisplay.from_predictions(y_test, pred, ax=ax, colorbar=False)
@@ -617,14 +902,11 @@ class StatAnalysisLogic:
 
         try:
             plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
 
     def do_update_shap_plots(self, classificator_type):
-        if classificator_type not in self.latest_stat_result \
-                or 'target_names' not in self.latest_stat_result[classificator_type]:
-            return
         target_names = self.latest_stat_result[classificator_type]['target_names']
         num = np.where(target_names == self.parent.ui.current_group_shap_comboBox.currentText())
         if len(num[0]) == 0:
@@ -636,9 +918,6 @@ class StatAnalysisLogic:
         self.update_shap_heatmap_plot(False, i, classificator_type)
 
     def do_update_shap_plots_by_instance(self, classificator_type):
-        if classificator_type not in self.latest_stat_result \
-                or 'target_names' not in self.latest_stat_result[classificator_type]:
-            return
         target_names = self.latest_stat_result[classificator_type]['target_names']
         num = np.where(target_names == self.parent.ui.current_group_shap_comboBox.currentText())
         if len(num[0]) == 0:
@@ -653,35 +932,7 @@ class StatAnalysisLogic:
 
     # region SHAP
     def update_shap_means_plot(self, class_i: int = 0, classificator_type: str = 'LDA') -> None:
-        match classificator_type:
-            case 'LDA':
-                plot_widget = self.parent.ui.lda_shap_means
-            case 'QDA':
-                plot_widget = self.parent.ui.qda_shap_means
-            case 'Logistic regression':
-                plot_widget = self.parent.ui.lr_shap_means
-            case 'NuSVC':
-                plot_widget = self.parent.ui.svc_shap_means
-            case 'Nearest Neighbors':
-                plot_widget = self.parent.ui.nearest_shap_means
-            case 'GPC':
-                plot_widget = self.parent.ui.gpc_shap_means
-            case 'Decision Tree':
-                plot_widget = self.parent.ui.dt_shap_means
-            case 'Naive Bayes':
-                plot_widget = self.parent.ui.nb_shap_means
-            case 'Random Forest':
-                plot_widget = self.parent.ui.rf_shap_means
-            case 'AdaBoost':
-                plot_widget = self.parent.ui.ab_shap_means
-            case 'MLP':
-                plot_widget = self.parent.ui.mlp_shap_means
-            case 'XGBoost':
-                plot_widget = self.parent.ui.xgboost_shap_means
-            case 'Torch':
-                plot_widget = self.parent.ui.torch_shap_means
-            case _:
-                return
+        plot_widget = self.parent.ui.shap_means
         fig = plot_widget.canvas.figure
         try:
             fig.clear()
@@ -723,35 +974,7 @@ class StatAnalysisLogic:
         plt.close('all')
 
     def update_shap_beeswarm_plot(self, binary: bool, class_i: int = 0, classificator_type: str = 'LDA') -> None:
-        match classificator_type:
-            case 'LDA':
-                plot_widget = self.parent.ui.lda_shap_beeswarm
-            case 'QDA':
-                plot_widget = self.parent.ui.qda_shap_beeswarm
-            case 'Logistic regression':
-                plot_widget = self.parent.ui.lr_shap_beeswarm
-            case 'NuSVC':
-                plot_widget = self.parent.ui.svc_shap_beeswarm
-            case 'Nearest Neighbors':
-                plot_widget = self.parent.ui.nearest_shap_beeswarm
-            case 'GPC':
-                plot_widget = self.parent.ui.gpc_shap_beeswarm
-            case 'Decision Tree':
-                plot_widget = self.parent.ui.dt_shap_beeswarm
-            case 'Naive Bayes':
-                plot_widget = self.parent.ui.nb_shap_beeswarm
-            case 'Random Forest':
-                plot_widget = self.parent.ui.rf_shap_beeswarm
-            case 'AdaBoost':
-                plot_widget = self.parent.ui.ab_shap_beeswarm
-            case 'MLP':
-                plot_widget = self.parent.ui.mlp_shap_beeswarm
-            case 'XGBoost':
-                plot_widget = self.parent.ui.xgboost_shap_beeswarm
-            case 'Torch':
-                plot_widget = self.parent.ui.torch_shap_beeswarm
-            case _:
-                return
+        plot_widget = self.parent.ui.shap_beeswarm
 
         if self.parent.plt_style is None:
             plt.style.use(['dark_background'])
@@ -796,35 +1019,7 @@ class StatAnalysisLogic:
         plt.close('all')
 
     def update_shap_scatter_plot(self, binary: bool, class_i: int = 0, classificator_type: str = 'LDA') -> None:
-        match classificator_type:
-            case 'LDA':
-                plot_widget = self.parent.ui.lda_shap_scatter
-            case 'QDA':
-                plot_widget = self.parent.ui.qda_shap_scatter
-            case 'Logistic regression':
-                plot_widget = self.parent.ui.lr_shap_scatter
-            case 'NuSVC':
-                plot_widget = self.parent.ui.svc_shap_scatter
-            case 'Nearest Neighbors':
-                plot_widget = self.parent.ui.nearest_shap_scatter
-            case 'GPC':
-                plot_widget = self.parent.ui.gpc_shap_scatter
-            case 'Decision Tree':
-                plot_widget = self.parent.ui.dt_shap_scatter
-            case 'Naive Bayes':
-                plot_widget = self.parent.ui.nb_shap_scatter
-            case 'Random Forest':
-                plot_widget = self.parent.ui.rf_shap_scatter
-            case 'AdaBoost':
-                plot_widget = self.parent.ui.ab_shap_scatter
-            case 'MLP':
-                plot_widget = self.parent.ui.mlp_shap_scatter
-            case 'XGBoost':
-                plot_widget = self.parent.ui.xgboost_shap_scatter
-            case 'Torch':
-                plot_widget = self.parent.ui.torch_shap_scatter
-            case _:
-                return
+        plot_widget = self.parent.ui.shap_scatter
 
         fig = plot_widget.canvas.figure
         try:
@@ -849,47 +1044,16 @@ class StatAnalysisLogic:
             return
         ct = self.parent.ui.coloring_feature_comboBox.currentText()
         color = shap_values if ct == '' else shap_values[:, ct]
-        shap.plots.scatter(shap_values[:, current_feature], color=color, show=False, cmap=cmap, ax=fig.gca(),
+        shap.plots.scatter(shap_values[:, current_feature], color=color, show=False, cmap=cmap, ax=ax,
                            axis_color=self.parent.plot_text_color.name())
         try:
             plot_widget.canvas.figure.tight_layout()
-        except ValueError:
-            pass
-        try:
             plot_widget.canvas.draw()
         except ValueError:
             pass
 
     def update_shap_heatmap_plot(self, binary: bool, class_i: int = 0, classificator_type: str = 'LDA') -> None:
-        match classificator_type:
-            case 'LDA':
-                plot_widget = self.parent.ui.lda_shap_heatmap
-            case 'QDA':
-                plot_widget = self.parent.ui.qda_shap_heatmap
-            case 'Logistic regression':
-                plot_widget = self.parent.ui.lr_shap_heatmap
-            case 'NuSVC':
-                plot_widget = self.parent.ui.svc_shap_heatmap
-            case 'Nearest Neighbors':
-                plot_widget = self.parent.ui.nearest_shap_heatmap
-            case 'GPC':
-                plot_widget = self.parent.ui.gpc_shap_heatmap
-            case 'Decision Tree':
-                plot_widget = self.parent.ui.dt_shap_heatmap
-            case 'Naive Bayes':
-                plot_widget = self.parent.ui.nb_shap_heatmap
-            case 'Random Forest':
-                plot_widget = self.parent.ui.rf_shap_heatmap
-            case 'AdaBoost':
-                plot_widget = self.parent.ui.ab_shap_heatmap
-            case 'MLP':
-                plot_widget = self.parent.ui.mlp_shap_heatmap
-            case 'XGBoost':
-                plot_widget = self.parent.ui.xgboost_shap_heatmap
-            case 'Torch':
-                plot_widget = self.parent.ui.torch_shap_heatmap
-            case _:
-                return
+        plot_widget = self.parent.ui.shap_heatmap
 
         if self.parent.plt_style is None:
             plt.style.use(['dark_background'])
@@ -928,8 +1092,6 @@ class StatAnalysisLogic:
         plot_widget.resize(plot_widget.width() - 1, plot_widget.height() - 1)
 
     def update_shap_force(self, class_i: int = 0, classificator_type: str = 'LDA', full: bool = False) -> None:
-        if classificator_type == 'QDA':
-            return
         if classificator_type not in self.latest_stat_result:
             warning(classificator_type + ' not in self.latest_stat_result. def update_shap_force')
             return
@@ -1000,33 +1162,8 @@ class StatAnalysisLogic:
     def update_shap_decision_plot(self, class_i: int = 0, classificator_type: str = 'LDA') -> None:
         if classificator_type not in self.latest_stat_result:
             return
-        match classificator_type:
-            case 'LDA':
-                plot_widget = self.parent.ui.lda_shap_decision
-            case 'Logistic regression':
-                plot_widget = self.parent.ui.lr_shap_decision
-            case 'NuSVC':
-                plot_widget = self.parent.ui.svc_shap_decision
-            case 'Nearest Neighbors':
-                plot_widget = self.parent.ui.nearest_shap_decision
-            case 'GPC':
-                plot_widget = self.parent.ui.gpc_shap_decision
-            case 'Decision Tree':
-                plot_widget = self.parent.ui.dt_shap_decision
-            case 'Naive Bayes':
-                plot_widget = self.parent.ui.nb_shap_decision
-            case 'Random Forest':
-                plot_widget = self.parent.ui.rf_shap_decision
-            case 'AdaBoost':
-                plot_widget = self.parent.ui.ab_shap_decision
-            case 'MLP':
-                plot_widget = self.parent.ui.mlp_shap_decision
-            case 'XGBoost':
-                plot_widget = self.parent.ui.xgboost_shap_decision
-            case 'Torch':
-                plot_widget = self.parent.ui.torch_shap_decision
-            case _:
-                return
+        plot_widget = self.parent.ui.shap_decision
+
         model = self.get_current_dataset_type_cb()
         if model is None:
             return
@@ -1069,7 +1206,7 @@ class StatAnalysisLogic:
         X_display = result['X_display']
         if isinstance(X_display, DataFrame) and X_display.empty or not isinstance(X_display, DataFrame):
             return
-        misclassified = result['y_train_plus_test'] != result['y_pred']
+        misclassified = result['misclassified']
         title = 'all'
         if sample_id is None and isinstance(shap_values, list):
             shap_v = shap_values[class_i]
@@ -1119,35 +1256,7 @@ class StatAnalysisLogic:
     def update_shap_waterfall_plot(self, class_i: int = 0, classificator_type: str = 'LDA') -> None:
         if classificator_type not in self.latest_stat_result:
             return
-        match classificator_type:
-            case 'LDA':
-                plot_widget = self.parent.ui.lda_shap_waterfall
-            case 'QDA':
-                plot_widget = self.parent.ui.qda_shap_waterfall
-            case 'Logistic regression':
-                plot_widget = self.parent.ui.lr_shap_waterfall
-            case 'NuSVC':
-                plot_widget = self.parent.ui.svc_shap_waterfall
-            case 'Nearest Neighbors':
-                plot_widget = self.parent.ui.nearest_shap_waterfall
-            case 'GPC':
-                plot_widget = self.parent.ui.gpc_shap_waterfall
-            case 'Decision Tree':
-                plot_widget = self.parent.ui.dt_shap_waterfall
-            case 'Naive Bayes':
-                plot_widget = self.parent.ui.nb_shap_waterfall
-            case 'Random Forest':
-                plot_widget = self.parent.ui.rf_shap_waterfall
-            case 'AdaBoost':
-                plot_widget = self.parent.ui.ab_shap_waterfall
-            case 'MLP':
-                plot_widget = self.parent.ui.mlp_shap_waterfall
-            case 'XGBoost':
-                plot_widget = self.parent.ui.xgboost_shap_waterfall
-            case 'Torch':
-                plot_widget = self.parent.ui.torch_shap_waterfall
-            case _:
-                return
+        plot_widget = self.parent.ui.shap_waterfall
         model = self.get_current_dataset_type_cb()
         if model.rowCount() == 0:
             return
@@ -1204,60 +1313,44 @@ class StatAnalysisLogic:
         plot_widget.resize(plot_widget.width() + 1, plot_widget.height() + 1)
         plot_widget.resize(plot_widget.width() - 1, plot_widget.height() - 1)
 
-    def update_force_single_plots(self, clasificator_type: str = '') -> None:
-        cl_types = [('LDA', self.parent.ui.lda_force_single), ('Logistic regression', self.parent.ui.lr_force_single),
-                    ('NuSVC', self.parent.ui.svc_force_single),
-                    ('Nearest Neighbors', self.parent.ui.nearest_force_single),
-                    ('GPC', self.parent.ui.gpc_force_single), ('Decision Tree', self.parent.ui.dt_force_single),
-                    ('Naive Bayes', self.parent.ui.nb_force_single), ('Random Forest', self.parent.ui.rf_force_single),
-                    ('AdaBoost', self.parent.ui.ab_force_single), ('MLP', self.parent.ui.mlp_force_single),
-                    ('XGBoost', self.parent.ui.xgboost_force_single), ('Torch', self.parent.ui.torch_force_single)]
-        for cl_type, plot_widget in cl_types:
-            if clasificator_type != '' and clasificator_type != cl_type:
-                continue
-            if cl_type not in self.latest_stat_result:
-                continue
-            if 'shap_html' in self.latest_stat_result[cl_type]:
-                shap_html = self.latest_stat_result[cl_type]['shap_html']
-                if self.parent.ui.sun_Btn.isChecked():
-                    shap_html = re.sub(r'#ffe', "#000", shap_html)
-                    shap_html = re.sub(r'#001', "#fff", shap_html)
-                else:
-                    shap_html = re.sub(r'#000', "#ffe", shap_html)
-                    shap_html = re.sub(r'#fff', "#001", shap_html)
-                plot_widget.setHtml(shap_html)
-                plot_widget.page().setBackgroundColor(QColor(self.parent.plot_background_color))
-                plot_widget.reload()
-                self.latest_stat_result[cl_type]['shap_html'] = shap_html
-            else:
-                error(cl_type + ' shap_html not in self.latest_stat_result')
+    def update_force_single_plots(self, cl_type: str = '') -> None:
+        plot_widget = self.parent.ui.force_single
 
-    def update_force_full_plots(self, clas_type: str = '') -> None:
-        cl_types = [('LDA', self.parent.ui.lda_force_full), ('Logistic regression', self.parent.ui.lr_force_full),
-                    ('NuSVC', self.parent.ui.svc_force_full), ('Nearest Neighbors', self.parent.ui.nearest_force_full),
-                    ('GPC', self.parent.ui.gpc_force_full), ('Decision Tree', self.parent.ui.dt_force_full),
-                    ('Naive Bayes', self.parent.ui.nb_force_full), ('Random Forest', self.parent.ui.rf_force_full),
-                    ('AdaBoost', self.parent.ui.ab_force_full), ('MLP', self.parent.ui.mlp_force_full),
-                    ('XGBoost', self.parent.ui.xgboost_force_full), ('Torch', self.parent.ui.torch_force_full)]
-        for cl_type, plot_widget in cl_types:
-            if clas_type != '' and clas_type != cl_type:
-                continue
-            if cl_type not in self.latest_stat_result:
-                continue
-            if 'shap_html_full' in self.latest_stat_result[cl_type]:
-                shap_html = self.latest_stat_result[cl_type]['shap_html_full']
-                if self.parent.ui.sun_Btn.isChecked():
-                    shap_html = re.sub(r'#ffe', "#000", shap_html)
-                    shap_html = re.sub(r'#001', "#fff", shap_html)
-                else:
-                    shap_html = re.sub(r'#000', "#ffe", shap_html)
-                    shap_html = re.sub(r'#fff', "#001", shap_html)
-                plot_widget.setHtml(shap_html)
-                plot_widget.page().setBackgroundColor(QColor(self.parent.plot_background_color_web))
-                plot_widget.reload()
-                self.latest_stat_result[cl_type]['shap_html_full'] = shap_html
+        if cl_type not in self.latest_stat_result:
+            return
+        if 'shap_html' in self.latest_stat_result[cl_type]:
+            shap_html = self.latest_stat_result[cl_type]['shap_html']
+            if self.parent.ui.sun_Btn.isChecked():
+                shap_html = re.sub(r'#ffe', "#000", shap_html)
+                shap_html = re.sub(r'#001', "#fff", shap_html)
             else:
-                error(cl_type + ' shap_html_full not in self.latest_stat_result')
+                shap_html = re.sub(r'#000', "#ffe", shap_html)
+                shap_html = re.sub(r'#fff', "#001", shap_html)
+            plot_widget.setHtml(shap_html)
+            plot_widget.page().setBackgroundColor(QColor(self.parent.plot_background_color))
+            plot_widget.reload()
+            self.latest_stat_result[cl_type]['shap_html'] = shap_html
+        else:
+            error(cl_type + ' shap_html not in self.latest_stat_result')
+
+    def update_force_full_plots(self, cl_type: str = '') -> None:
+        plot_widget = self.parent.ui.force_full
+        if cl_type not in self.latest_stat_result:
+            return
+        if 'shap_html_full' in self.latest_stat_result[cl_type]:
+            shap_html = self.latest_stat_result[cl_type]['shap_html_full']
+            if self.parent.ui.sun_Btn.isChecked():
+                shap_html = re.sub(r'#ffe', "#000", shap_html)
+                shap_html = re.sub(r'#001', "#fff", shap_html)
+            else:
+                shap_html = re.sub(r'#000', "#ffe", shap_html)
+                shap_html = re.sub(r'#fff', "#001", shap_html)
+            plot_widget.setHtml(shap_html)
+            plot_widget.page().setBackgroundColor(QColor(self.parent.plot_background_color_web))
+            plot_widget.reload()
+            self.latest_stat_result[cl_type]['shap_html_full'] = shap_html
+        else:
+            error(cl_type + ' shap_html_full not in self.latest_stat_result')
 
     # endregion
 
@@ -1267,225 +1360,226 @@ class StatAnalysisLogic:
         model_results = self.latest_stat_result[cl_type]
         model = model_results['model']
         y_train_plus_test = model_results['y_train_plus_test']
-        if cl_type != 'Torch':
-            features_in_2d = model_results['features_in_2d']
-            y_pred_2d = model_results['y_pred_2d']
-            model_2d = model_results['model_2d']
+        features_in_2d = model_results['features_in_2d']
+        y_pred_2d = model_results['y_pred_2d']
+        model_2d = model_results['model_2d']
         x_test = model_results['x_test']
+        x_train = model_results['x_train']
         y_test = model_results['y_test']
-        if cl_type == 'Torch':
-            x_test = np.array(x_test.values).astype(np.float32)
-            y_test = np.array(y_test).astype(np.int64) - 1
+        y_train = model_results['y_train']
         target_names = model_results['target_names']
-
         y_score = model_results['y_score']
         y_onehot_test = model_results['y_onehot_test']
         if 'y_score_dec_func' not in model_results:
             y_score_dec_func = y_score
+            y_score_dec_func_x = y_score
         else:
             y_score_dec_func = model_results['y_score_dec_func']
-        if 'use_pca' not in model_results:
-            use_pca = True
+            y_score_dec_func_x = model.decision_function(model_results['X'])
+        if cl_type == 'LDA':
+            dr_method = 'LD'
+        elif 'use_pca' in model_results and not model_results['use_pca']:
+            dr_method = 'PLS-DA'
         else:
-            use_pca = model_results['use_pca']
-
+            dr_method = 'PC'
         y_test_bin = model_results['y_test_bin']
-
-        y_pred = model_results['y_pred']
         explained_variance_ratio = None
         if 'explained_variance_ratio' in model_results:
             explained_variance_ratio = model_results['explained_variance_ratio']
         classes = model.classes_
         plt_colors = self._get_plot_colors(classes)
         binary = len(classes) == 2
-        if cl_type == 'LDA':
-            if model_results['features_in_2d'].shape[1] == 1:
-                # self.update_lda_scores_plot_1d(classes, y_train_plus_test, features_in_2d)
-                self.decision_score(model.decision_function(model_results['X']), target_names, model.classes_,
-                                    model_results['Y'], self.parent.ui.lda_scores_2d_plot_widget)
-            else:
-                self.update_lda_scores_plot_2d(features_in_2d, y_train_plus_test, y_pred, model, model_2d)
-        elif cl_type == 'Torch':
-            proba = model.predict_proba(np.array(model_results['X'].values).astype(np.float32))
-            for i in proba:
-                i[0] = -i[0]
-            twoclass_output = []
-            for i in range(proba.shape[0]):
-                v = max(proba[i], key=abs)
-                if v < 0:
-                    v += 1
-                twoclass_output.append(v)
-            twoclass_output = np.array(twoclass_output)
-            self.decision_score(twoclass_output, target_names, model.classes_, model_results['Y'],
-                                self.parent.ui.torch_scores_plot_widget)
+
+        # page 1 of fit results
+        if cl_type in ['LDA', 'Logistic regression', 'NuSVC']:
+            self.build_decision_score_plot(y_score_dec_func_x, target_names, model_results['Y'])
         else:
-            self.update_scores_plot(features_in_2d, y_train_plus_test, y_pred_2d, model,
-                                    model_2d, self.params['score_plots'][cl_type], explained_variance_ratio, use_pca)
+            self.parent.ui.decision_score_plot_widget.canvas.axes.axes.cla()
+            try:
+                self.parent.ui.decision_score_plot_widget.canvas.draw()
+            except ValueError:
+                pass
+        if len(features_in_2d.shape) > 1 and features_in_2d.shape[1] > 1:
+            self.update_scores_plot(features_in_2d, y_train_plus_test, y_pred_2d, classes, model_2d,
+                                    explained_variance_ratio, dr_method)
+        self.update_dm_plot(y_test, x_test, target_names, model)
         if binary:
-            self.update_roc_plot_bin(model, x_test, y_test, target_names,
-                                     self.params['roc_plots'][cl_type])
-            self.update_pr_plot_bin(y_score_dec_func, y_test, classes[0], self.params['pr_plots'][cl_type], cl_type)
+            self.update_roc_plot_bin(model, x_test, y_test, target_names)
+            self.update_pr_plot_bin(y_score_dec_func, y_test, classes[0], cl_type)
         else:
-            self.update_roc_plot(y_score, y_onehot_test, target_names, plt_colors, self.params['roc_plots'][cl_type])
-            self.update_pr_plot(classes, y_test_bin, y_score_dec_func, plt_colors,
-                                self.params['pr_plots'][cl_type], target_names)
-        if cl_type in self.params['feature_plots']:
+            self.update_roc_plot(y_score, y_onehot_test, target_names, plt_colors)
+            self.update_pr_plot(classes, y_test_bin, y_score_dec_func, plt_colors, target_names)
+        # page 2 of fit results
+        self.build_permutation_importance_plot(model, x_test, y_test, True)
+        self.build_permutation_importance_plot(model, x_train, y_train)
+        if cl_type in ['LDA', 'Logistic regression', 'NuSVC']:
             top = self.update_features_plot(model_results['x_train'], model, model_results['feature_names'],
-                                            target_names, plt_colors, self.params['feature_plots'][cl_type])
+                                            target_names, plt_colors)
             self.top_features[cl_type] = top
+        else:
+            self.parent.ui.features_plot_widget.canvas.axes.axes.cla()
+            try:
+                self.parent.ui.features_plot_widget.canvas.draw()
+            except ValueError:
+                pass
         if cl_type == 'Decision Tree':
-            update_plot_tree(model.best_estimator_, self.parent.ui.dt_tree_plot_widget,
-                             model_results['feature_names'], target_names)
-            self.update_features_plot_random_forest(model.best_estimator_, self.parent.ui.dt_features_plot_widget)
+            self.update_plot_tree(model.best_estimator_, model_results['feature_names'], target_names)
+            self.update_features_plot_random_forest(model.best_estimator_, "Decision Tree Feature Importances (MDI)")
         elif cl_type == 'Random Forest':
-            update_plot_tree(model.best_estimator_.estimators_[0], self.parent.ui.rf_tree_plot_widget,
-                             model_results['feature_names'], target_names)
-            self.update_features_plot_random_forest(model.best_estimator_, self.parent.ui.rf_features_plot_widget)
+            self.update_plot_tree(model.best_estimator_.estimators_[0], model_results['feature_names'], target_names)
+            self.update_features_plot_random_forest(model.best_estimator_, "Random Forest Feature Importances (MDI)")
         elif cl_type == 'AdaBoost':
-            update_plot_tree(model.estimators_[0], self.parent.ui.ab_tree_plot_widget,
-                             model_results['feature_names'], target_names)
-            self.update_features_plot_random_forest(model, self.parent.ui.ab_features_plot_widget)
+            self.update_plot_tree(model.best_estimator_.estimators_[0], model_results['feature_names'], target_names)
+            self.update_features_plot_random_forest(model.best_estimator_, "AdaBoost Feature Importances (MDI)")
         if cl_type == 'XGBoost' and self.parent.ui.dataset_type_cb.currentText() == 'Deconvoluted':
             self.update_features_plot_xgboost(model.best_estimator_)
         elif cl_type == 'XGBoost':
-            self.update_features_plot_random_forest(model.best_estimator_, self.parent.ui.xgboost_features_plot_widget)
+            self.update_features_plot_random_forest(model.best_estimator_, "XGBoost Feature Importances (MDI)")
         if cl_type == 'XGBoost':
             self.update_xgboost_tree_plot(model.best_estimator_)
-        self.update_dm_plot(y_test, x_test, target_names, model, self.params['dm_plots'][cl_type])
-        self.do_update_shap_plots(cl_type)
-        self.do_update_shap_plots_by_instance(cl_type)
+        # page 3 of fit results
+        if binary:
+            self.build_calibration_plot(model, x_test, y_test)
+            self.build_dev_curve_plot(model, x_test, y_test)
+            self.build_learning_curve(model, model_results['X'], model_results['Y'])
+
+    def build_permutation_importance_plot(self, estimator, x, y, test: bool = False) -> None:
+        plot_widget = self.parent.ui.perm_imp_test_plot_widget if test else self.parent.ui.perm_imp_train_plot_widget
+        plot_widget.canvas.axes.cla()
+        ax = plot_widget.canvas.axes
+        binary = len(estimator.classes_) == 2
+        scoring = 'f1' if binary else 'f1_micro'
+
+        result = permutation_importance(estimator, x, y, scoring=scoring, n_repeats=10, n_jobs=-1,
+                                        random_state=self.get_random_state())
+        sorted_importances_idx = result.importances_mean.argsort()
+        importances = DataFrame(
+            result.importances[sorted_importances_idx].T,
+            columns=x.columns[sorted_importances_idx],
+        )
+        importances.plot.box(vert=False, whis=10, ax=ax)
+        t = 'test' if test else 'train'
+        ax.set_title("Permutation Importances (%s set)" % t)
+        try:
+            ax.axvline(x=0, color="k", linestyle="--")
+        except np.linalg.LinAlgError:
+            pass
+        ax.set_xlabel("Decrease in accuracy score")
+        try:
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
+
+    def build_partial_dependence_plot(self, clf, X) -> None:
+        plot_widget = self.parent.ui.partial_depend_plot_widget
+        plot_widget.canvas.figure.clf()
+        ax = plot_widget.canvas.axes
+        ax.cla()
+        feature_names = list(X.columns)
+        f1 = self.parent.ui.current_dep_feature1_comboBox.currentText()
+        f2 = self.parent.ui.current_dep_feature2_comboBox.currentText()
+        try:
+            PartialDependenceDisplay.from_estimator(clf, X, [f1, (f1, f2)], target=clf.classes_[0],
+                                                    feature_names=feature_names, ax=ax)
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
+
+    def build_calibration_plot(self, clf, X_test, y_test) -> None:
+        plot_widget = self.parent.ui.calibration_plot_widget
+        ax = plot_widget.canvas.axes
+        ax.cla()
+        CalibrationDisplay.from_estimator(clf, X_test, y_test, pos_label=clf.classes_[0], ax=ax)
+        try:
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
+
+    def build_dev_curve_plot(self, clf, X_test, y_test) -> None:
+        plot_widget = self.parent.ui.det_curve_plot_widget
+        ax = plot_widget.canvas.axes
+        ax.cla()
+        DetCurveDisplay.from_estimator(clf, X_test, y_test, pos_label=clf.classes_[0], ax=ax)
+        try:
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
+
+    def build_learning_curve(self, clf, X, y) -> None:
+        plot_widget = self.parent.ui.learning_plot_widget
+        ax = plot_widget.canvas.axes
+        ax.cla()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            LearningCurveDisplay.from_estimator(clf, X, y, ax=ax, verbose=0, cv=3)
+        try:
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
+
+    def compare_models_roc(self):
+        if not self.latest_stat_result:
+            return
+        models = []
+        for clf_name, model_results in self.latest_stat_result.items():
+            if clf_name in ['PCA', 'PLS-DA']:
+                continue
+            n_classes = len(model_results['model'].classes_)
+            if n_classes != 2:
+                MessageBox("ROC can't be created",
+                           'Expected binary classificator, got %s classes %s instead' % (n_classes, clf_name),
+                           self.parent, {'Ok'}).exec()
+                return
+            models.append((clf_name, model_results))
+        plot_widget = self.parent.ui.roc_comparsion_plot_widget
+        ax = plot_widget.canvas.axes
+        ax.cla()
+        for clf_name, model_results in models:
+            RocCurveDisplay.from_estimator(model_results['model'], model_results['x_test'], model_results['y_test'],
+                                           pos_label=1, ax=ax, name=clf_name)
+        try:
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
 
     # region LDA
 
-    def decision_score(self, twoclass_output, class_names, classes, Y, plot_widget) -> None:
+    def build_decision_score_plot(self, decision_function_values, class_names, Y) -> None:
         main_window = self.parent
+        plot_widget = main_window.ui.decision_score_plot_widget
         ax = plot_widget.canvas.axes.axes
         ax.cla()
-        main_window.ui.lda_scores_1d_plot_widget.setVisible(False)
-        plot_widget.setVisible(True)
-        plot_range = (twoclass_output.min(), twoclass_output.max())
-        min_scores = int(np.round(twoclass_output.min())) - 1
-        max_scores = int(np.round(twoclass_output.max())) + 1
-        rng = int((max_scores - min_scores) / .2)
-        plot_colors = []
-        for cls in classes:
-            clr = main_window.get_color_by_group_number(cls)
-            plot_colors.append(clr.name())
-        y = np.array(Y)
-        centroids = []
-        y_max_hist = np.histogram(twoclass_output, bins=np.linspace(min_scores, max_scores, rng))[0]
-        y_max_hist = np.max(y_max_hist) + 1
-        for i, n, c in zip(range(2), class_names, plot_colors):
-            t_o = twoclass_output[y == (i + 1)]
-            centroid = np.mean(t_o)
-            centroids.append(centroid)
-            ax.hist(
-                t_o,
-                bins=np.linspace(min_scores, max_scores, rng),
-                range=plot_range,
-                facecolor=c,
-                label="Class %s" % n,
-                alpha=0.55,
-                edgecolor="k",
-            )
-            ax.vlines(centroid, 0, y_max_hist, colors=c, linestyles='dashed')
-        boundary = np.mean(centroids)
-        ax.vlines(boundary, 0, y_max_hist, colors='black', linestyles='solid')
-        ax.legend(loc="best", prop={'size': self.parent.plot_font_size - 2})
-        ax.set_ylabel("Samples")
-        ax.set_xlabel("Model decision score")
-        ax.set_title("Decision Scores, boundary = %s" % np.round(boundary, 3))
 
-    def update_lda_scores_plot_1d(self, classes: np.ndarray, y: list[int], features_in_2d) -> None:
-        main_window = self.parent
-        main_window.ui.lda_scores_1d_plot_widget.setVisible(True)
-        main_window.ui.lda_scores_2d_plot_widget.setVisible(False)
+        dfv = np.array(decision_function_values)
+        if len(dfv.shape) > 1 and dfv.shape[1] > 1:
+            decision_function_values_1d = []
+            for i, v_row in enumerate(dfv):
+                decision_function_values_1d.append(v_row[Y[i] - 1])
+            decision_function_values_1d = np.array(decision_function_values_1d)
+        else:
+            decision_function_values_1d = decision_function_values
 
-        items_matches = main_window.lda_scores_1d_plot_item.listDataItems()
-        for i in items_matches:
-            main_window.lda_scores_1d_plot_item.removeItem(i)
-        for i in main_window.lda_1d_inf_lines:
-            main_window.lda_scores_1d_plot_item.removeItem(i)
-        main_window.lda_1d_inf_lines = []
-        min_scores = int(np.round(np.min(features_in_2d))) - 1
-        max_scores = int(np.round(np.max(features_in_2d))) + 1
-        rng = int((max_scores - min_scores) / .1)
-        bottom = np.zeros(rng - 1)
-        means = []
-        for i in classes:
-            scores_class_i = []
-            for j, score in enumerate(features_in_2d):
-                if y[j] == i:
-                    scores_class_i.append(score)
-            hist_y, hist_x = np.histogram(scores_class_i, bins=np.linspace(min_scores, max_scores, rng))
-            centroid = np.mean(scores_class_i)
-            means.append(centroid)
-            pen_color = main_window.theme_colors['plotText']
-            brush = main_window.ui.GroupsTable.model().cell_data_by_idx_col_name(i, 'Style')['color']
-            bgi = BarGraphItem(x0=hist_x[:-1], x1=hist_x[1:], y0=bottom, height=hist_y, pen=pen_color, brush=brush)
-            bottom += hist_y
-            inf_line = InfiniteLine(centroid, pen=QColor(brush))
-
-            main_window.ui.lda_scores_1d_plot_widget.addItem(bgi)
-            if not np.isnan(centroid):
-                main_window.lda_scores_1d_plot_item.addItem(inf_line)
-                main_window.lda_1d_inf_lines.append(inf_line)
-        if len(main_window.lda_1d_inf_lines) > 1:
-            inf_line_mean = InfiniteLine(np.mean(means), pen=main_window.plot_text_color)
-            main_window.lda_scores_1d_plot_item.addItem(inf_line_mean)
-            main_window.lda_1d_inf_lines.append(inf_line_mean)
-
-    def update_lda_scores_plot_2d(self, features_in_2d: np.ndarray, y: list[int], y_pred: list[int], model,
-                                  model_2d) -> None:
-        """
-        @param features_in_2d: transformed 2d
-        @param y: true labels
-        @param y_pred: predicted labels
-        @param model: classificator
-        @param model_2d: 2d model classificator
-        @return:
-        """
-        main_window = self.parent
-        main_window.ui.lda_scores_2d_plot_widget.canvas.axes.cla()
-        main_window.ui.lda_scores_1d_plot_widget.setVisible(False)
-        main_window.ui.lda_scores_2d_plot_widget.setVisible(True)
-        explained_variance_ratio = model.best_estimator_.explained_variance_ratio_
-        classes = model.classes_
-        plt_colors = []
-        for cls in classes:
-            clr = main_window.get_color_by_group_number(cls)
-            plt_colors.append(clr.lighter(155).name())
-        tp = y == y_pred  # True Positive
-        cmap = LinearSegmentedColormap('', None).from_list('', plt_colors)
-        DecisionBoundaryDisplay.from_estimator(model_2d, features_in_2d, grid_resolution=1000, eps=.5, cmap=cmap,
-                                               ax=main_window.ui.lda_scores_2d_plot_widget.canvas.axes)
-        markers = ['o', 's', 'D', 'h', 'H', 'p', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 'P', '*']
-        for i, cls in enumerate(classes):
-            true_positive_of_class = tp[y == cls]
-            x_i = features_in_2d[y == cls]
-            x_tp = x_i[true_positive_of_class]
-            x_fp = x_i[~true_positive_of_class]
-            marker = markers[cls]
-            color = main_window.ui.GroupsTable.model().cell_data_by_idx_col_name(cls, 'Style')['color'].name()
-            # inverted_color = invert_color(color)
-            main_window.ui.lda_scores_2d_plot_widget.canvas.axes.scatter(x_tp[:, 0], x_tp[:, 1], marker=marker,
-                                                                         color=color, edgecolor='black', s=60)
-            main_window.ui.lda_scores_2d_plot_widget.canvas.axes.scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60,
-                                                                         color=color, edgecolor='black')
-        main_window.ui.lda_scores_2d_plot_widget.canvas.axes.set_xlabel(
-            'LD-1 (%.2f%%)' % (explained_variance_ratio[0] * 100), fontsize=main_window.axis_label_font_size)
-        main_window.ui.lda_scores_2d_plot_widget.canvas.axes.set_ylabel(
-            'LD-2 (%.2f%%)' % (explained_variance_ratio[1] * 100), fontsize=main_window.axis_label_font_size)
+        palette = color_palette(self.parent.ui.GroupsTable.model().groups_colors)
+        c_n = [class_names[i - 1] for i in Y]
+        df = DataFrame({'Decision score value': decision_function_values_1d, 'label': c_n})
+        histplot(data=df, x='Decision score value', hue='label', palette=palette, kde=True, ax=ax)
         try:
-            main_window.ui.lda_scores_2d_plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+            plot_widget.canvas.draw()
         except ValueError:
             pass
-        main_window.ui.lda_scores_2d_plot_widget.canvas.figure.tight_layout()
 
     # endregion
 
     # region Random Forest
-    def update_features_plot_random_forest(self, model, plot_widget) -> None:
+    def update_features_plot_random_forest(self, model, title: str) -> None:
+        plot_widget = self.parent.ui.features_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
         if self.parent.ui.dataset_type_cb.currentText() == 'Deconvoluted':
@@ -1506,17 +1600,23 @@ class StatAnalysisLogic:
                           fontsize=self.parent.axis_label_font_size)
             ax.set_ylabel('MDI importance', fontsize=self.parent.axis_label_font_size)
 
-        if plot_widget == self.parent.ui.rf_features_plot_widget:
-            ax.set_title("Random Forest Feature Importances (MDI)")
-        elif plot_widget == self.parent.ui.ab_features_plot_widget:
-            ax.set_title("AdaBoost Feature Importances (MDI)")
-        else:
-            ax.set_title("XGBoost Feature Importances (MDI)")
+        ax.set_title(title)
         try:
             plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
+
+    def update_plot_tree(self, clf, feature_names, class_names) -> None:
+        plot_widget = self.parent.ui.tree_plot_widget
+        ax = plot_widget.canvas.axes
+        ax.cla()
+        plot_tree(clf, feature_names=feature_names, fontsize=self.parent.plot_font_size, class_names=class_names, ax=ax)
+        try:
+            plot_widget.canvas.draw()
+            plot_widget.canvas.figure.tight_layout()
+        except ValueError:
+            pass
 
     # endregion
 
@@ -1654,7 +1754,7 @@ class StatAnalysisLogic:
 
     # region XGBoost
     def update_features_plot_xgboost(self, model) -> None:
-        plot_widget = self.parent.ui.xgboost_features_plot_widget
+        plot_widget = self.parent.ui.features_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
         max_num_features = self.parent.ui.feature_display_max_spinBox.value() \
@@ -1667,15 +1767,93 @@ class StatAnalysisLogic:
         plot_widget.canvas.figure.tight_layout()
 
     def update_xgboost_tree_plot(self, model, idx: int = 0) -> None:
-        plot_widget = self.parent.ui.xgboost_tree_plot_widget
+        plot_widget = self.parent.ui.tree_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
-        try:
-            xgboost.plot_tree(model, ax=ax, num_trees=idx, yes_color=self.parent.theme_colors['secondaryDarkColor'],
-                              no_color=self.parent.theme_colors['primaryColor'])
-            plot_widget.canvas.draw()
-        except:
-            error('update_xgboost_tree_plot')
-            return
+        # try:
+        xgboost.plot_tree(model, ax=ax, num_trees=idx, yes_color=self.parent.theme_colors['secondaryDarkColor'],
+                          no_color=self.parent.theme_colors['primaryColor'])
+        plot_widget.canvas.draw()
+        # except:
+        #     error('update_xgboost_tree_plot')
+        #     return
         plot_widget.canvas.figure.tight_layout()
+
+    def tune_xgboost_params(self) -> None:
+        """
+        Bayesian Optimization with HYPEROPT
+
+        Returns
+        -------
+
+        """
+
+        current_dataset = self.parent.ui.dataset_type_cb.currentText()
+        if current_dataset == 'Smoothed' and self.parent.ui.smoothed_dataset_table_view.model().rowCount() == 0 \
+                or current_dataset == 'Baseline corrected' \
+                and self.parent.ui.baselined_dataset_table_view.model().rowCount() == 0 \
+                or current_dataset == 'Deconvoluted' \
+                and self.parent.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
+            return
+        X, Y, _, _, _ = self.dataset_for_ml()
+        Y = list(map(lambda x: x - 1, Y))
+        rnd_state = self.get_random_state()
+        test_size = self.parent.ui.test_data_ratio_spinBox.value() / 100.
+        ros = RandomOverSampler(random_state=rnd_state)
+        X, Y = ros.fit_resample(X, Y)
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rnd_state)
+        trials = Trials()
+        space = {'eta': hp.uniform('eta', 0.01, .5),
+                 'max_depth': hp.quniform("max_depth", 3, 18, 1),
+                 'gamma': hp.uniform('gamma', 0, 10),
+                 'reg_alpha': hp.quniform('reg_alpha', 40, 180, 1),
+                 'reg_lambda': hp.uniform('reg_lambda', 0, 1),
+                 'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
+                 'min_child_weight': hp.quniform('min_child_weight', 0, 10, 1),
+                 'n_estimators': 180,
+                 'seed': hp.uniform('seed', 0, 100),
+                 'X_train': X_train, 'X_test': X_test, 'y_train': y_train, 'y_test': y_test,
+                 }
+        best_hyperparams = fmin(fn=objective,
+                                space=space,
+                                algo=tpe.suggest,
+                                max_evals=100,
+                                trials=trials)
+        print(best_hyperparams)
+
+    # endregion
+
+    # region Feature selection
+
+    def feature_select_percentile(self) -> None:
+        """
+        1. Check on all features in the ignore_dataset_table_view
+        2. Use VarianceThreshold to find not important features
+        3. Uncheck not important features
+
+        Returns
+        -------
+        None
+        """
+        # 1. Check on all features in the ignore_dataset_table_view
+        self.parent.ui.ignore_dataset_table_view.model().set_all_features_checked()
+
+        # 2. Use VarianceThreshold to find not important features
+        df = self.parent.ui.deconvoluted_dataset_table_view.model().dataframe()
+        X = df.iloc[:, 2:]
+        Y = df['Class']
+        percentile = self.parent.ui.select_percentile_spin_box.value()
+        selector = SelectPercentile(percentile=percentile)
+        selector = selector.fit(X, Y)
+        feature_names_in = selector.feature_names_in_
+        support = selector.get_support()
+
+        # 3. Uncheck not important features
+        checked = {}
+        for feature_name, b in zip(feature_names_in, support):
+            checked[feature_name] = b
+        self.parent.ui.ignore_dataset_table_view.model().set_checked(checked)
+        self.parent.ui.ignore_dataset_table_view.model().set_column_data('Score', selector.scores_)
+        self.parent.ui.ignore_dataset_table_view.model().set_column_data('P value', selector.pvalues_)
+
     # endregion

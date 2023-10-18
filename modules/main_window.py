@@ -1,75 +1,64 @@
-import os
-import sys
+import numpy as np
+
+from sys import exit
+from asyncqtpy import asyncSlot
+from matplotlib import pyplot as plt
 from asyncio import create_task, gather, sleep, wait, get_event_loop
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from datetime import datetime
 from gc import get_objects, collect
+from multiprocessing import Manager
 from logging import basicConfig, critical, error, DEBUG, info, warning
-from os import environ
+from os import environ, getenv
 from pathlib import Path
 from shelve import open as shelve_open
 from traceback import format_exc
 from zipfile import ZipFile, ZIP_DEFLATED
-
-import matplotlib.pyplot as plt
-import numpy as np
-import scipy.signal
-import shap
-from asyncqtpy import asyncSlot
+import warnings
 from pandas import DataFrame, MultiIndex, ExcelWriter
 from psutil import cpu_percent
 from pyqtgraph import setConfigOption, PlotDataItem, PlotCurveItem, SignalProxy, InfiniteLine, LinearRegionItem, \
     mkPen, mkBrush, FillBetweenItem, ArrowItem
-from qtpy.QtCore import Qt, QPoint, QEvent, QModelIndex, QTimer, QMarginsF, QPointF
-from qtpy.QtGui import QFont, QIcon, QCloseEvent, QMouseEvent, QKeyEvent, QContextMenuEvent, QEnterEvent, \
-    QMoveEvent, QColor, QPageLayout, QPageSize
-from qtpy.QtWidgets import QMessageBox, QMainWindow, QColorDialog, QUndoStack, QMenu, \
-    QAction, QHeaderView, QAbstractItemView, QLabel, QProgressBar, QProgressDialog, QPushButton, QFileDialog, \
+from qtpy.QtCore import Qt, QModelIndex, QTimer, QMarginsF, QPointF
+from qtpy.QtGui import QFont, QIcon, QCloseEvent, QColor, QPageLayout, QPageSize
+from qtpy.QtWidgets import QUndoStack, QMenu, QMainWindow, QColorDialog, QAction, QHeaderView,\
+    QAbstractItemView, QLabel, QFileDialog, \
     QLineEdit, QInputDialog, QTableView, QScrollArea
 from qtpy.QtWinExtras import QWinTaskbarButton
-
-import modules.setting_window
-from modules.dialogs import CurvePropertiesWindow
+from qfluentwidgets import IndeterminateProgressBar, ProgressBar, StateToolTip, MessageBox
+from modules import opacity, get_theme, show_error_msg, CurvePropertiesWindow
+from modules.mw_page1_preprocessing import PreprocessingLogic
 from modules.pandas_tables import PandasModelGroupsTable, PandasModelInputTable, PandasModelDeconvTable, \
     PandasModelDeconvLinesTable, ComboDelegate, PandasModelFitParamsTable, \
     DoubleSpinBoxDelegate, PandasModelFitIntervals, IntervalsTableDelegate, \
     PandasModelSmoothedDataset, PandasModelBaselinedDataset, PandasModelDeconvolutedDataset, PandasModel, \
     PandasModelPredictTable, PandasModelPCA, PandasModelIgnoreDataset, PandasModelDescribeDataset
-from modules.default_values import default_values, \
-    baseline_parameter_defaults, optimize_extended_range_methods
-from modules.init import QtStyleTools, get_theme, opacity
-from modules.mw_page1_preprocessing import PreprocessingLogic
+from modules.default_values import default_values, baseline_parameter_defaults, optimize_extended_range_methods, \
+    peak_shape_names, classificators_names
+
+from modules.mw_page3_datasets import DatasetsManager
 from modules.mw_page2_fitting import FittingLogic
-from modules.mw_page4_stat_analysis import StatAnalysisLogic, update_plot_tree
+from modules.mw_page4_stat_analysis import StatAnalysisLogic
 from modules.mw_page5_predict import PredictLogic
-from modules.setting_window import SettingWindow
+from modules.widgets.setting_window import SettingWindow
 from modules.start_program import splash_show_message
-from modules.static_functions import random_rgb, check_recent_files, \
+from modules.mutual_functions.static_functions import random_rgb, check_recent_files, \
     get_memory_used, check_rs_tool_folder, import_spectrum, curve_pen_brush_by_style, \
     action_help, set_roi_size
-from modules.ui_main_window import Ui_MainWindow
+from modules.ui.ui_main_window import Ui_MainWindow
 from modules.undo_redo import CommandImportFiles, CommandAddGroup, CommandDeleteGroup, CommandChangeGroupCell, \
     CommandChangeGroupCellsBatch, CommandDeleteInputSpectrum, CommandChangeGroupStyle, CommandAddDeconvLine, \
-    CommandDeleteDeconvLines, CommandUpdateDeconvCurveStyle, \
-    CommandUpdateDataCurveStyle, \
-    CommandClearAllDeconvLines, CommandStartIntervalChanged, CommandEndIntervalChanged, \
-    CommandFitIntervalAdded, CommandFitIntervalDeleted
-from modules.functions_guess_raman_lines import show_distribution
-from modules.functions_cut_trim import cut_full_spectrum
-from modules.functions_for_arrays import nearest_idx, find_nearest, normalize_between_0_1
-from modules.functions_baseline_correction import ex_mod_poly, baseline_imodpoly, baseline_modpoly
-
-plt.style.use(['dark_background'])
-plt.set_loglevel("info")
-shap.initjs()
-environ['OPENBLAS_NUM_THREADS'] = '1'
+    CommandDeleteDeconvLines, CommandUpdateDeconvCurveStyle, CommandUpdateDataCurveStyle, CommandClearAllDeconvLines, \
+    CommandFitIntervalAdded, CommandFitIntervalDeleted, CommandDeleteDatasetRow
+from modules.stages.stat_analysis.functions.fit_classificators import scorer_metrics
 
 
-class MainWindow(QMainWindow, QtStyleTools):
+class MainWindow(QMainWindow):
 
     def __init__(self, event_loop, theme, prefs, splash) -> None:
-        super().__init__()
-
+        super().__init__(None)
+        splash_show_message(splash, 'Initializing attributes..')
+        self.stateTooltip = None
         self.plt_style = None
         self.taskbar_progress = None
         self.taskbar_button = None
@@ -82,7 +71,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.auto_save_timer = None
         self.cpu_load = None
         self.timer_mem_update = None
-
         self.action_trim = None
         self.action_baseline_correction = None
         self.action_smooth = None
@@ -103,131 +91,129 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.file_menu_import_action = None
         self.recent_menu = None
         self.file_menu = None
-        splash_show_message(splash, 'Initializing main window...')
-        self.theme_bckgrnd = prefs[0]
-        self.theme_color = prefs[1]
-        self.plot_font_size = int(prefs[5])
-        self.axis_label_font_size = prefs[6]
-
-        self.current_executor = None
-
-        self.time_start = None
-        self.currentProgress = None
-        self.task_mem_update = None
-        self.current_spectrum_despiked_name = None
-        self.current_spectrum_baseline_name = None
-        self.export_folder_path = None
-        self.loop = event_loop or get_event_loop()
         self.progressBar = None
         self.previous_group_of_item = None
         self.plot_text_color_value = None
         self.plot_text_color = None
         self.plot_background_color = None
         self.plot_background_color_web = None
-
-        # parameters to turn on/off pushing UndoStack command during another redo/undo command executing
+        self.current_executor = None
+        self.time_start = None
+        self.task_mem_update = None
+        self.current_spectrum_despiked_name = None
+        self.current_spectrum_baseline_name = None
+        self.export_folder_path = None
         self.CommandStartIntervalChanged_allowed = True
         self.CommandEndIntervalChanged_allowed = True
-
-        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowFrameSection.TopSection |
-                            Qt.WindowType.WindowMinMaxButtonsHint)
-        self.ImportedArray = dict()
-        self.project_path = None
-        self.recent_limit = prefs[2]
-        self.auto_save_minutes = int(prefs[4])
         self.dragPos = None
-        self.keyPressEvent = self.key_press_event
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
-
+        self.project_path = None
         self.modified = False
         self.window_maximized = True
         self._ascending_input_table = False
+        self._ascending_ignore_table = False
         self._ascending_deconv_lines_table = False
+
+        splash_show_message(splash, 'Initializing attributes...')
+        self.theme_bckgrnd = prefs[0]
+        self.theme_color = prefs[1]
+        self.plot_font_size = int(prefs[5])
+        self.axis_label_font_size = prefs[6]
+        self.loop = event_loop or get_event_loop()
+        # parameters to turn on/off pushing UndoStack command during another redo/undo command executing
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowFrameSection.TopSection |
+                            Qt.WindowType.WindowMinMaxButtonsHint)
+        self.ImportedArray = dict()
+        self.recent_limit = prefs[2]
+        self.auto_save_minutes = int(prefs[4])
+
+        self.keyPressEvent = self.key_press_event
+
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.laser_wl_value_old = self.ui.laser_wl_spinbox.value()
         self.theme_colors = get_theme(theme)
         self.theme = theme
         self.taskbar_button = QWinTaskbarButton()
         self.taskbar_button.setWindow(self.windowHandle())
+        splash_show_message(splash, 'Initializing preprocessing class.')
         self.preprocessing = PreprocessingLogic(self)
+        splash_show_message(splash, 'Initializing fitting class..')
         self.fitting = FittingLogic(self)
+        splash_show_message(splash, 'Initializing datasets manager class...')
+        self.datasets_manager = DatasetsManager(self)
+        splash_show_message(splash, 'Initializing machine learning fit class.')
+        self.stat_analysis_logic = StatAnalysisLogic(self)
+        splash_show_message(splash, 'Initializing machine learning predict class..')
+        self.predict_logic = PredictLogic(self)
+        splash_show_message(splash, 'Initializing default values...')
         self._init_default_values()
 
         # UNDO/ REDO
+        splash_show_message(splash, 'Undo / Redo stack activating.')
         self.undoStack = QUndoStack(self)
         self.undoStack.setUndoLimit(int(prefs[3]))
 
         # SET UI DEFINITIONS
+        splash_show_message(splash, 'Setting UI definitions..')
         self.setWindowIcon(QIcon(environ['logo']))
         self.setWindowTitle('Raman Spectroscopy Tool ')
-
         self.plot_text_color_value = self.theme_colors['plotText']
         self.plot_text_color = QColor(self.plot_text_color_value)
         self.plot_background_color = QColor(self.theme_colors['plotBackground'])
         self.plot_background_color_web = QColor(self.theme_colors['backgroundMainColor'])
         self.update_icons()
-        path = os.getenv('APPDATA') + '/RS-tool/log.log'
-
         self.initial_ui_definitions()
+
+        splash_show_message(splash, 'Initializing menu...')
+        self.initial_menu()
+        splash_show_message(splash, 'Initializing left panel menu.')
+        self._init_left_menu()
+        splash_show_message(splash, 'Initializing UI basic input elements..')
+        self._init_push_buttons()
+        self._init_spin_boxes()
+        self._init_combo_boxes()
+        splash_show_message(splash, 'Initializing tables...')
+        self._initial_all_tables()
+        splash_show_message(splash, 'Initializing scrollbar.')
+        self.initial_right_scrollbar()
+        splash_show_message(splash, 'Initializing figures..')
+        self._initial_plots()
+        splash_show_message(splash, 'Initializing plot buttons...')
+        self.initial_plot_buttons()
+        splash_show_message(splash, 'Initializing fitting right side frame.')
+        self._initial_guess_table_frame()
+        splash_show_message(splash, 'Starting timers..')
+        self.initial_timers()
+        self.memory_usage_label = QLabel(self)
+        self.statusBar().addPermanentWidget(self.memory_usage_label)
+        self.ui.splitter_page1.moveSplitter(100, 1)
+        self.ui.splitter_page2.moveSplitter(100, 1)
+        splash_show_message(splash, 'Setting default parameters')
+        self._set_parameters_to_default()
+        self.set_smooth_parameters_disabled(self.default_values['smoothing_method_comboBox'])
+        self.set_baseline_parameters_disabled(self.default_values['baseline_method_comboBox'])
+        splash_show_message(splash, 'Loading preferences...')
         try:
             check_recent_files()
         except Exception as err:
             self.show_error(err)
-        splash_show_message(splash, 'Initializing menu...')
-        self.initial_menu()
-        splash_show_message(splash, 'Initializing left side menu...')
-
-        self._init_left_menu()
-        splash_show_message(splash, 'Initializing tables...')
-        self._initial_all_tables()
-        splash_show_message(splash, 'Initializing scrollbar...')
-        self.initial_right_scrollbar()
-        splash_show_message(splash, 'Initializing figures...')
-        self._initial_plots()
-        splash_show_message(splash, 'Initializing plot buttons...')
-        self.initial_plot_buttons()
-        splash_show_message(splash, 'Initializing fitting right side frame...')
-        self._initial_guess_table_frame()
-        self.initial_timers()
-        self.set_buttons_ability()
-        self.ui.stat_tab_widget.currentChanged.connect(self.stat_tab_widget_tab_changed)
-        self.ui.stat_tab_widget.setTabEnabled(12, False)
-        self.ui.stat_tab_widget.setTabVisible(12, False)
-        self.ui.page5_predict.clicked.connect(self.predict)
-        self.ui.splitter_page1.moveSplitter(100, 1)
-        self.ui.splitter_page2.moveSplitter(100, 1)
-        self.memory_usage_label = QLabel(self)
-        self.statusBar().addPermanentWidget(self.memory_usage_label)
-
-        self.ui.baseline_correction_method_comboBox.setCurrentText(self.default_values['baseline_method_comboBox'])
-        splash_show_message(splash, 'Setting default parameters')
-        self._set_parameters_to_default()
-        splash_show_message(splash, 'Checking RS-tool folder')
         try:
             check_rs_tool_folder()
         except Exception as err:
             self.show_error(err)
-        self.setting_window = SettingWindow(self)
-        self.stat_analysis_logic = StatAnalysisLogic(self)
-        self.predict_logic = PredictLogic(self)
+        splash_show_message(splash, 'Activation logging.')
+        path = getenv('APPDATA') + '/RS-tool/log.log'
         basicConfig(level=DEBUG, filename=path, filemode='w', format="%(asctime)s %(levelname)s %(message)s")
         info('Logging started.')
+        self.set_buttons_ability()
         self.set_modified(False)
         self.ui.statusBar.showMessage('Ready', 2000)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
-        if self.modified:
-            msg = QMessageBox(QMessageBox.Icon.Question, "Close", 'You have unsaved changes. '
-                              + '\n' + 'Save changes before exit?', QMessageBox.StandardButton.Yes
-                              | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-            if self.project_path:
-                msg.setInformativeText(self.project_path)
-            result = msg.exec()
-            if result == QMessageBox.StandardButton.Yes:
-                self.action_save_project()
-            elif result == QMessageBox.StandardButton.Cancel:
-                a0.ignore()
-                return
+        if not self.can_close_project():
+            a0.ignore()
+            return
 
         self.input_plot_widget_plot_item.close()
         self.converted_cm_widget_plot_item.close()
@@ -250,7 +236,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         del self.ui.baseline_plot_widget.horizontal_line
         del self.ui.average_plot_widget.vertical_line
         del self.ui.average_plot_widget.horizontal_line
-        sys.exit()
+        exit()
 
     # region init
 
@@ -302,14 +288,18 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.cm_range_end.setValue(self.default_values['cm_range_end'])
         self.ui.trim_start_cm.setValue(self.default_values['trim_start_cm'])
         self.ui.trim_end_cm.setValue(self.default_values['trim_end_cm'])
+        self.ui.average_level_spin_box.setValue(self.default_values['average_level_spin_box'])
+        self.ui.average_n_boot_spin_box.setValue(self.default_values['average_n_boot_spin_box'])
         self.ui.maxima_count_despike_spin_box.setValue(self.default_values['maxima_count_despike'])
         self.ui.laser_wl_spinbox.setValue(self.default_values['laser_wl'])
+        self.ui.select_percentile_spin_box.setValue(self.default_values['select_percentile_spin_box'])
         self.ui.despike_fwhm_width_doubleSpinBox.setValue(self.default_values['despike_fwhm'])
         self.ui.neg_grad_factor_spinBox.setValue(self.default_values['neg_grad_factor_spinBox'])
         self.ui.normalizing_method_comboBox.setCurrentText(self.default_values['normalizing_method_comboBox'])
         self.ui.smoothing_method_comboBox.setCurrentText(self.default_values['smoothing_method_comboBox'])
         self.ui.guess_method_cb.setCurrentText(self.default_values['guess_method_cb'])
         self.ui.average_method_cb.setCurrentText(self.default_values['average_function'])
+        self.ui.average_errorbar_method_combo_box.setCurrentText(self.default_values['average_errorbar_method_combo_box'])
         self.ui.dataset_type_cb.setCurrentText(self.default_values['dataset_type_cb'])
         self.ui.classes_lineEdit.setText('')
         self.ui.test_data_ratio_spinBox.setValue(self.default_values['test_data_ratio_spinBox'])
@@ -343,7 +333,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.cost_func_comboBox.setCurrentText(self.default_values['cost_function'])
         self.ui.opt_method_oer_comboBox.setCurrentText(self.default_values['opt_method_oer'])
         self.ui.fit_opt_method_comboBox.setCurrentText(self.default_values['fit_method'])
-        self.ui.intervals_gb.setChecked(False)
+        self.ui.intervals_gb.setChecked(True)
         self.ui.use_pca_checkBox.setChecked(False)
         self.ui.emsc_pca_n_spinBox.setValue(self.default_values['EMSC_N_PCA'])
         self.ui.max_CCD_value_spinBox.setValue(self.default_values['max_CCD_value'])
@@ -352,10 +342,54 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.interval_end_dsb.setValue(self.default_values['interval_end'])
         self.ui.max_dx_dsb.setValue(self.default_values['max_dx_guess'])
         self.ui.mlp_layer_size_spinBox.setValue(self.default_values['mlp_layer_size_spinBox'])
+        self.ui.rf_min_samples_split_spinBox.setValue(self.default_values['rf_min_samples_split_spinBox'])
+        self.ui.ab_n_estimators_spinBox.setValue(self.default_values['ab_n_estimators_spinBox'])
+        self.ui.ab_learning_rate_doubleSpinBox.setValue(self.default_values['ab_learning_rate_doubleSpinBox'])
+        self.ui.xgb_eta_doubleSpinBox.setValue(self.default_values['xgb_eta_doubleSpinBox'])
+        self.ui.xgb_gamma_spinBox.setValue(self.default_values['xgb_gamma_spinBox'])
+        self.ui.xgb_max_depth_spinBox.setValue(self.default_values['xgb_max_depth_spinBox'])
+        self.ui.xgb_min_child_weight_spinBox.setValue(self.default_values['xgb_min_child_weight_spinBox'])
+        self.ui.xgb_colsample_bytree_doubleSpinBox.setValue(self.default_values['xgb_colsample_bytree_doubleSpinBox'])
+        self.ui.xgb_lambda_doubleSpinBox.setValue(self.default_values['xgb_lambda_doubleSpinBox'])
+        self.ui.xgb_n_estimators_spinBox.setValue(self.default_values['xgb_n_estimators_spinBox'])
+        self.ui.rf_n_estimators_spinBox.setValue(self.default_values['rf_n_estimators_spinBox'])
         self.ui.max_epoch_spinBox.setValue(self.default_values['max_epoch_spinBox'])
         self.ui.learning_rate_doubleSpinBox.setValue(self.default_values['learning_rate_doubleSpinBox'])
         self.ui.feature_display_max_spinBox.setValue(self.default_values['feature_display_max_spinBox'])
         self.ui.l_ratio_doubleSpinBox.setValue(self.default_values['l_ratio'])
+        self.ui.comboBox_lda_solver.setCurrentText(self.default_values['comboBox_lda_solver'])
+        self.ui.lda_solver_check_box.setChecked(True)
+        self.ui.lda_shrinkage_check_box.setChecked(True)
+        self.ui.lr_c_checkBox.setChecked(True)
+        self.ui.lr_solver_checkBox.setChecked(True)
+        self.ui.svc_nu_check_box.setChecked(True)
+        self.ui.n_neighbors_checkBox.setChecked(True)
+        self.ui.nn_weights_checkBox.setChecked(True)
+        self.ui.lr_penalty_checkBox.setChecked(True)
+        self.ui.learning_rate_checkBox.setChecked(True)
+        self.ui.mlp_layer_size_checkBox.setChecked(True)
+        self.ui.mlp_solve_checkBox.setChecked(True)
+        self.ui.activation_checkBox.setChecked(True)
+        self.ui.criterion_checkBox.setChecked(True)
+        self.ui.rf_max_features_checkBox.setChecked(True)
+        self.ui.rf_n_estimators_checkBox.setChecked(True)
+        self.ui.rf_min_samples_split_checkBox.setChecked(True)
+        self.ui.rf_criterion_checkBox.setChecked(True)
+        self.ui.ab_learning_rate_checkBox.setChecked(True)
+        self.ui.ab_n_estimators_checkBox.setChecked(True)
+        self.ui.xgb_eta_checkBox.setChecked(True)
+        self.ui.xgb_gamma_checkBox.setChecked(True)
+        self.ui.xgb_max_depth_checkBox.setChecked(True)
+        self.ui.xgb_min_child_weight_checkBox.setChecked(True)
+        self.ui.xgb_colsample_bytree_checkBox.setChecked(True)
+        self.ui.xgb_lambda_checkBox.setChecked(True)
+        self.ui.lineEdit_lda_shrinkage.setText(self.default_values['lineEdit_lda_shrinkage'])
+        self.ui.lr_c_doubleSpinBox.setValue(self.default_values['lr_c_doubleSpinBox'])
+        self.ui.svc_nu_doubleSpinBox.setValue(self.default_values['svc_nu_doubleSpinBox'])
+        self.ui.n_neighbors_spinBox.setValue(self.default_values['n_neighbors_spinBox'])
+        self.ui.lr_solver_comboBox.setCurrentText(self.default_values['lr_solver_comboBox'])
+        self.ui.nn_weights_comboBox.setCurrentText(self.default_values['nn_weights_comboBox'])
+        self.ui.lr_penalty_comboBox.setCurrentText(self.default_values['lr_penalty_comboBox'])
 
     # region plots
 
@@ -551,6 +585,11 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.averaged_plotItem.removeItem(i)
         self._initial_averaged_plot_color()
 
+    def _initial_averaged_sns_plot(self) -> None:
+        self.ui.average_sns_plot_widget.canvas.axes.cla()
+        self.ui.average_sns_plot_widget.canvas.draw()
+        self.ui.average_sns_plot_widget.canvas.figure.tight_layout()
+
     def _initial_averaged_plot_color(self) -> None:
         self.ui.average_plot_widget.setBackground(self.plot_background_color)
         self.averaged_plotItem.getAxis('bottom').setPen(self.plot_text_color)
@@ -592,9 +631,9 @@ class MainWindow(QMainWindow, QtStyleTools):
         color.setAlphaF(0.25)
         pen = mkPen(color=color, style=Qt.PenStyle.SolidLine)
         brush = mkBrush(color)
-        self.fitting.fill = FillBetweenItem(self.fitting.sigma3_top, self.fitting.sigma3_bottom, brush, pen)
-        self.deconvolution_plotItem.addItem(self.fitting.fill)
-        self.fitting.fill.setVisible(False)
+        self.fitting.sigma3_fill = FillBetweenItem(self.fitting.sigma3_top, self.fitting.sigma3_bottom, brush, pen)
+        self.deconvolution_plotItem.addItem(self.fitting.sigma3_fill)
+        self.fitting.sigma3_fill.setVisible(False)
 
     def fit_plot_mouse_clicked(self, event):
         if event.button() == Qt.MouseButton.RightButton:
@@ -612,8 +651,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         if cl_type == 'LDA':
             function_name = 'LD-'
             plot_widget.setVisible(True)
-        elif cl_type == 'QDA':
-            function_name = 'QD-'
         elif cl_type == 'PLS-DA':
             function_name = 'PLS-DA-'
         else:
@@ -633,324 +670,49 @@ class MainWindow(QMainWindow, QtStyleTools):
         plot_widget.canvas.figure.clf()
         plot_widget.canvas.draw()
 
-    def _initial_lda_scores_1d_plot(self) -> None:
-        self.lda_scores_1d_plot_item = self.ui.lda_scores_1d_plot_widget.getPlotItem()
-        self.ui.lda_scores_1d_plot_widget.setAntialiasing(1)
-        self.lda_scores_1d_plot_item.enableAutoRange()
-        items_matches = self.lda_scores_1d_plot_item.listDataItems()
-        for i in items_matches:
-            self.lda_scores_1d_plot_item.removeItem(i)
-        for i in self.lda_1d_inf_lines:
-            self.lda_scores_1d_plot_item.removeItem(i)
-        self._initial_lda_scores_1d_plot_color()
-        self.ui.lda_scores_1d_plot_widget.setVisible(False)
+    def _initial_force_single_plot(self) -> None:
+        self.ui.force_single.page().setHtml('')
+        self.ui.force_single.contextMenuEvent = self.force_single_context_menu_event
 
-    def _initial_lda_scores_1d_plot_color(self) -> None:
-        self.ui.lda_scores_1d_plot_widget.setBackground(self.plot_background_color)
-        self.lda_scores_1d_plot_item.getAxis('bottom').setPen(self.plot_text_color)
-        self.lda_scores_1d_plot_item.getAxis('left').setPen(self.plot_text_color)
-        self.lda_scores_1d_plot_item.getAxis('bottom').setTextPen(self.plot_text_color)
-        self.lda_scores_1d_plot_item.getAxis('left').setTextPen(self.plot_text_color)
-
-    def _initial_lda_force_single_plot(self) -> None:
-        self.ui.lda_force_single.page().setHtml('')
-        self.ui.lda_force_single.contextMenuEvent = self.lda_force_single_context_menu_event
-
-    def lda_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def force_single_context_menu_event(self, a0) -> None:
         line = QLineEdit(self)
         menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.lda_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.lda_force_single, 'LDA'))
+        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.force_single.page()))
+        menu.addAction('Refresh', lambda: self.reload_force(self.ui.force_single))
         menu.move(a0.globalPos())
         menu.show()
 
-    def _initial_lda_force_full_plot(self) -> None:
-        self.ui.lda_force_full.page().setHtml('')
-        self.ui.lda_force_full.contextMenuEvent = self.lda_force_full_context_menu_event
+    def _initial_force_full_plot(self) -> None:
+        self.ui.force_full.page().setHtml('')
+        self.ui.force_full.contextMenuEvent = self.force_full_context_menu_event
 
-    def lda_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def force_full_context_menu_event(self, a0) -> None:
         line = QLineEdit(self)
         menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.lda_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.lda_force_full, 'LDA', True))
+        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.force_full.page()))
+        menu.addAction('Refresh', lambda: self.reload_force(self.ui.force_full, True))
         menu.move(a0.globalPos())
         menu.show()
 
-    def reload_force(self, plot_widget, cl_type: str, full: bool = False):
+    def reload_force(self, plot_widget, full: bool = False):
+        cl_type = self.ui.current_classificator_comboBox.currentText()
         if cl_type not in self.stat_analysis_logic.latest_stat_result:
+            msg = MessageBox('SHAP Force plot refresh error.', 'Selected classificator was not fitted.', self, {'Ok'})
+            msg.setInformativeText('Try to turn on Use Shapley option before fit classificator.')
+            msg.exec()
             return
         shap_html = 'shap_html_full' if full else 'shap_html'
         if shap_html not in self.stat_analysis_logic.latest_stat_result[cl_type]:
+            msg = MessageBox('SHAP Force plot refresh error.',
+                             'Selected classificator was fitted without Shapley calculation.', self, {'Ok'})
+            msg.setInformativeText('Try to turn on Use Shapley option before fit classificator.')
+            msg.exec()
             return
         plot_widget.setHtml(self.stat_analysis_logic.latest_stat_result[cl_type][shap_html])
 
-    def _initial_lr_force_single_plot(self) -> None:
-        self.ui.lr_force_single.page().setHtml('')
-        self.ui.lr_force_single.contextMenuEvent = self.lr_force_single_context_menu_event
-
-    def lr_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.lr_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.lr_force_single, 'Logistic regression'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_lr_force_full_plot(self) -> None:
-        self.ui.lr_force_full.page().setHtml('')
-        self.ui.lr_force_full.contextMenuEvent = self.lr_force_full_context_menu_event
-
-    def lr_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.lr_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.lr_force_full, 'Logistic regression', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_svc_force_single_plot(self) -> None:
-        self.ui.svc_force_single.page().setHtml('')
-        self.ui.svc_force_single.contextMenuEvent = self.svc_force_single_context_menu_event
-
-    def svc_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.svc_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.svc_force_single, 'NuSVC'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_svc_force_full_plot(self) -> None:
-        self.ui.svc_force_full.page().setHtml('')
-        self.ui.svc_force_full.contextMenuEvent = self.svc_force_full_context_menu_event
-
-    def svc_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.svc_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.svc_force_full, 'NuSVC', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_nearest_force_single_plot(self) -> None:
-        self.ui.nearest_force_single.page().setHtml('')
-        self.ui.nearest_force_single.contextMenuEvent = self.nearest_force_single_context_menu_event
-
-    def nearest_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.nearest_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.nearest_force_single, 'Nearest Neighbors'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_nearest_force_full_plot(self) -> None:
-        self.ui.nearest_force_full.page().setHtml('')
-        self.ui.nearest_force_full.contextMenuEvent = self.nearest_force_full_context_menu_event
-
-    def nearest_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.nearest_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.nearest_force_full, 'Nearest Neighbors', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_gpc_force_single_plot(self) -> None:
-        self.ui.gpc_force_single.page().setHtml('')
-        self.ui.gpc_force_single.contextMenuEvent = self.gpc_force_single_context_menu_event
-
-    def gpc_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.gpc_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.gpc_force_single, 'GPC'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_gpc_force_full_plot(self) -> None:
-        self.ui.gpc_force_full.page().setHtml('')
-        self.ui.gpc_force_full.contextMenuEvent = self.gpc_force_full_context_menu_event
-
-    def gpc_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.gpc_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.gpc_force_full, 'GPC', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_dt_force_single_plot(self) -> None:
-        self.ui.dt_force_single.page().setHtml('')
-        self.ui.dt_force_single.contextMenuEvent = self.dt_force_single_context_menu_event
-
-    def dt_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.dt_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.dt_force_single, 'Decision Tree'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_dt_force_full_plot(self) -> None:
-        self.ui.dt_force_full.page().setHtml('')
-        self.ui.dt_force_full.contextMenuEvent = self.dt_force_full_context_menu_event
-
-    def dt_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.dt_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.dt_force_full, 'Decision Tree', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_nb_force_single_plot(self) -> None:
-        self.ui.nb_force_single.page().setHtml('')
-        self.ui.nb_force_single.contextMenuEvent = self.dt_force_single_context_menu_event
-
-    def nb_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.nb_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.nb_force_single, 'Naive Bayes'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_nb_force_full_plot(self) -> None:
-        self.ui.nb_force_full.page().setHtml('')
-        self.ui.nb_force_full.contextMenuEvent = self.nb_force_full_context_menu_event
-
-    def nb_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.nb_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.nb_force_full, 'Naive Bayes', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_rf_force_single_plot(self) -> None:
-        self.ui.rf_force_single.page().setHtml('')
-        self.ui.rf_force_single.contextMenuEvent = self.rf_force_single_context_menu_event
-
-    def rf_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.rf_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.rf_force_single, 'Random Forest'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_rf_force_full_plot(self) -> None:
-        self.ui.rf_force_full.page().setHtml('')
-        self.ui.rf_force_full.contextMenuEvent = self.rf_force_full_context_menu_event
-
-    def rf_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.rf_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.rf_force_full, 'Random Forest', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_ab_force_single_plot(self) -> None:
-        self.ui.ab_force_single.page().setHtml('')
-        self.ui.ab_force_single.contextMenuEvent = self.ab_force_single_context_menu_event
-
-    def ab_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.ab_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.ab_force_single, 'AdaBoost'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_ab_force_full_plot(self) -> None:
-        self.ui.ab_force_full.page().setHtml('')
-        self.ui.ab_force_full.contextMenuEvent = self.ab_force_full_context_menu_event
-
-    def ab_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.ab_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.ab_force_full, 'AdaBoost', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_mlp_force_single_plot(self) -> None:
-        self.ui.mlp_force_single.page().setHtml('')
-        self.ui.mlp_force_single.contextMenuEvent = self.mlp_force_single_context_menu_event
-
-    def mlp_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.mlp_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.mlp_force_single, 'MLP'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_mlp_force_full_plot(self) -> None:
-        self.ui.mlp_force_full.page().setHtml('')
-        self.ui.mlp_force_full.contextMenuEvent = self.mlp_force_full_context_menu_event
-
-    def mlp_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.mlp_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.mlp_force_full, 'MLP', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_torch_force_single_plot(self) -> None:
-        self.ui.torch_force_single.page().setHtml('')
-        self.ui.torch_force_single.contextMenuEvent = self.torch_single_context_menu_event
-
-    def torch_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.torch_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.torch_force_single, 'Torch'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_torch_force_full_plot(self) -> None:
-        self.ui.torch_force_full.page().setHtml('')
-        self.ui.torch_force_full.contextMenuEvent = self.torch_force_full_context_menu_event
-
-    def torch_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.torch_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.torch_force_full, 'Torch', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_xgboost_force_single_plot(self) -> None:
-        self.ui.xgboost_force_single.page().setHtml('')
-        self.ui.xgboost_force_single.contextMenuEvent = self.xgboost_force_single_context_menu_event
-
-    def xgboost_force_single_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.xgboost_force_single.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.xgboost_force_single, 'XGBoost'))
-        menu.move(a0.globalPos())
-        menu.show()
-
-    def _initial_xgboost_force_full_plot(self) -> None:
-        self.ui.xgboost_force_full.page().setHtml('')
-        self.ui.xgboost_force_full.contextMenuEvent = self.xgboost_force_full_context_menu_event
-
-    def xgboost_force_full_context_menu_event(self, a0: QContextMenuEvent) -> None:
-        line = QLineEdit(self)
-        menu = QMenu(line)
-        menu.addAction('Save .pdf', lambda: self.web_view_print_pdf(self.ui.xgboost_force_full.page()))
-        menu.addAction('Refresh', lambda: self.reload_force(self.ui.xgboost_force_full, 'XGBoost', True))
-        menu.move(a0.globalPos())
-        menu.show()
-
     def web_view_print_pdf(self, page):
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Print page to PDF', os.getenv('APPDATA') + '/RS-tool', "PDF (*.pdf)")
+        file_path = fd.getSaveFileName(self, 'Print page to PDF', getenv('APPDATA') + '/RS-tool', "PDF (*.pdf)")
         if file_path[0] == '':
             return
         ps = QPageSize(QPageSize.A4)
@@ -958,120 +720,69 @@ class MainWindow(QMainWindow, QtStyleTools):
         page.printToPdf(file_path[0], pageLayout=pl)
 
     @asyncSlot()
+    @asyncSlot()
     async def _initial_stat_plots_color(self) -> None:
-        plot_widgets = [self.ui.lda_roc_plot, self.ui.lda_dm_plot, self.ui.lda_features_plot_widget,
-                        self.ui.lda_scores_2d_plot_widget, self.ui.lda_pr_plot, self.ui.lda_shap_means,
-                        self.ui.lda_shap_beeswarm, self.ui.lda_shap_scatter, self.ui.lda_shap_heatmap,
-                        self.ui.lda_shap_decision, self.ui.lda_shap_waterfall,
-                        self.ui.qda_roc_plot, self.ui.qda_dm_plot, self.ui.qda_scores_plot_widget, self.ui.qda_pr_plot,
-                        self.ui.qda_shap_beeswarm, self.ui.qda_shap_heatmap, self.ui.qda_shap_means,
-                        self.ui.qda_shap_scatter, self.ui.qda_shap_waterfall,
-                        self.ui.lr_roc_plot, self.ui.lr_pr_plot, self.ui.lr_scores_plot_widget,
-                        self.ui.lr_features_plot_widget, self.ui.lr_dm_plot, self.ui.lr_shap_beeswarm,
-                        self.ui.lr_shap_heatmap, self.ui.lr_shap_means, self.ui.lr_shap_scatter,
-                        self.ui.lr_shap_waterfall, self.ui.lr_shap_decision,
-                        self.ui.svc_pr_plot, self.ui.svc_dm_plot, self.ui.svc_roc_plot,
-                        self.ui.svc_features_plot_widget, self.ui.svc_scores_plot_widget, self.ui.svc_shap_beeswarm,
-                        self.ui.svc_shap_decision, self.ui.svc_shap_heatmap, self.ui.svc_shap_means,
-                        self.ui.svc_shap_scatter, self.ui.svc_shap_waterfall,
-                        self.ui.nearest_pr_plot, self.ui.nearest_dm_plot, self.ui.nearest_roc_plot,
-                        self.ui.nearest_scores_plot_widget, self.ui.nearest_shap_beeswarm,
-                        self.ui.nearest_shap_decision, self.ui.nearest_shap_heatmap, self.ui.nearest_shap_means,
-                        self.ui.nearest_shap_scatter, self.ui.nearest_shap_waterfall,
-                        self.ui.gpc_dm_plot, self.ui.gpc_pr_plot, self.ui.gpc_roc_plot, self.ui.gpc_scores_plot_widget,
-                        self.ui.gpc_shap_beeswarm, self.ui.gpc_shap_decision, self.ui.gpc_shap_heatmap,
-                        self.ui.gpc_shap_means, self.ui.gpc_shap_scatter, self.ui.gpc_shap_waterfall,
-                        self.ui.dt_dm_plot, self.ui.dt_features_plot_widget, self.ui.dt_pr_plot, self.ui.dt_roc_plot,
-                        self.ui.dt_scores_plot_widget, self.ui.dt_shap_beeswarm, self.ui.dt_shap_decision,
-                        self.ui.dt_shap_heatmap, self.ui.dt_shap_means, self.ui.dt_shap_scatter,
-                        self.ui.dt_shap_waterfall, self.ui.dt_tree_plot_widget,
-                        self.ui.nb_dm_plot, self.ui.nb_pr_plot, self.ui.nb_roc_plot,
-                        self.ui.nb_scores_plot_widget, self.ui.nb_shap_beeswarm, self.ui.nb_shap_decision,
-                        self.ui.nb_shap_heatmap, self.ui.nb_shap_means, self.ui.nb_shap_scatter,
-                        self.ui.nb_shap_waterfall,
-                        self.ui.rf_dm_plot, self.ui.rf_features_plot_widget, self.ui.rf_pr_plot, self.ui.rf_roc_plot,
-                        self.ui.rf_scores_plot_widget, self.ui.rf_shap_beeswarm, self.ui.rf_shap_decision,
-                        self.ui.rf_shap_heatmap, self.ui.rf_shap_means, self.ui.rf_shap_scatter,
-                        self.ui.rf_shap_waterfall, self.ui.rf_tree_plot_widget,
-                        self.ui.ab_dm_plot, self.ui.ab_features_plot_widget, self.ui.ab_pr_plot, self.ui.ab_roc_plot,
-                        self.ui.ab_scores_plot_widget, self.ui.ab_shap_beeswarm, self.ui.ab_shap_decision,
-                        self.ui.ab_shap_heatmap, self.ui.ab_shap_means, self.ui.ab_shap_scatter,
-                        self.ui.ab_shap_waterfall, self.ui.ab_tree_plot_widget,
-                        self.ui.mlp_dm_plot, self.ui.mlp_pr_plot, self.ui.mlp_roc_plot,
-                        self.ui.mlp_scores_plot_widget, self.ui.mlp_shap_beeswarm, self.ui.mlp_shap_decision,
-                        self.ui.mlp_shap_heatmap, self.ui.mlp_shap_means, self.ui.mlp_shap_scatter,
-                        self.ui.mlp_shap_waterfall,
+        """
+            Set colors for all stat plots at app start and at SunBtn pressed event.
+        Returns
+        -------
+            None
+        """
+        plot_widgets = [self.ui.decision_score_plot_widget, self.ui.decision_boundary_plot_widget,
+                        self.ui.violin_describe_plot_widget, self.ui.boxplot_describe_plot_widget,
+                        self.ui.dm_plot_widget, self.ui.roc_plot_widget, self.ui.pr_plot_widget,
+                        self.ui.perm_imp_test_plot_widget, self.ui.perm_imp_train_plot_widget,
+                        self.ui.partial_depend_plot_widget, self.ui.tree_plot_widget, self.ui.features_plot_widget,
+                        self.ui.calibration_plot_widget, self.ui.det_curve_plot_widget, self.ui.learning_plot_widget,
                         self.ui.pca_scores_plot_widget, self.ui.pca_loadings_plot_widget,
                         self.ui.plsda_scores_plot_widget, self.ui.plsda_vip_plot_widget,
-                        self.ui.xgboost_dm_plot, self.ui.xgboost_features_plot_widget, self.ui.xgboost_pr_plot,
-                        self.ui.xgboost_roc_plot, self.ui.xgboost_scores_plot_widget, self.ui.xgboost_shap_beeswarm,
-                        self.ui.xgboost_shap_decision, self.ui.xgboost_shap_heatmap, self.ui.xgboost_shap_means,
-                        self.ui.xgboost_shap_scatter, self.ui.xgboost_shap_waterfall, self.ui.xgboost_tree_plot_widget,
-                        self.ui.torch_scores_plot_widget, self.ui.torch_dm_plot, self.ui.torch_pr_plot,
-                        self.ui.torch_roc_plot, self.ui.torch_shap_beeswarm, self.ui.torch_shap_means,
-                        self.ui.torch_shap_heatmap, self.ui.torch_shap_scatter, self.ui.torch_shap_decision,
-                        self.ui.torch_shap_waterfall
+                        self.ui.average_sns_plot_widget, self.ui.roc_comparsion_plot_widget,
+                        self.ui.shap_beeswarm, self.ui.shap_means, self.ui.shap_heatmap, self.ui.shap_scatter,
+                        self.ui.shap_decision, self.ui.shap_waterfall, self.ui.roc_comparsion_plot_widget,
                         ]
         for pl in plot_widgets:
             self.set_canvas_colors(pl.canvas)
         if self.ui.current_group_shap_comboBox.currentText() == '':
             return
+        cl_type = self.ui.current_classificator_comboBox.currentText()
         await self.loop.run_in_executor(None, self._update_shap_plots)
         await self.loop.run_in_executor(None, self._update_shap_plots_by_instance)
-        self.stat_analysis_logic.update_force_single_plots()
-        self.stat_analysis_logic.update_force_full_plots()
+        self.stat_analysis_logic.update_force_single_plots(cl_type)
+        self.stat_analysis_logic.update_force_full_plots(cl_type)
 
     def _update_shap_plots(self) -> None:
-        self.stat_analysis_logic.do_update_shap_plots('LDA')
-        self.stat_analysis_logic.do_update_shap_plots('QDA')
-        self.stat_analysis_logic.do_update_shap_plots('Logistic regression')
-        self.stat_analysis_logic.do_update_shap_plots('NuSVC')
-        self.stat_analysis_logic.do_update_shap_plots('Nearest Neighbors')
-        self.stat_analysis_logic.do_update_shap_plots('GPC')
-        self.stat_analysis_logic.do_update_shap_plots('Decision Tree')
-        self.stat_analysis_logic.do_update_shap_plots('Naive Bayes')
-        self.stat_analysis_logic.do_update_shap_plots('Random Forest')
-        self.stat_analysis_logic.do_update_shap_plots('AdaBoost')
-        self.stat_analysis_logic.do_update_shap_plots('MLP')
-        self.stat_analysis_logic.do_update_shap_plots('Torch')
-        self.stat_analysis_logic.do_update_shap_plots('XGBoost')
+        cl_type = self.ui.current_classificator_comboBox.currentText()
+        self.stat_analysis_logic.do_update_shap_plots(cl_type)
 
     def _update_shap_plots_by_instance(self) -> None:
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('LDA')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('QDA')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('Logistic regression')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('NuSVC')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('Nearest Neighbors')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('GPC')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('Decision Tree')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('Naive Bayes')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('Random Forest')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('AdaBoost')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('MLP')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('Torch')
-        self.stat_analysis_logic.do_update_shap_plots_by_instance('XGBoost')
+        cl_type = self.ui.current_classificator_comboBox.currentText()
+        self.stat_analysis_logic.do_update_shap_plots_by_instance(cl_type)
 
     @asyncSlot()
     async def update_shap_scatters(self) -> None:
         self.loop.run_in_executor(None, self.do_update_shap_scatters)
 
     def do_update_shap_scatters(self):
-        tab_id_and_classificator = [(0, 'LDA'), (1, 'QDA'), (2, 'Logistic regression'), (3, 'NuSVC'),
-                                    (4, 'Nearest Neighbors'), (5, 'GPC'), (6, 'Decision Tree'), (7, 'Naive Bayes'),
-                                    (8, 'Random Forest'), (9, 'AdaBoost'), (10, 'MLP'), (11, 'XGBoost'), (12, 'Torch')]
-        for tab_id, classificator in tab_id_and_classificator:
-            if self.ui.stat_tab_widget.currentIndex() == tab_id \
-                    and classificator in self.stat_analysis_logic.latest_stat_result \
-                    and 'shap_values' in self.stat_analysis_logic.latest_stat_result[classificator]:
-                target_names = self.stat_analysis_logic.latest_stat_result[classificator]['target_names']
-                if self.ui.current_group_shap_comboBox.currentText() not in target_names:
-                    return
-                i = int(np.where(target_names == self.ui.current_group_shap_comboBox.currentText())[0][0])
-                self.stat_analysis_logic.update_shap_scatter_plot(False, i, classificator)
-            else:
-                continue
+        classificator = self.ui.current_classificator_comboBox.currentText()
+        if classificator in self.stat_analysis_logic.latest_stat_result \
+                and 'shap_values' in self.stat_analysis_logic.latest_stat_result[classificator]:
+            target_names = self.stat_analysis_logic.latest_stat_result[classificator]['target_names']
+            if self.ui.current_group_shap_comboBox.currentText() not in target_names:
+                return
+            i = int(np.where(target_names == self.ui.current_group_shap_comboBox.currentText())[0][0])
+            self.stat_analysis_logic.update_shap_scatter_plot(False, i, classificator)
 
     def set_canvas_colors(self, canvas) -> None:
+        """
+        Set plot colors to canvas. Different colors for dark and light theme.
+        Parameters
+        ----------
+        canvas
+
+        Returns
+        -------
+            None
+        """
         ax = canvas.figure.gca()
         ax.set_facecolor(self.plot_background_color.name())
         canvas.figure.set_facecolor(self.plot_background_color.name())
@@ -1107,206 +818,9 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_smooth_plot()
         self._initial_baseline_plot()
         self._initial_averaged_plot()
+        self._initial_averaged_sns_plot()
         self._initial_deconvolution_plot()
         self._initial_all_stat_plots()
-
-    def _initial_lda_plots(self) -> None:
-        self._initial_lda_scores_1d_plot()
-        self.initial_scores_plot(self.ui.lda_scores_2d_plot_widget, 'LDA')
-        self.initial_stat_plot(self.ui.lda_features_plot_widget)
-        self.initial_stat_plot(self.ui.lda_roc_plot)
-        self.initial_stat_plot(self.ui.lda_dm_plot)
-        self.initial_stat_plot(self.ui.lda_pr_plot)
-        self.initial_shap_plot(self.ui.lda_shap_means)
-        self.initial_shap_plot(self.ui.lda_shap_beeswarm)
-        self.initial_shap_plot(self.ui.lda_shap_heatmap)
-        self.initial_shap_plot(self.ui.lda_shap_scatter)
-        self.initial_shap_plot(self.ui.lda_shap_waterfall)
-        self.initial_shap_plot(self.ui.lda_shap_decision)
-
-        self._initial_lda_force_single_plot()
-        self._initial_lda_force_full_plot()
-
-    def _initial_qda_plots(self) -> None:
-        self.initial_scores_plot(self.ui.qda_scores_plot_widget, 'QDA')
-        self.initial_stat_plot(self.ui.qda_dm_plot)
-        self.initial_stat_plot(self.ui.qda_pr_plot)
-        self.initial_stat_plot(self.ui.qda_roc_plot)
-        self.initial_shap_plot(self.ui.qda_shap_means)
-        self.initial_shap_plot(self.ui.qda_shap_beeswarm)
-        self.initial_shap_plot(self.ui.qda_shap_heatmap)
-        self.initial_shap_plot(self.ui.qda_shap_scatter)
-        self.initial_shap_plot(self.ui.qda_shap_waterfall)
-
-    def _initial_lr_plots(self) -> None:
-        self.initial_scores_plot(self.ui.lr_scores_plot_widget)
-        self.initial_stat_plot(self.ui.lr_dm_plot)
-        self.initial_stat_plot(self.ui.lr_features_plot_widget)
-        self.initial_stat_plot(self.ui.lr_pr_plot)
-        self.initial_stat_plot(self.ui.lr_roc_plot)
-        self.initial_shap_plot(self.ui.lr_shap_means)
-        self.initial_shap_plot(self.ui.lr_shap_beeswarm)
-        self.initial_shap_plot(self.ui.lr_shap_heatmap)
-        self.initial_shap_plot(self.ui.lr_shap_scatter)
-        self.initial_shap_plot(self.ui.lr_shap_waterfall)
-        self.initial_shap_plot(self.ui.lr_shap_decision)
-
-        self._initial_lr_force_single_plot()
-        self._initial_lr_force_full_plot()
-
-    def _initial_svc_plots(self) -> None:
-        self.initial_stat_plot(self.ui.svc_dm_plot)
-        self.initial_stat_plot(self.ui.svc_features_plot_widget)
-        self.initial_stat_plot(self.ui.svc_pr_plot)
-        self.initial_stat_plot(self.ui.svc_roc_plot)
-        self.initial_scores_plot(self.ui.svc_scores_plot_widget)
-        self.initial_shap_plot(self.ui.svc_shap_means)
-        self.initial_shap_plot(self.ui.svc_shap_beeswarm)
-        self.initial_shap_plot(self.ui.svc_shap_heatmap)
-        self.initial_shap_plot(self.ui.svc_shap_scatter)
-        self.initial_shap_plot(self.ui.svc_shap_waterfall)
-        self.initial_shap_plot(self.ui.svc_shap_decision)
-
-        self._initial_svc_force_single_plot()
-        self._initial_svc_force_full_plot()
-
-    def _initial_nearest_plots(self) -> None:
-        self.initial_stat_plot(self.ui.nearest_dm_plot)
-        self.initial_stat_plot(self.ui.nearest_pr_plot)
-        self.initial_stat_plot(self.ui.nearest_roc_plot)
-        self.initial_scores_plot(self.ui.nearest_scores_plot_widget)
-        self.initial_shap_plot(self.ui.nearest_shap_means)
-        self.initial_shap_plot(self.ui.nearest_shap_beeswarm)
-        self.initial_shap_plot(self.ui.nearest_shap_heatmap)
-        self.initial_shap_plot(self.ui.nearest_shap_scatter)
-        self.initial_shap_plot(self.ui.nearest_shap_waterfall)
-        self.initial_shap_plot(self.ui.nearest_shap_decision)
-        self._initial_nearest_force_single_plot()
-        self._initial_nearest_force_full_plot()
-
-    def _initial_gpc_plots(self) -> None:
-        self.initial_stat_plot(self.ui.gpc_dm_plot)
-        self.initial_stat_plot(self.ui.gpc_pr_plot)
-        self.initial_stat_plot(self.ui.gpc_roc_plot)
-        self.initial_scores_plot(self.ui.gpc_scores_plot_widget)
-        self.initial_shap_plot(self.ui.gpc_shap_means)
-        self.initial_shap_plot(self.ui.gpc_shap_beeswarm)
-        self.initial_shap_plot(self.ui.gpc_shap_heatmap)
-        self.initial_shap_plot(self.ui.gpc_shap_scatter)
-        self.initial_shap_plot(self.ui.gpc_shap_waterfall)
-        self.initial_shap_plot(self.ui.gpc_shap_decision)
-
-        self._initial_gpc_force_single_plot()
-        self._initial_gpc_force_full_plot()
-
-    def _initial_dt_plots(self) -> None:
-        self.initial_stat_plot(self.ui.dt_dm_plot)
-        self.initial_stat_plot(self.ui.dt_pr_plot)
-        self.initial_stat_plot(self.ui.dt_roc_plot)
-        self.initial_scores_plot(self.ui.dt_scores_plot_widget)
-        self.initial_stat_plot(self.ui.dt_features_plot_widget)
-        self.initial_stat_plot(self.ui.dt_tree_plot_widget)
-        self.initial_shap_plot(self.ui.dt_shap_means)
-        self.initial_shap_plot(self.ui.dt_shap_beeswarm)
-        self.initial_shap_plot(self.ui.dt_shap_heatmap)
-        self.initial_shap_plot(self.ui.dt_shap_scatter)
-        self.initial_shap_plot(self.ui.dt_shap_waterfall)
-        self.initial_shap_plot(self.ui.dt_shap_decision)
-
-        self._initial_dt_force_single_plot()
-        self._initial_dt_force_full_plot()
-
-    def _initial_nb_plots(self) -> None:
-        self.initial_stat_plot(self.ui.nb_dm_plot)
-        self.initial_stat_plot(self.ui.nb_pr_plot)
-        self.initial_stat_plot(self.ui.nb_roc_plot)
-        self.initial_scores_plot(self.ui.nb_scores_plot_widget)
-        self.initial_shap_plot(self.ui.nb_shap_means)
-        self.initial_shap_plot(self.ui.nb_shap_beeswarm)
-        self.initial_shap_plot(self.ui.nb_shap_heatmap)
-        self.initial_shap_plot(self.ui.nb_shap_scatter)
-        self.initial_shap_plot(self.ui.nb_shap_waterfall)
-        self.initial_shap_plot(self.ui.nb_shap_decision)
-
-        self._initial_nb_force_single_plot()
-        self._initial_nb_force_full_plot()
-
-    def _initial_rf_plots(self) -> None:
-        self.initial_stat_plot(self.ui.rf_dm_plot)
-        self.initial_stat_plot(self.ui.rf_pr_plot)
-        self.initial_stat_plot(self.ui.rf_tree_plot_widget)
-        self.initial_stat_plot(self.ui.rf_roc_plot)
-        self.initial_scores_plot(self.ui.rf_scores_plot_widget)
-        self.initial_stat_plot(self.ui.rf_features_plot_widget)
-        self.initial_shap_plot(self.ui.rf_shap_means)
-        self.initial_shap_plot(self.ui.rf_shap_beeswarm)
-        self.initial_shap_plot(self.ui.rf_shap_heatmap)
-        self.initial_shap_plot(self.ui.rf_shap_scatter)
-        self.initial_shap_plot(self.ui.rf_shap_waterfall)
-        self.initial_shap_plot(self.ui.rf_shap_decision)
-
-        self._initial_rf_force_single_plot()
-        self._initial_rf_force_full_plot()
-
-    def _initial_ab_plots(self) -> None:
-        self.initial_stat_plot(self.ui.ab_dm_plot)
-        self.initial_stat_plot(self.ui.ab_roc_plot)
-        self.initial_stat_plot(self.ui.ab_pr_plot)
-        self.initial_stat_plot(self.ui.ab_tree_plot_widget)
-        self.initial_scores_plot(self.ui.ab_scores_plot_widget)
-        self.initial_stat_plot(self.ui.ab_features_plot_widget)
-        self.initial_shap_plot(self.ui.ab_shap_means)
-        self.initial_shap_plot(self.ui.ab_shap_beeswarm)
-        self.initial_shap_plot(self.ui.ab_shap_heatmap)
-        self.initial_shap_plot(self.ui.ab_shap_scatter)
-        self.initial_shap_plot(self.ui.ab_shap_waterfall)
-        self.initial_shap_plot(self.ui.ab_shap_decision)
-        self._initial_ab_force_single_plot()
-        self._initial_ab_force_full_plot()
-
-    def _initial_mlp_plots(self) -> None:
-        self.initial_stat_plot(self.ui.mlp_dm_plot)
-        self.initial_stat_plot(self.ui.mlp_roc_plot)
-        self.initial_stat_plot(self.ui.mlp_pr_plot)
-        self.initial_scores_plot(self.ui.mlp_scores_plot_widget)
-        self.initial_shap_plot(self.ui.mlp_shap_means)
-        self.initial_shap_plot(self.ui.mlp_shap_beeswarm)
-        self.initial_shap_plot(self.ui.mlp_shap_heatmap)
-        self.initial_shap_plot(self.ui.mlp_shap_scatter)
-        self.initial_shap_plot(self.ui.mlp_shap_waterfall)
-        self.initial_shap_plot(self.ui.mlp_shap_decision)
-        self._initial_mlp_force_single_plot()
-        self._initial_mlp_force_full_plot()
-
-    def _initial_torch_plots(self) -> None:
-        self.initial_stat_plot(self.ui.torch_dm_plot)
-        self.initial_stat_plot(self.ui.torch_roc_plot)
-        self.initial_stat_plot(self.ui.torch_pr_plot)
-        self.initial_scores_plot(self.ui.torch_scores_plot_widget)
-        self.initial_shap_plot(self.ui.torch_shap_means)
-        self.initial_shap_plot(self.ui.torch_shap_beeswarm)
-        self.initial_shap_plot(self.ui.torch_shap_heatmap)
-        self.initial_shap_plot(self.ui.torch_shap_scatter)
-        self.initial_shap_plot(self.ui.torch_shap_waterfall)
-        self.initial_shap_plot(self.ui.torch_shap_decision)
-        self._initial_torch_force_single_plot()
-        self._initial_torch_force_full_plot()
-
-    def _initial_xgboost_plots(self) -> None:
-        self.initial_stat_plot(self.ui.xgboost_dm_plot)
-        self.initial_stat_plot(self.ui.xgboost_roc_plot)
-        self.initial_stat_plot(self.ui.xgboost_pr_plot)
-        self.initial_scores_plot(self.ui.xgboost_scores_plot_widget)
-        self.initial_stat_plot(self.ui.xgboost_features_plot_widget)
-        self.initial_stat_plot(self.ui.xgboost_tree_plot_widget)
-        self.initial_shap_plot(self.ui.xgboost_shap_means)
-        self.initial_shap_plot(self.ui.xgboost_shap_beeswarm)
-        self.initial_shap_plot(self.ui.xgboost_shap_heatmap)
-        self.initial_shap_plot(self.ui.xgboost_shap_scatter)
-        self.initial_shap_plot(self.ui.xgboost_shap_waterfall)
-        self.initial_shap_plot(self.ui.xgboost_shap_decision)
-        self._initial_xgboost_force_single_plot()
-        self._initial_xgboost_force_full_plot()
 
     def _initial_pca_plots(self) -> None:
         self.initial_scores_plot(self.ui.pca_scores_plot_widget)
@@ -1317,53 +831,35 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.initial_scores_plot(self.ui.plsda_vip_plot_widget, 'PLS-DA')
 
     def _initial_all_stat_plots(self) -> None:
-        self._initial_lda_plots()
-        self._initial_qda_plots()
-        self._initial_lr_plots()
-        self._initial_svc_plots()
-        self._initial_nearest_plots()
-        self._initial_gpc_plots()
-        self._initial_dt_plots()
-        self._initial_nb_plots()
-        self._initial_rf_plots()
-        self._initial_ab_plots()
-        self._initial_mlp_plots()
-        self._initial_xgboost_plots()
-        self._initial_torch_plots()
+        self.initial_stat_plot(self.ui.decision_score_plot_widget)
+        self.initial_stat_plot(self.ui.decision_boundary_plot_widget)
+        self.initial_stat_plot(self.ui.violin_describe_plot_widget)
+        self.initial_stat_plot(self.ui.boxplot_describe_plot_widget)
+        self.initial_stat_plot(self.ui.dm_plot_widget)
+        self.initial_stat_plot(self.ui.roc_plot_widget)
+        self.initial_stat_plot(self.ui.pr_plot_widget)
+        self.initial_stat_plot(self.ui.perm_imp_train_plot_widget)
+        self.initial_stat_plot(self.ui.perm_imp_test_plot_widget)
+        self.initial_stat_plot(self.ui.partial_depend_plot_widget)
+        self.initial_stat_plot(self.ui.tree_plot_widget)
+        self.initial_stat_plot(self.ui.features_plot_widget)
+        self.initial_stat_plot(self.ui.calibration_plot_widget)
+        self.initial_stat_plot(self.ui.det_curve_plot_widget)
+        self.initial_stat_plot(self.ui.learning_plot_widget)
+        self.initial_stat_plot(self.ui.roc_comparsion_plot_widget)
         self._initial_pca_plots()
         self._initial_plsda_plots()
+        self._initial_force_single_plot()
+        self._initial_force_full_plot()
+
+        shap_plots = [self.ui.shap_beeswarm, self.ui.shap_means, self.ui.shap_heatmap, self.ui.shap_scatter,
+                      self.ui.shap_waterfall, self.ui.shap_decision]
+        for sp in shap_plots:
+            self.initial_shap_plot(sp)
 
         self.initial_plots_set_fonts()
         self.initial_plots_set_labels_font()
         self._initial_stat_plots_color()
-
-        self.ui.splitter_h_lda_plots_stats.setStretchFactor(1, 10)
-        self.ui.splitter_h_qda_plots_stats.setStretchFactor(1, 10)
-        self.ui.splitter_6.setStretchFactor(1, 10)
-        self.ui.splitter_16.setStretchFactor(1, 10)
-        self.ui.splitter_25.setStretchFactor(1, 10)
-        self.ui.splitter_34.setStretchFactor(1, 10)
-        self.ui.splitter_43.setStretchFactor(1, 10)
-        self.ui.splitter_52.setStretchFactor(1, 10)
-        self.ui.splitter_61.setStretchFactor(1, 10)
-        self.ui.splitter_70.setStretchFactor(1, 10)
-        self.ui.splitter_79.setStretchFactor(1, 10)
-        self.ui.splitter_93.setStretchFactor(1, 10)
-
-        self.ui.splitter_15.setStretchFactor(3, 2)
-        self.ui.splitter_3.setStretchFactor(3, 2)
-        self.ui.splitter_10.setStretchFactor(3, 2)
-        self.ui.splitter_20.setStretchFactor(3, 2)
-        self.ui.splitter_29.setStretchFactor(3, 2)
-        self.ui.splitter_38.setStretchFactor(3, 2)
-        self.ui.splitter_47.setStretchFactor(3, 2)
-        self.ui.splitter_56.setStretchFactor(3, 2)
-        self.ui.splitter_65.setStretchFactor(3, 2)
-        self.ui.splitter_74.setStretchFactor(3, 2)
-        self.ui.splitter_83.setStretchFactor(3, 2)
-        self.ui.splitter_95.setStretchFactor(3, 2)
-
-        self.ui.lda_scores_1d_plot_widget.setVisible(False)
 
     def initial_plots_set_fonts(self) -> None:
         plot_font = QFont("AbletonSans", self.plot_font_size, QFont.Weight.Normal)
@@ -1383,8 +879,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.averaged_plotItem.getAxis("left").setStyle(tickFont=plot_font)
         self.deconvolution_plotItem.getAxis("bottom").setStyle(tickFont=plot_font)
         self.deconvolution_plotItem.getAxis("left").setStyle(tickFont=plot_font)
-        self.lda_scores_1d_plot_item.getAxis("bottom").setStyle(tickFont=plot_font)
-        self.lda_scores_1d_plot_item.getAxis("left").setStyle(tickFont=plot_font)
 
         plt.rcParams.update({'font.size': self.plot_font_size})
 
@@ -1414,8 +908,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.deconv_plot_widget.setLabel('left', 'Intensity, rel. un.', units='', **label_style)
         self.ui.deconv_plot_widget.setLabel('bottom', 'Raman shift, cm\N{superscript minus}\N{superscript one}',
                                             units='', **label_style)
-        self.ui.lda_scores_1d_plot_widget.setLabel('left', 'Samples number', units='', **label_style)
-        self.ui.lda_scores_1d_plot_widget.setLabel('bottom', 'LD-1', units='', **label_style)
 
     # endregion
 
@@ -1448,6 +940,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.export_menu.addAction('Average, cm\N{superscript minus}\N{superscript one}', self.action_export_average)
         self.export_menu.addAction('Tables to excel', self.action_export_table_excel)
         self.export_menu.addAction('Production project', self.action_save_production_project)
+        self.export_menu.addAction('Files nm to .csv', self.action_save_nm_files_to_csv)
+        self.export_menu.addAction('Decomposed lines to .csv', self.action_save_decomposed_to_csv)
 
         self.fit_template_menu = self.file_menu.addMenu('Fit template')
         self.fit_template_menu.addAction('Import', self.action_import_fit_template)
@@ -1500,20 +994,10 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.clear_menu.addAction('Smoothed dataset', self._initial_smoothed_dataset_table)
         self.clear_menu.addAction('Baseline corrected dataset', self._initial_baselined_dataset_table)
         self.clear_menu.addAction('Deconvoluted dataset', self._initial_deconvoluted_dataset_table)
+        self.clear_menu.addAction('Ignore features', self._initial_ignore_dataset_table)
         self.clear_menu.addSeparator()
-        self.clear_menu.addAction('LDA', lambda: self.clear_selected_step('LDA'))
-        self.clear_menu.addAction('QDA', lambda: self.clear_selected_step('QDA'))
-        self.clear_menu.addAction('Logistic regression', lambda: self.clear_selected_step('Logistic regression'))
-        self.clear_menu.addAction('NuSVC', lambda: self.clear_selected_step('NuSVC'))
-        self.clear_menu.addAction('Nearest Neighbors', lambda: self.clear_selected_step('Nearest Neighbors'))
-        self.clear_menu.addAction('GPC', lambda: self.clear_selected_step('GPC'))
-        self.clear_menu.addAction('Decision Tree', lambda: self.clear_selected_step('Decision Tree'))
-        self.clear_menu.addAction('Naive Bayes', lambda: self.clear_selected_step('Naive Bayes'))
-        self.clear_menu.addAction('Random Forest', lambda: self.clear_selected_step('Random Forest'))
-        self.clear_menu.addAction('AdaBoost', lambda: self.clear_selected_step('AdaBoost'))
-        self.clear_menu.addAction('MLP', lambda: self.clear_selected_step('MLP'))
-        self.clear_menu.addAction('XGBoost', lambda: self.clear_selected_step('XGBoost'))
-        # self.clear_menu.addAction('Torch', lambda: self.clear_selected_step('Torch'))
+        for i in classificators_names():
+            self.clear_menu.addAction(i, lambda: self.clear_selected_step(i))
         self.clear_menu.addAction('PCA', lambda: self.clear_selected_step('PCA'))
         self.clear_menu.addAction('PLS-DA', lambda: self.clear_selected_step('PLS-DA'))
         self.clear_menu.addSeparator()
@@ -1547,7 +1031,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.action_trim.triggered.connect(lambda: self.preprocessing.trim())
         self.action_trim.setShortcut("Alt+T")
         self.action_average = QAction('Average')
-        self.action_average.triggered.connect(lambda: self.preprocessing.update_averaged())
+        self.action_average.triggered.connect(self.average)
         self.action_average.setShortcut("Alt+A")
         actions = [self.action_interpolate, self.action_despike, self.action_convert, self.action_cut,
                    self.action_normalize, self.action_smooth, self.action_baseline_correction, self.action_trim,
@@ -1557,42 +1041,18 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def _init_stat_analysis_menu(self) -> None:
         self.stat_analysis_menu = QMenu(self)
-        self.action_fit_lda = QAction('LDA')
-        self.action_fit_lda.triggered.connect(lambda: self.fit_classificator('LDA'))
-        self.action_fit_qda = QAction('QDA')
-        self.action_fit_qda.triggered.connect(lambda: self.fit_classificator('QDA'))
-        self.action_fit_lr = QAction('Logistic regression')
-        self.action_fit_lr.triggered.connect(lambda: self.fit_classificator('Logistic regression'))
-        self.action_fit_svc = QAction('NuSVC')
-        self.action_fit_svc.triggered.connect(lambda: self.fit_classificator('NuSVC'))
-        self.action_fit_sgd = QAction('Nearest Neighbors')
-        self.action_fit_sgd.triggered.connect(lambda: self.fit_classificator('Nearest Neighbors'))
-        self.action_fit_gpc = QAction('GPC')
-        self.action_fit_gpc.triggered.connect(lambda: self.fit_classificator('GPC'))
-        self.action_fit_dt = QAction('Decision Tree')
-        self.action_fit_dt.triggered.connect(lambda: self.fit_classificator('Decision Tree'))
-        self.action_fit_nb = QAction('Naive Bayes')
-        self.action_fit_nb.triggered.connect(lambda: self.fit_classificator('Naive Bayes'))
-        self.action_fit_rf = QAction('Random Forest')
-        self.action_fit_rf.triggered.connect(lambda: self.fit_classificator('Random Forest'))
-        self.action_fit_ab = QAction('AdaBoost')
-        self.action_fit_ab.triggered.connect(lambda: self.fit_classificator('AdaBoost'))
-        self.action_fit_mlp = QAction('MLP')
-        self.action_fit_mlp.triggered.connect(lambda: self.fit_classificator('MLP'))
-        self.action_fit_xgboost = QAction('XGBoost')
-        self.action_fit_xgboost.triggered.connect(lambda: self.fit_classificator('XGBoost'))
-        self.action_fit_torch = QAction('Torch')
-        self.action_fit_torch.triggered.connect(lambda: self.fit_classificator('Torch'))
+        self.action_fit = QAction('Fit')
+        self.action_fit.triggered.connect(self.fit_classificator)
         self.action_fit_pca = QAction('PCA')
         self.action_fit_pca.triggered.connect(lambda: self.fit_classificator('PCA'))
         self.action_fit_plsda = QAction('PLS-DA')
         self.action_fit_plsda.triggered.connect(lambda: self.fit_classificator('PLS-DA'))
-        self.action_redraw_plots = QAction('Redraw plots')
-        self.action_redraw_plots.triggered.connect(self.redraw_stat_plots)
-        actions = [self.action_fit_lda, self.action_fit_qda, self.action_fit_lr, self.action_fit_svc,
-                   self.action_fit_sgd, self.action_fit_gpc, self.action_fit_dt, self.action_fit_nb,
-                   self.action_fit_rf, self.action_fit_ab, self.action_fit_mlp, self.action_fit_xgboost,
-                   self.action_fit_pca, self.action_fit_plsda, self.action_redraw_plots]
+        self.action_refresh_plots = QAction('Refresh fit result plots')
+        self.action_refresh_plots.triggered.connect(self.redraw_stat_plots)
+        self.action_refresh_shap = QAction('Refresh SHAP')
+        self.action_refresh_shap.triggered.connect(self.refresh_shap_push_button_clicked)
+        actions = [self.action_fit, self.action_fit_pca, self.action_fit_plsda, self.action_refresh_plots,
+                   self.action_refresh_shap]
         self.stat_analysis_menu.addActions(actions)
         self.ui.stat_analysis_btn.setMenu(self.stat_analysis_menu)
 
@@ -1601,6 +1061,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     # region left_side_menu
 
     def _init_left_menu(self) -> None:
+        self.ui.left_side_frame.setFixedWidth(350)
         self.ui.left_hide_frame.hide()
         self.ui.dec_list_btn.setVisible(False)
         self.ui.gt_add_Btn.setToolTip('Add new group')
@@ -1609,6 +1070,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.gt_dlt_Btn.clicked.connect(self.dlt_selected_group)
         self._init_params_value_changed()
         self._init_baseline_correction_method_combo_box()
+        self._init_current_classificator_combo_box()
         self._init_cost_func_combo_box()
         self._init_normalizing_method_combo_box()
         self._init_opt_method_oer_combo_box()
@@ -1616,15 +1078,23 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._init_guess_method_cb()
         self._init_params_mouse_double_click_event()
         self._init_average_function_cb()
+        self._init_average_errorbar_method_combo_box()
         self._init_dataset_type_cb()
         self._init_refit_score()
         self._init_solver_mlp_combo_box()
         self._init_activation_combo_box()
+        self._init_criterion_combo_box()
+        self._init_rf_max_features_combo_box()
         self._init_current_feature_cb()
         self._init_coloring_feature_cb()
         self._init_current_tree_sb()
         self._init_use_pca_cb()
         self._init_include_x0_chb()
+        self._init_combo_box_lda_solver()
+        self._init_lr_penalty_combo_box()
+        self._init_lr_solver_combo_box()
+        self._init_weights_combo_box()
+        self.ui.use_grid_search_checkBox.stateChanged.connect(self.use_grid_search_check_box_change_event)
         self.ui.edit_template_btn.clicked.connect(lambda: self.fitting.switch_to_template())
         self.ui.template_combo_box.currentTextChanged.connect(lambda: self.fitting.switch_to_template())
         self.ui.current_group_shap_comboBox.currentTextChanged.connect(self.current_group_shap_changed)
@@ -1634,29 +1104,52 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.smooth_method = ''
         self.baseline_method = ''
 
+    def _init_push_buttons(self) -> None:
+        self.ui.select_percentile_push_button.clicked.connect(self.stat_analysis_logic.feature_select_percentile)
+        self.ui.check_all_push_button.clicked.connect(lambda: self.ui.ignore_dataset_table_view.model().set_checked({}))
+        self.ui.update_describe_push_button.clicked.connect(self.datasets_manager.update_describe_tables)
+        self.ui.violin_box_plots_update_push_button.clicked.connect(self.datasets_manager.update_violin_boxplot)
+        self.ui.page5_predict.clicked.connect(self.predict)
+
+    def _init_spin_boxes(self) -> None:
+        self.ui.describe_1_SpinBox.valueChanged.connect(lambda:
+                                                        self.ui.describe_1_SpinBox.setMaximum(
+                                                            self.ui.GroupsTable.model().rowCount()))
+        self.ui.describe_2_SpinBox.valueChanged.connect(lambda:
+                                                        self.ui.describe_2_SpinBox.setMaximum(
+                                                            self.ui.GroupsTable.model().rowCount()))
+
+    def _init_combo_boxes(self) -> None:
+        self._init_current_filename_combobox()
+        self.ui.baseline_correction_method_comboBox.setCurrentText(self.default_values['baseline_method_comboBox'])
+
+    def _init_current_filename_combobox(self) -> None:
+        if not self.ui.deconvoluted_dataset_table_view.model():
+            return
+        q_res = self.ui.deconvoluted_dataset_table_view.model().dataframe()
+        self.ui.current_filename_combobox.addItem(None)
+        self.ui.current_filename_combobox.addItems(q_res['Filename'])
+
     def _init_baseline_correction_method_combo_box(self) -> None:
-        for i in self.preprocessing.baseline_methods.keys():
-            self.ui.baseline_correction_method_comboBox.addItem(i)
+        self.ui.baseline_correction_method_comboBox.addItems(self.preprocessing.baseline_methods.keys())
+
+    def _init_current_classificator_combo_box(self) -> None:
+        self.ui.current_classificator_comboBox.addItems(classificators_names())
+        self.ui.current_classificator_comboBox.currentTextChanged.connect(self.stat_analysis_logic.update_stat_report_text)
 
     def _init_cost_func_combo_box(self) -> None:
-        self.ui.cost_func_comboBox.addItem('asymmetric_truncated_quadratic')
-        self.ui.cost_func_comboBox.addItem('symmetric_truncated_quadratic')
-        self.ui.cost_func_comboBox.addItem('asymmetric_huber')
-        self.ui.cost_func_comboBox.addItem('symmetric_huber')
-        self.ui.cost_func_comboBox.addItem('asymmetric_indec')
-        self.ui.cost_func_comboBox.addItem('symmetric_indec')
+        self.ui.cost_func_comboBox.addItems(['asymmetric_truncated_quadratic', 'symmetric_truncated_quadratic',
+                                             'asymmetric_huber', 'symmetric_huber', 'asymmetric_indec',
+                                             'symmetric_indec'])
 
     def _init_normalizing_method_combo_box(self) -> None:
-        for i in self.preprocessing.normalize_methods.keys():
-            self.ui.normalizing_method_comboBox.addItem(i)
+        self.ui.normalizing_method_comboBox.addItems(self.preprocessing.normalize_methods.keys())
 
     def _init_opt_method_oer_combo_box(self) -> None:
-        for i in optimize_extended_range_methods():
-            self.ui.opt_method_oer_comboBox.addItem(i)
+        self.ui.opt_method_oer_comboBox.addItems(optimize_extended_range_methods())
 
     def _init_fit_opt_method_combo_box(self) -> None:
-        for key in self.fitting.fitting_methods:
-            self.ui.fit_opt_method_comboBox.addItem(key)
+        self.ui.fit_opt_method_comboBox.addItems(self.fitting.fitting_methods)
 
     def _init_params_mouse_double_click_event(self) -> None:
         self.ui.laser_wl_spinbox.mouseDoubleClickEvent = self._laser_wl_spinbox_mouse_dce
@@ -1698,12 +1191,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.max_epoch_spinBox.mouseDoubleClickEvent = self._max_epoch_spin_box_mouse_dce
         self.ui.learning_rate_doubleSpinBox.mouseDoubleClickEvent = self._learning_rate_double_spin_box_mouse_dce
 
-
     def _init_params_value_changed(self) -> None:
         self.ui.alpha_factor_doubleSpinBox.valueChanged.connect(self.set_modified)
         self.ui.baseline_correction_method_comboBox.currentTextChanged.connect(self.set_baseline_parameters_disabled)
-        self.ui.cm_range_start.valueChanged.connect(self.cm_range_start_change_event)
-        self.ui.cm_range_end.valueChanged.connect(self.cm_range_end_change_event)
+        self.ui.cm_range_start.valueChanged.connect(self.preprocessing.cm_range_start_change_event)
+        self.ui.cm_range_end.valueChanged.connect(self.preprocessing.cm_range_end_change_event)
         self.ui.cost_func_comboBox.currentTextChanged.connect(self.set_modified)
         self.ui.despike_fwhm_width_doubleSpinBox.valueChanged.connect(self.set_modified)
         self.ui.eemd_trials_spinBox.valueChanged.connect(self.set_modified)
@@ -1718,6 +1210,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.kaiser_beta_doubleSpinBox.valueChanged.connect(self.set_modified)
         self.ui.lambda_spinBox.valueChanged.connect(self.set_modified)
         self.ui.laser_wl_spinbox.valueChanged.connect(self.set_modified)
+        self.ui.select_percentile_spin_box.valueChanged.connect(self.set_modified)
         self.ui.leftsideBtn.clicked.connect(self.leftside_btn_clicked)
         self.ui.dec_list_btn.clicked.connect(self.dec_list_btn_clicked)
         self.ui.stat_param_btn.clicked.connect(self.stat_param_btn_clicked)
@@ -1741,41 +1234,69 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.smooth_polyorder_spinBox.valueChanged.connect(self.set_modified)
         self.ui.smoothing_method_comboBox.currentTextChanged.connect(self.set_smooth_parameters_disabled)
         self.ui.average_method_cb.currentTextChanged.connect(self.set_modified)
+        self.ui.average_errorbar_method_combo_box.currentTextChanged.connect(self.set_modified)
         self.ui.dataset_type_cb.currentTextChanged.connect(self.set_modified)
         self.ui.classes_lineEdit.textChanged.connect(self.set_modified)
         self.ui.test_data_ratio_spinBox.valueChanged.connect(self.set_modified)
         self.ui.spline_degree_spinBox.valueChanged.connect(self.set_modified)
-        self.ui.trim_start_cm.valueChanged.connect(self._trim_start_change_event)
-        self.ui.trim_end_cm.valueChanged.connect(self._trim_end_change_event)
+        self.ui.trim_start_cm.valueChanged.connect(self.preprocessing.trim_start_change_event)
+        self.ui.trim_end_cm.valueChanged.connect(self.preprocessing.trim_end_change_event)
         self.ui.updateRangebtn.clicked.connect(self.update_range_btn_clicked)
         self.ui.updateTrimRangebtn.clicked.connect(self.update_trim_range_btn_clicked)
+        self.ui.update_partial_dep_pushButton.clicked.connect(self.current_dep_feature_changed)
         self.ui.whittaker_lambda_spinBox.valueChanged.connect(self.set_modified)
         self.ui.window_length_spinBox.valueChanged.connect(self.set_smooth_polyorder_bound)
         self.ui.guess_method_cb.currentTextChanged.connect(self.guess_method_cb_changed)
+        self.ui.comboBox_lda_solver.currentTextChanged.connect(self.set_modified)
+        self.ui.lr_penalty_comboBox.currentTextChanged.connect(self.set_modified)
+        self.ui.lr_solver_comboBox.currentTextChanged.connect(self.set_modified)
+        self.ui.nn_weights_comboBox.currentTextChanged.connect(self.set_modified)
+        self.ui.lr_c_doubleSpinBox.valueChanged.connect(self.set_modified)
+        self.ui.svc_nu_doubleSpinBox.valueChanged.connect(self.set_modified)
+        self.ui.n_neighbors_spinBox.valueChanged.connect(self.set_modified)
+        self.ui.lineEdit_lda_shrinkage.textChanged.connect(self.set_modified)
+        self.ui.lr_penalty_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.lr_solver_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.svc_nu_check_box.stateChanged.connect(self.set_modified)
+        self.ui.nn_weights_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.n_neighbors_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.activation_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.criterion_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.rf_criterion_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.ab_n_estimators_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.xgb_lambda_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.xgb_colsample_bytree_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.xgb_min_child_weight_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.xgb_max_depth_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.xgb_gamma_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.xgb_eta_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.ab_learning_rate_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.rf_min_samples_split_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.rf_n_estimators_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.rf_max_features_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.mlp_solve_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.mlp_layer_size_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.learning_rate_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.lr_c_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.compare_roc_push_button.clicked.connect(self.stat_analysis_logic.compare_models_roc)
 
     def _init_smoothing_method_combo_box(self) -> None:
-        for i in self.preprocessing.smoothing_methods.keys():
-            self.ui.smoothing_method_comboBox.addItem(i)
+        self.ui.smoothing_method_comboBox.addItems(self.preprocessing.smoothing_methods.keys())
 
     def _init_guess_method_cb(self) -> None:
-        self.ui.guess_method_cb.addItem('Average')
-        self.ui.guess_method_cb.addItem('Average groups')
-        self.ui.guess_method_cb.addItem('All')
+        self.ui.guess_method_cb.addItems(['Average', 'Average groups', 'All'])
 
     def _init_average_function_cb(self) -> None:
-        self.ui.average_method_cb.addItem('Mean')
-        self.ui.average_method_cb.addItem('Median')
+        self.ui.average_method_cb.addItems(['Mean', 'Median'])
+
+    def _init_average_errorbar_method_combo_box(self) -> None:
+        self.ui.average_errorbar_method_combo_box.addItems(['ci', 'pi', 'se', 'sd'])
 
     def _init_refit_score(self) -> None:
-        self.ui.refit_score.addItem('precision_score')
-        self.ui.refit_score.addItem('recall_score')
-        self.ui.refit_score.addItem('accuracy_score')
-        self.ui.refit_score.addItem('f1_score')
+        self.ui.refit_score.addItems(scorer_metrics().keys())
 
     def _init_dataset_type_cb(self) -> None:
-        self.ui.dataset_type_cb.addItem('Smoothed')
-        self.ui.dataset_type_cb.addItem('Baseline corrected')
-        self.ui.dataset_type_cb.addItem('Deconvoluted')
+        self.ui.dataset_type_cb.addItems(['Smoothed', 'Baseline corrected', 'Deconvoluted'])
         self.ui.dataset_type_cb.currentTextChanged.connect(self.dataset_type_cb_current_text_changed)
 
     def _init_current_feature_cb(self) -> None:
@@ -1801,11 +1322,15 @@ class MainWindow(QMainWindow, QtStyleTools):
         n_features = len(features_names)
         self.ui.dataset_features_n.setText('%s features' % n_features)
         self.ui.current_feature_comboBox.clear()
+        self.ui.current_dep_feature1_comboBox.clear()
+        self.ui.current_dep_feature2_comboBox.clear()
         self.ui.coloring_feature_comboBox.clear()
         self.ui.coloring_feature_comboBox.addItem('')
-        for i in features_names:
-            self.ui.current_feature_comboBox.addItem(i)
-            self.ui.coloring_feature_comboBox.addItem(i)
+        self.ui.current_feature_comboBox.addItems(features_names)
+        self.ui.current_dep_feature1_comboBox.addItems(features_names)
+        self.ui.current_dep_feature2_comboBox.addItems(features_names)
+        self.ui.coloring_feature_comboBox.addItems(features_names)
+        self.ui.current_dep_feature2_comboBox.setCurrentText(features_names[1])
         try:
             self.ui.current_group_shap_comboBox.currentTextChanged.disconnect(self.current_group_shap_changed)
         except:
@@ -1819,8 +1344,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             if i in groups:
                 classes.append(i)
         target_names = self.ui.GroupsTable.model().dataframe().loc[classes]['Group name'].values
-        for i in target_names:
-            self.ui.current_group_shap_comboBox.addItem(i)
+        self.ui.current_group_shap_comboBox.addItems(target_names)
+
         try:
             self.ui.current_group_shap_comboBox.currentTextChanged.connect(self.current_group_shap_changed)
         except:
@@ -1831,15 +1356,14 @@ class MainWindow(QMainWindow, QtStyleTools):
         except:
             error('failed to disconnect currentTextChanged self.current_instance_combo_box)')
         self.ui.current_instance_combo_box.addItem('')
-        for i in q_res['Filename']:
-            self.ui.current_instance_combo_box.addItem(i)
+        self.ui.current_instance_combo_box.addItems(q_res['Filename'])
         try:
             self.ui.current_instance_combo_box.currentTextChanged.connect(self.current_instance_changed)
         except:
             error('failed to connect currentTextChanged self.current_instance_changed)')
 
     def intervals_gb_toggled(self, b: bool) -> None:
-        self.ui.fit_intervals_table_view.setVisible(b)
+        self.ui.fit_borders_TableView.setVisible(b)
         if b:
             self.ui.intervals_gb.setMaximumHeight(200)
         else:
@@ -1852,23 +1376,29 @@ class MainWindow(QMainWindow, QtStyleTools):
     async def current_group_shap_changed(self, g: str = '') -> None:
         await self.loop.run_in_executor(None, self._update_shap_plots)
         await self.loop.run_in_executor(None, self._update_shap_plots_by_instance)
-        self.stat_analysis_logic.update_force_single_plots()
-        self.stat_analysis_logic.update_force_full_plots()
+        cl_type = self.ui.current_classificator_comboBox.currentText()
+        self.stat_analysis_logic.update_force_single_plots(cl_type)
+        self.stat_analysis_logic.update_force_full_plots(cl_type)
 
     @asyncSlot()
     async def current_instance_changed(self, _: str = '') -> None:
         await self.loop.run_in_executor(None, self._update_shap_plots_by_instance)
-        self.stat_analysis_logic.update_force_single_plots()
+        cl_type = self.ui.current_classificator_comboBox.currentText()
+        self.stat_analysis_logic.update_force_single_plots(cl_type)
 
     def _init_activation_combo_box(self) -> None:
-        items = ['identity', 'logistic', 'tanh', 'relu']
-        for i in items:
-            self.ui.activation_comboBox.addItem(i)
+        self.ui.activation_comboBox.addItems(['identity', 'logistic', 'tanh', 'relu'])
+
+    def _init_criterion_combo_box(self) -> None:
+        items = ["gini", "entropy", "log_loss"]
+        self.ui.criterion_comboBox.addItems(items)
+        self.ui.rf_criterion_comboBox.addItems(items)
+
+    def _init_rf_max_features_combo_box(self) -> None:
+        self.ui.rf_max_features_comboBox.addItems(["sqrt", "log2", 'None'])
 
     def _init_solver_mlp_combo_box(self) -> None:
-        items = ['lbfgs', 'sgd', 'adam']
-        for i in items:
-            self.ui.solver_mlp_combo_box.addItem(i)
+        self.ui.solver_mlp_combo_box.addItems(['lbfgs', 'sgd', 'adam'])
 
     def _init_current_tree_sb(self) -> None:
         self.ui.current_tree_spinBox.valueChanged.connect(self.current_tree_sb_changed)
@@ -1888,81 +1418,97 @@ class MainWindow(QMainWindow, QtStyleTools):
     def include_x0_chb_changed(self, b: bool):
         self.set_deconvoluted_dataset()
 
+    def _init_combo_box_lda_solver(self) -> None:
+        self.ui.comboBox_lda_solver.addItems(['svd', 'eigen', 'lsqr'])
+
+    def _init_lr_penalty_combo_box(self) -> None:
+        self.ui.lr_penalty_comboBox.addItems(['l2', 'l1', 'elasticnet', 'None'])
+
+    def _init_lr_solver_combo_box(self) -> None:
+        self.ui.lr_solver_comboBox.addItems(['lbfgs', 'liblinear', 'newton-cg', 'newton-cholesky', 'sag', 'saga'])
+
+    def _init_weights_combo_box(self) -> None:
+        self.ui.nn_weights_comboBox.addItems(['uniform', 'distance'])
+
+    def use_grid_search_check_box_change_event(self, state: int):
+        t = 'Use GridSearchCV' if state == 2 else 'Use HalvingGridSearchCV'
+        self.ui.use_grid_search_checkBox.setText(t)
+
     # region mouse double clicked
 
-    def _laser_wl_spinbox_mouse_dce(self, event: QMouseEvent) -> None:
+    def _laser_wl_spinbox_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.laser_wl_spinbox.setValue(self.default_values['laser_wl'])
 
-    def _max_ccd_value_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _max_ccd_value_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.max_CCD_value_spinBox.setValue(self.default_values['max_CCD_value'])
 
-    def _maxima_count_despike_spin_box_mouse_dce(self, event: QMouseEvent) -> None:
+    def _maxima_count_despike_spin_box_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.maxima_count_despike_spin_box.setValue(self.default_values['maxima_count_despike'])
 
-    def _despike_fwhm_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _despike_fwhm_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.despike_fwhm_width_doubleSpinBox.setValue(self.default_values['despike_fwhm'])
 
-    def _neg_grad_factor_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _neg_grad_factor_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.neg_grad_factor_spinBox.setValue(self.default_values['neg_grad_factor_spinBox'])
 
-    def _cm_range_start_mouse_dce(self, event: QMouseEvent) -> None:
+    def _cm_range_start_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.cm_range_start.setValue(self.default_values['cm_range_start'])
 
-    def _cm_range_end_mouse_dce(self, event: QMouseEvent) -> None:
+    def _cm_range_end_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.cm_range_end.setValue(self.default_values['cm_range_end'])
 
-    def _interval_start_mouse_dce(self, event: QMouseEvent) -> None:
+    def _interval_start_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.interval_start_dsb.setValue(self.default_values['interval_start'])
 
-    def _interval_end_mouse_dce(self, event: QMouseEvent) -> None:
+    def _interval_end_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.interval_end_dsb.setValue(self.default_values['interval_end'])
 
-    def _trim_start_cm_mouse_dce(self, event: QMouseEvent) -> None:
+    def _trim_start_cm_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.trim_start_cm.setValue(self.default_values['trim_start_cm'])
 
-    def _trim_end_cm_mouse_dce(self, event: QMouseEvent) -> None:
+    def _trim_end_cm_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.trim_end_cm.setValue(self.default_values['trim_end_cm'])
 
-    def _emsc_pca_n_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _emsc_pca_n_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.emsc_pca_n_spinBox.setValue(self.default_values['EMSC_N_PCA'])
 
-    def _window_length_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _window_length_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.window_length_spinBox.setValue(self.default_values['window_length_spinBox'])
 
-    def _smooth_polyorder_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _smooth_polyorder_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.smooth_polyorder_spinBox.setValue(self.default_values['smooth_polyorder_spinBox'])
 
-    def _whittaker_lambda_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _whittaker_lambda_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.whittaker_lambda_spinBox.setValue(self.default_values['whittaker_lambda_spinBox'])
 
-    def _kaiser_beta_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _kaiser_beta_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.kaiser_beta_doubleSpinBox.setValue(self.default_values['kaiser_beta'])
 
-    def _emd_noise_modes_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _emd_noise_modes_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.emd_noise_modes_spinBox.setValue(self.default_values['EMD_noise_modes'])
 
-    def _eemd_trials_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _eemd_trials_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.eemd_trials_spinBox.setValue(self.default_values['EEMD_trials'])
 
-    def _sigma_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _sigma_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.sigma_spinBox.setValue(self.default_values['sigma'])
 
@@ -1970,7 +1516,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     # region baseline params mouseDCE
 
-    def _alpha_factor_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _alpha_factor_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -1979,7 +1525,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.alpha_factor_doubleSpinBox.setValue(self.default_values['alpha_factor'])
 
-    def _eta_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _eta_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -1988,7 +1534,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.eta_doubleSpinBox.setValue(self.default_values['eta'])
 
-    def _fill_half_window_mouse_dce(self, event: QMouseEvent) -> None:
+    def _fill_half_window_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -1997,14 +1543,15 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.fill_half_window_spinBox.setValue(self.default_values['fill_half_window'])
 
-    def _learning_rate_double_spin_box_mouse_dce(self, event: QMouseEvent) -> None:
+    def _learning_rate_double_spin_box_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.learning_rate_doubleSpinBox.setValue(self.default_values['learning_rate_doubleSpinBox'])
-    def _max_epoch_spin_box_mouse_dce(self, event: QMouseEvent) -> None:
+
+    def _max_epoch_spin_box_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             self.ui.max_epoch_spinBox.setValue(self.default_values['max_epoch_spinBox'])
 
-    def _fraction_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _fraction_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2013,7 +1560,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.fraction_doubleSpinBox.setValue(self.default_values['fraction'])
 
-    def _grad_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _grad_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2022,7 +1569,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.grad_doubleSpinBox.setValue(self.default_values['grad'])
 
-    def _interp_half_window_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _interp_half_window_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2031,7 +1578,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.interp_half_window_spinBox.setValue(self.default_values['interp_half_window'])
 
-    def _lambda_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _lambda_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2040,7 +1587,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.lambda_spinBox.setValue(self.default_values['lambda_spinBox'])
 
-    def _min_length_mouse_dce(self, event: QMouseEvent) -> None:
+    def _min_length_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2049,7 +1596,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.min_length_spinBox.setValue(self.default_values['min_length'])
 
-    def _n_iterations_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _n_iterations_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2058,7 +1605,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.n_iterations_spinBox.setValue(self.default_values['N_iterations'])
 
-    def _num_std_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _num_std_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2067,7 +1614,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.num_std_doubleSpinBox.setValue(self.default_values['num_std'])
 
-    def _p_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _p_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2076,7 +1623,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.p_doubleSpinBox.setValue(self.default_values['p_doubleSpinBox'])
 
-    def _peak_ratio_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _peak_ratio_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2085,7 +1632,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.peak_ratio_doubleSpinBox.setValue(self.default_values['peak_ratio'])
 
-    def _polynome_degree_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _polynome_degree_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2094,7 +1641,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.polynome_degree_spinBox.setValue(self.default_values['polynome_degree'])
 
-    def _quantile_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _quantile_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2103,7 +1650,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.quantile_doubleSpinBox.setValue(self.default_values['quantile'])
 
-    def _sections_mouse_dce(self, event: QMouseEvent) -> None:
+    def _sections_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2112,7 +1659,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.sections_spinBox.setValue(self.default_values['sections'])
 
-    def _scale_dsb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _scale_dsb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2121,7 +1668,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 self.ui.scale_doubleSpinBox.setValue(self.default_values['scale'])
 
-    def _spline_degree_sb_mouse_dce(self, event: QMouseEvent) -> None:
+    def _spline_degree_sb_mouse_dce(self, event) -> None:
         if event.buttons() == Qt.MouseButton.MiddleButton:
             method = self.ui.baseline_correction_method_comboBox.currentText()
             if method in self.baseline_parameter_defaults:
@@ -2147,7 +1694,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_baselined_dataset_table()
         self._initial_deconvoluted_dataset_table()
         self._initial_ignore_dataset_table()
-        self._initial_describe_dataset_table()
+        self._initial_describe_dataset_tables()
         self._initial_predict_dataset_table()
         self._initial_pca_features_table()
         self._initial_plsda_vip_table()
@@ -2156,21 +1703,21 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_input_table(self) -> None:
         self._reset_input_table()
         self.ui.input_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.ui.input_table.horizontalHeader().resizeSection(0, 60)
+        self.ui.input_table.horizontalHeader().resizeSection(0, 80)
         self.ui.input_table.horizontalHeader().setMinimumWidth(10)
         self.ui.input_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        self.ui.input_table.horizontalHeader().resizeSection(1, 60)
+        self.ui.input_table.horizontalHeader().resizeSection(1, 80)
         self.ui.input_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-        self.ui.input_table.horizontalHeader().resizeSection(2, 11)
+        self.ui.input_table.horizontalHeader().resizeSection(2, 50)
         self.ui.input_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.ui.input_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-        self.ui.input_table.horizontalHeader().resizeSection(4, 115)
+        self.ui.input_table.horizontalHeader().resizeSection(4, 130)
         self.ui.input_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
-        self.ui.input_table.horizontalHeader().resizeSection(5, 80)
+        self.ui.input_table.horizontalHeader().resizeSection(5, 90)
         self.ui.input_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.ui.input_table.verticalHeader().setDefaultSectionSize(9)
         self.ui.input_table.selectionModel().selectionChanged.connect(self.input_table_selection_changed)
         self.ui.input_table.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+        self.ui.input_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.ui.input_table.moveEvent = self.input_table_vertical_scrollbar_value_changed
         self.ui.input_table.model().dataChanged.connect(self.input_table_item_changed)
         self.ui.input_table.rowCountChanged = self.decide_vertical_scroll_bar_visible
@@ -2178,8 +1725,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.input_table.contextMenuEvent = self._input_table_context_menu_event
         self.ui.input_table.keyPressEvent = self._input_table_key_pressed
 
-    def _input_table_key_pressed(self, e: QKeyEvent) -> None:
-        if e.key() == Qt.Key.Key_Delete and self.ui.input_table.selectionModel().currentIndex().row() > -1 \
+    def _input_table_key_pressed(self, key_event) -> None:
+        if key_event.key() == Qt.Key.Key_Delete and self.ui.input_table.selectionModel().currentIndex().row() > -1 \
                 and len(self.ui.input_table.selectionModel().selectedIndexes()):
             self.time_start = datetime.now()
             command = CommandDeleteInputSpectrum(self, "Delete files")
@@ -2192,7 +1739,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.input_table.setSortingEnabled(True)
         self.ui.input_table.setModel(model)
 
-    def _input_table_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def _input_table_context_menu_event(self, a0) -> None:
         line = QLineEdit(self)
         menu = QMenu(line)
         menu.addAction('Sort by index ascending', lambda: self.ui.input_table.model().sort_index())
@@ -2206,7 +1753,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_group_table(self) -> None:
         self._reset_group_table()
         self.ui.GroupsTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.ui.GroupsTable.setColumnWidth(1, 150)
+        self.ui.GroupsTable.setColumnWidth(1, 160)
         self.ui.GroupsTable.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.ui.GroupsTable.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.ui.GroupsTable.clicked.connect(self.group_table_cell_clicked)
@@ -2232,7 +1779,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         model = PandasModelDeconvTable(df)
         self.ui.dec_table.setModel(model)
 
-    def _dec_table_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def _dec_table_context_menu_event(self, a0) -> None:
         line = QLineEdit(self)
         menu = QMenu(line)
         menu.addAction('To template', self.to_template_clicked)
@@ -2286,8 +1833,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.fitting.update_curve_style(self.fitting.updating_fill_curve_idx, curve_style)
         self.fitting.start_fill_timer(idx)
 
-    def deconv_lines_table_key_pressed(self, e: QKeyEvent) -> None:
-        if e.key() == Qt.Key.Key_Delete and self.ui.deconv_lines_table.selectionModel().currentIndex().row() > -1 \
+    def deconv_lines_table_key_pressed(self, key_event) -> None:
+        if key_event.key() == Qt.Key.Key_Delete and self.ui.deconv_lines_table.selectionModel().currentIndex().row() > -1 \
                 and len(self.ui.deconv_lines_table.selectionModel().selectedIndexes()) and self.fitting.is_template:
             self.time_start = datetime.now()
             command = CommandDeleteDeconvLines(self, "Delete line")
@@ -2298,7 +1845,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         model = PandasModelDeconvLinesTable(self, df, [])
         self.ui.deconv_lines_table.setSortingEnabled(True)
         self.ui.deconv_lines_table.setModel(model)
-        combobox_delegate = ComboDelegate(self.fitting.peak_shapes_params.keys())
+        combobox_delegate = ComboDelegate(peak_shape_names())
         self.ui.deconv_lines_table.setItemDelegateForColumn(1, combobox_delegate)
         self.ui.deconv_lines_table.model().sigCheckedChanged.connect(self.fitting.show_hide_curve)
         combobox_delegate.sigLineTypeChanged.connect(lambda: self.fitting.curve_type_changed())
@@ -2330,7 +1877,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.deconv_lines_table.model().sort_values(current_name, self._ascending_deconv_lines_table)
         self.fitting.deselect_selected_line()
 
-    def _deconv_lines_table_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def _deconv_lines_table_context_menu_event(self, a0) -> None:
         line = QLineEdit(self)
         menu = QMenu(line)
         # noinspection PyTypeChecker
@@ -2342,11 +1889,8 @@ class MainWindow(QMainWindow, QtStyleTools):
     @asyncSlot()
     async def delete_line_clicked(self) -> None:
         if not self.fitting.is_template:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setText("Deleting lines is only possible in template mode.")
+            msg = MessageBox('Warning.', 'Deleting lines is only possible in template mode.', self, {'Ok'})
             msg.setInformativeText('Press the Template button')
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return
         selected_indexes = self.ui.deconv_lines_table.selectionModel().selectedIndexes()
@@ -2380,7 +1924,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.fit_params_table.setModel(model)
         self.ui.fit_params_table.model().clear_dataframe()
 
-    def _deconv_params_table_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def _deconv_params_table_context_menu_event(self, a0) -> None:
         if self.fitting.is_template:
             return
         line = QLineEdit(self)
@@ -2413,25 +1957,27 @@ class MainWindow(QMainWindow, QtStyleTools):
     # region fit intervals
     def _initial_fit_intervals_table(self) -> None:
         self._reset_fit_intervals_table()
-        self.ui.fit_intervals_table_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.ui.fit_intervals_table_view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.ui.fit_intervals_table_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        self.ui.fit_intervals_table_view.contextMenuEvent = self._fit_intervals_table_context_menu_event
-        self.ui.fit_intervals_table_view.keyPressEvent = self._fit_intervals_table_key_pressed
-        dsb_delegate = IntervalsTableDelegate(self)
-        self.ui.fit_intervals_table_view.setItemDelegateForColumn(0, dsb_delegate)
-        # self.ui.fit_intervals_table_view.verticalHeader().setVisible(False)
+        self.ui.fit_borders_TableView.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.ui.fit_borders_TableView.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.ui.fit_borders_TableView.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.ui.fit_borders_TableView.contextMenuEvent = self._fit_intervals_table_context_menu_event
+        self.ui.fit_borders_TableView.keyPressEvent = self._fit_intervals_table_key_pressed
+        dsb_delegate = IntervalsTableDelegate(self.ui.fit_borders_TableView, self)
+        self.ui.fit_borders_TableView.setItemDelegateForColumn(0, dsb_delegate)
+        self.ui.fit_borders_TableView.verticalHeader().setVisible(False)
+        self.ui.fit_borders_TableView.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
     def _reset_fit_intervals_table(self) -> None:
         df = DataFrame(columns=['Border'])
         model = PandasModelFitIntervals(df)
-        self.ui.fit_intervals_table_view.setModel(model)
+        self.ui.fit_borders_TableView.setModel(model)
 
-    def _fit_intervals_table_context_menu_event(self, a0: QContextMenuEvent) -> None:
+    def _fit_intervals_table_context_menu_event(self, a0) -> None:
         line = QLineEdit(self)
         menu = QMenu(line)
         menu.addAction('Add border', self._fit_intervals_table_add)
         menu.addAction('Delete selected', self._fit_intervals_table_delete_by_context_menu)
+        menu.addAction('Auto-search borders', self.fitting.auto_search_borders)
         menu.move(a0.globalPos())
         menu.show()
 
@@ -2442,16 +1988,16 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _fit_intervals_table_delete_by_context_menu(self) -> None:
         self._fit_intervals_table_delete()
 
-    def _fit_intervals_table_key_pressed(self, e: QKeyEvent) -> None:
-        if e.key() == Qt.Key.Key_Delete \
-                and self.ui.fit_intervals_table_view.selectionModel().currentIndex().row() > -1 \
-                and len(self.ui.fit_intervals_table_view.selectionModel().selectedIndexes()):
+    def _fit_intervals_table_key_pressed(self, key_event) -> None:
+        if key_event.key() == Qt.Key.Key_Delete \
+                and self.ui.fit_borders_TableView.selectionModel().currentIndex().row() > -1 \
+                and len(self.ui.fit_borders_TableView.selectionModel().selectedIndexes()):
             self._fit_intervals_table_delete()
 
     def _fit_intervals_table_delete(self) -> None:
-        selection = self.ui.fit_intervals_table_view.selectionModel()
+        selection = self.ui.fit_borders_TableView.selectionModel()
         row = selection.currentIndex().row()
-        interval_number = self.ui.fit_intervals_table_view.model().row_data(row).name
+        interval_number = self.ui.fit_borders_TableView.model().row_data(row).name
         command = CommandFitIntervalDeleted(self, interval_number, 'Delete selected border')
         self.undoStack.push(command)
 
@@ -2461,6 +2007,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_smoothed_dataset_table(self) -> None:
         self._reset_smoothed_dataset_table()
         self.ui.smoothed_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+        self.ui.smoothed_dataset_table_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def _reset_smoothed_dataset_table(self) -> None:
         df = DataFrame(columns=['Class', 'Filename'])
@@ -2473,6 +2020,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_baselined_dataset_table(self) -> None:
         self._reset_baselined_dataset_table()
         self.ui.baselined_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+        self.ui.baselined_dataset_table_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def _reset_baselined_dataset_table(self) -> None:
         df = DataFrame(columns=['Class', 'Filename'])
@@ -2486,11 +2034,23 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_deconvoluted_dataset_table(self) -> None:
         self._reset_deconvoluted_dataset_table()
         self.ui.deconvoluted_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+        self.ui.deconvoluted_dataset_table_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.ui.deconvoluted_dataset_table_view.keyPressEvent = self.decomp_table_key_pressed
+        self.ui.deconvoluted_dataset_table_view.model().modelReset.connect(lambda:
+                                                                           self._init_current_filename_combobox())
 
     def _reset_deconvoluted_dataset_table(self) -> None:
         df = DataFrame(columns=['Class', 'Filename'])
         model = PandasModelDeconvolutedDataset(self, df)
         self.ui.deconvoluted_dataset_table_view.setModel(model)
+
+    def decomp_table_key_pressed(self, key_event) -> None:
+        if key_event.key() == Qt.Key.Key_Delete \
+                and self.ui.deconvoluted_dataset_table_view.selectionModel().currentIndex().row() > -1 \
+                and len(self.ui.deconvoluted_dataset_table_view.selectionModel().selectedIndexes()):
+            self.time_start = datetime.now()
+            command = CommandDeleteDatasetRow(self, "Delete row")
+            self.undoStack.push(command)
 
     # endregion
 
@@ -2499,25 +2059,46 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_ignore_dataset_table(self) -> None:
         self._reset_ignore_dataset_table()
         self.ui.ignore_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
-        self.ui.ignore_dataset_table_view.verticalHeader().setVisible(False)
+        # self.ui.ignore_dataset_table_view.verticalHeader().setVisible(False)
+        self.ui.ignore_dataset_table_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.ui.ignore_dataset_table_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.ui.ignore_dataset_table_view.horizontalHeader().resizeSection(0, 220)
+        self.ui.ignore_dataset_table_view.setSortingEnabled(True)
+        self.ui.ignore_dataset_table_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.ui.ignore_dataset_table_view.horizontalHeader().resizeSection(1, 200)
+        self.ui.ignore_dataset_table_view.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.ui.ignore_dataset_table_view.horizontalHeader().resizeSection(2, 200)
+        self.ui.ignore_dataset_table_view.horizontalHeader().sectionClicked.connect(self._ignore_dataset_table_header_clicked)
 
     def _reset_ignore_dataset_table(self) -> None:
-        df = DataFrame(columns=['Feature'])
+        df = DataFrame(columns=['Feature', 'Score', 'P value'])
         model = PandasModelIgnoreDataset(self, df, {})
         self.ui.ignore_dataset_table_view.setModel(model)
 
+    def _ignore_dataset_table_header_clicked(self, idx: int):
+        df = self.ui.ignore_dataset_table_view.model().dataframe()
+        column_names = df.columns.values.tolist()
+        current_name = column_names[idx]
+        self._ascending_ignore_table = not self._ascending_ignore_table
+        self.ui.ignore_dataset_table_view.model().sort_values(current_name, self._ascending_ignore_table)
     # endregion
 
     # region describe dataset
 
-    def _initial_describe_dataset_table(self) -> None:
-        self._reset_describe_dataset_table()
-        self.ui.describe_dataset_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
+    def _initial_describe_dataset_tables(self) -> None:
+        self._reset_describe_dataset_tables()
+        self.ui.describe_dataset_table_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.ui.describe_2nd_group.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.ui.describe_1st_group.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-    def _reset_describe_dataset_table(self) -> None:
-        df = DataFrame()
-        model = PandasModelDescribeDataset(self, df)
+    def _reset_describe_dataset_tables(self) -> None:
+        model = PandasModelDescribeDataset(self, DataFrame())
         self.ui.describe_dataset_table_view.setModel(model)
+
+        model = PandasModelDescribeDataset(self, DataFrame())
+        self.ui.describe_1st_group.setModel(model)
+        model = PandasModelDescribeDataset(self, DataFrame())
+        self.ui.describe_2nd_group.setModel(model)
 
     # endregion
 
@@ -2527,6 +2108,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._reset_predict_dataset_table()
         self.ui.predict_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
         self.ui.predict_table_view.verticalHeader().setVisible(False)
+
 
     def _reset_predict_dataset_table(self) -> None:
         df = DataFrame(columns=['Filename'])
@@ -2553,15 +2135,15 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.sum_pushButton.clicked.connect(self.sum_pb_clicked)
         self.ui.residual_pushButton.clicked.connect(self.residual_pb_clicked)
         self.ui.sigma3_pushButton.clicked.connect(self.sigma3_push_button_clicked)
-        self.ui.interval_start_dsb.valueChanged.connect(self._interval_start_dsb_change_event)
-        self.ui.interval_end_dsb.valueChanged.connect(self._interval_end_dsb_change_event)
+        self.ui.interval_start_dsb.valueChanged.connect(self.fitting.interval_start_dsb_change_event)
+        self.ui.interval_end_dsb.valueChanged.connect(self.fitting.interval_end_dsb_change_event)
         self.ui.interval_checkBox.stateChanged.connect(self.interval_cb_state_changed)
         self.linearRegionDeconv.setVisible(False)
 
     def _initial_guess_button(self) -> None:
         guess_menu = QMenu()
         line_type: str
-        for line_type in self.fitting.peak_shapes_params.keys():
+        for line_type in peak_shape_names():
             action = guess_menu.addAction(line_type)
             action.triggered.connect(lambda checked=None, line=line_type: self.guess(line_type=line))
         self.ui.guess_button.setMenu(guess_menu)
@@ -2570,7 +2152,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def _initial_add_line_button(self) -> None:
         add_lines_menu = QMenu()
         line_type: str
-        for line_type in self.fitting.peak_shapes_params.keys():
+        for line_type in peak_shape_names():
             action = add_lines_menu.addAction(line_type)
             action.triggered.connect(lambda checked=None, line=line_type: self.add_deconv_line(line_type=line))
         self.ui.add_line_button.setMenu(add_lines_menu)
@@ -2626,9 +2208,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             out : None
 
         """
-        if self.fitting.fill is None:
+        if self.fitting.sigma3_fill is None:
             return
-        self.fitting.fill.setVisible(a0 == 2)
+        self.fitting.sigma3_fill.setVisible(a0 == 2)
 
     def residual_cb_state_changed(self, a0: int) -> None:
         """
@@ -2719,68 +2301,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.interval_start_dsb.setValue(current_region[0])
         self.ui.interval_end_dsb.setValue(current_region[1])
 
-    def _interval_start_dsb_change_event(self, new_value: float) -> None:
-        """
-        executing when value of self.ui.interval_start_dsb was changed by user or by code
-        self.old_start_interval_value contains previous value
-
-        Parameters
-        ----------
-        new_value : float
-            New value of self.ui.interval_start_dsb
-        """
-        self.set_modified()
-        corrected_value = None
-        # correct value - take nearest from x_axis
-        if self.preprocessing.averaged_dict != {} and self.preprocessing.averaged_dict:
-            x_axis = next(iter(self.preprocessing.averaged_dict.values()))[:, 0]
-            corrected_value = find_nearest(x_axis, new_value)
-        if corrected_value is not None and round(corrected_value, 5) != new_value:
-            self.ui.interval_start_dsb.setValue(corrected_value)
-            return
-        if new_value >= self.ui.interval_end_dsb.value():
-            self.ui.interval_start_dsb.setValue(self.ui.interval_start_dsb.minimum())
-            return
-        if self.CommandStartIntervalChanged_allowed:
-            command = CommandStartIntervalChanged(self, new_value, self.old_start_interval_value,
-                                                  'Change start-interval value')
-            self.undoStack.push(command)
-        self.linearRegionDeconv.setRegion((self.ui.interval_start_dsb.value(), self.ui.interval_end_dsb.value()))
-        # if interval checked - change cut interval
-        if self.ui.interval_checkBox.isChecked():
-            self.cut_data_sum_residual_interval()
-
-    def _interval_end_dsb_change_event(self, new_value: float) -> None:
-        """
-        executing when value of self.ui.interval_end_dsb was changed by user or by code
-        self.old_end_interval_value contains previous value
-
-        Parameters
-        ----------
-        new_value : float
-            New value of self.ui.interval_end_dsb
-        """
-        self.set_modified()
-        corrected_value = None
-        # correct value - take nearest from x_axis
-        if self.preprocessing.averaged_dict != {} and self.preprocessing.averaged_dict:
-            x_axis = next(iter(self.preprocessing.averaged_dict.values()))[:, 0]
-            corrected_value = find_nearest(x_axis, new_value)
-        if corrected_value is not None and round(corrected_value, 5) != new_value:
-            self.ui.interval_end_dsb.setValue(corrected_value)
-            return
-        if new_value <= self.ui.interval_start_dsb.value():
-            self.ui.interval_end_dsb.setValue(self.ui.interval_end_dsb.minimum())
-            return
-        if self.CommandEndIntervalChanged_allowed:
-            command = CommandEndIntervalChanged(self, new_value, self.old_end_interval_value,
-                                                'Change end-interval value')
-            self.undoStack.push(command)
-        self.linearRegionDeconv.setRegion((self.ui.interval_start_dsb.value(), self.ui.interval_end_dsb.value()))
-        # if interval checked - change cut interval
-        if self.ui.interval_checkBox.isChecked():
-            self.cut_data_sum_residual_interval()
-
     def interval_cb_state_changed(self, a0: int) -> None:
         """ a0 = 0 is False, a0 = 2 if True"""
         self.linearRegionDeconv.setVisible(a0 == 2)
@@ -2791,7 +2311,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def cut_data_sum_residual_interval(self) -> None:
-        self.cut_data_interval()
+        self.fitting.cut_data_interval()
         self.fitting.redraw_curves_for_filename()
         self.fitting.draw_sum_curve()
         self.fitting.draw_residual_curve()
@@ -2803,13 +2323,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.fitting.draw_sum_curve()
         self.fitting.draw_residual_curve()
 
-    def cut_data_interval(self) -> None:
-        n_array = self.fitting.array_of_current_filename_in_deconvolution()
-        if n_array is None:
-            return
-        n_array = cut_full_spectrum(n_array, self.ui.interval_start_dsb.value(), self.ui.interval_end_dsb.value())
-        self.fitting.data_curve.setData(x=n_array[:, 0], y=n_array[:, 1])
-
     def uncut_data(self) -> None:
         n_array = self.fitting.array_of_current_filename_in_deconvolution()
         if n_array is None:
@@ -2819,31 +2332,6 @@ class MainWindow(QMainWindow, QtStyleTools):
     # endregion
 
     # region other
-
-    def stat_tab_widget_tab_changed(self, i: int):
-        self.stat_analysis_logic.update_stat_report_text()
-        self.decide_vertical_scroll_bar_visible()
-        self.ui.groupBox_mlp.setVisible(i == 10 or i == 12)
-        # self.ui.max_epoch_spinBox.setVisible(i == 10 or i == 12)
-        # self.ui.learning_rate_doubleSpinBox.setVisible(i == 10 or i == 12)
-        # self.ui.label_max_epoch.setVisible(i == 10 or i == 12)
-        # self.ui.label_learning_rate.setVisible(i == 10 or i == 12)
-        if i == 8 and 'Random Forest' in self.stat_analysis_logic.latest_stat_result:
-            model = self.stat_analysis_logic.latest_stat_result['Random Forest']['model']
-            n_trees = len(model.best_estimator_.estimators_)
-            self.ui.current_tree_spinBox.setVisible(True)
-            self.ui.current_tree_label.setVisible(True)
-            self.ui.current_tree_spinBox.setMaximum(n_trees - 1)
-        elif i == 11 and 'XGBoost' in self.stat_analysis_logic.latest_stat_result:
-            model = self.stat_analysis_logic.latest_stat_result['XGBoost']['model']
-            n_trees = len(model.best_estimator_.get_booster().get_dump())
-            self.ui.current_tree_spinBox.setVisible(True)
-            self.ui.current_tree_label.setVisible(True)
-            self.ui.current_tree_spinBox.setMaximum(n_trees - 1)
-        else:
-            self.ui.current_tree_spinBox.setVisible(False)
-            self.ui.current_tree_label.setVisible(False)
-            self.ui.current_tree_spinBox.setMaximum(0)
 
     def initial_right_scrollbar(self) -> None:
         self.ui.verticalScrollBar.setVisible(False)
@@ -2857,18 +2345,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.page3Btn.clicked.connect(self.page3_btn_clicked)
         self.ui.page4Btn.clicked.connect(self.page4_btn_clicked)
         self.ui.page5Btn.clicked.connect(self.page5_btn_clicked)
-        self.ui.scrollArea_lda.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_qda.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_lr.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_svc.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_nearest.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_gpc.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_dt.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_nb.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_rf.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_ab.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_mlp.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
-        self.ui.scrollArea_xgboost.verticalScrollBar().valueChanged.connect(self.scroll_area_stat_value_changed)
 
     def scroll_area_stat_value_changed(self, event: int):
         self.ui.verticalScrollBar.setValue(event)
@@ -2902,28 +2378,35 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.titlebar.mouseDoubleClickEvent = self.double_click_maximize_restore
         self.ui.titlebar.mouseMoveEvent = self.move_window
         self.ui.titlebar.mouseReleaseEvent = self.titlebar_mouse_release_event
+        self.ui.right_buttons_frame.mouseMoveEvent = self.move_window
+        self.ui.right_buttons_frame.mouseReleaseEvent = self.titlebar_mouse_release_event
+
         self.ui.minimizeAppBtn.clicked.connect(lambda: self.showMinimized())
         self.ui.maximizeRestoreAppBtn.clicked.connect(lambda: self.maximize_restore())
         self.ui.closeBtn.clicked.connect(lambda: self.close())
-        self.ui.settingsBtn.clicked.connect(lambda: self.setting_window.show())
+        self.ui.settingsBtn.clicked.connect(lambda: SettingWindow(self).show())
 
     def titlebar_mouse_release_event(self, _) -> None:
         self.setWindowOpacity(1)
 
-    def move_window(self, event: QMouseEvent) -> None:
+    def move_window(self, mouse_event) -> None:
         # IF MAXIMIZED CHANGE TO NORMAL
         if self.window_maximized:
             self.maximize_restore()
         # MOVE WINDOW
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            self.move(self.pos() + event.globalPos() - self.dragPos)
-            self.setWindowOpacity(0.9)
-            self.dragPos = event.globalPos()
-            event.accept()
+        if mouse_event.buttons() == Qt.MouseButton.LeftButton:
+            try:
+                new_pos = self.pos() + mouse_event.globalPos() - self.dragPos
+                self.setWindowOpacity(0.9)
+                self.move(new_pos)
+                self.dragPos = mouse_event.globalPos()
+                mouse_event.accept()
+            except Exception:
+                pass
 
-    def double_click_maximize_restore(self, event: QMouseEvent) -> None:
+    def double_click_maximize_restore(self, mouse_event) -> None:
         # IF DOUBLE CLICK CHANGE STATUS
-        if event.type() == 4:
+        if mouse_event.type() == 4:
             timer = QTimer(self)
             timer.singleShot(250, self.maximize_restore)
 
@@ -2952,6 +2435,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def show_hide_left_menu(self) -> None:
         if self.ui.left_side_main.isHidden():
             self.ui.left_side_frame.setMaximumWidth(350)
+            self.ui.left_side_frame.setFixedWidth(350)
             self.ui.left_side_main.show()
             self.ui.left_hide_frame.hide()
             self.ui.main_frame.layout().setSpacing(10)
@@ -2966,6 +2450,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.left_side_main.hide()
             self.ui.left_hide_frame.show()
             self.ui.left_side_frame.setMaximumWidth(35)
+            self.ui.left_side_frame.setFixedWidth(35)
             self.ui.left_side_up_frame.setMaximumHeight(120)
             self.ui.dec_list_btn.setVisible(True)
             self.ui.stat_param_btn.setVisible(True)
@@ -3016,7 +2501,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self._initial_baseline_plot_color()
         self._initial_averaged_plot_color()
         self._initial_deconv_plot_color()
-        self._initial_lda_scores_1d_plot_color()
         self._initial_stat_plots_color()
         self.initial_plots_set_labels_font()
 
@@ -3183,10 +2667,10 @@ class MainWindow(QMainWindow, QtStyleTools):
                 'plotText'] + ";font-size:14pt\">" + self.fitting.current_spectrum_deconvolution_name + "</span>"
             self.ui.deconv_plot_widget.setTitle(new_title)
 
-    def update_crosshair_input_plot(self, event: QPoint) -> None:
+    def update_crosshair_input_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
 
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.input_plot_widget.sceneBoundingRect().contains(coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.input_plot_widget.plotItem.vb.mapSceneToView(coordinates)
             self.ui.input_plot_widget.setTitle(
@@ -3195,10 +2679,10 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.input_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.input_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_converted_cm_plot(self, event: QPoint) -> None:
+    def update_crosshair_converted_cm_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
 
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.converted_cm_plot_widget.sceneBoundingRect().contains(
                 coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.converted_cm_plot_widget.plotItem.vb.mapSceneToView(coordinates)
@@ -3208,10 +2692,10 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.converted_cm_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.converted_cm_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_cut_plot(self, event: QPoint) -> None:
+    def update_crosshair_cut_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
 
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.cut_cm_plot_widget.sceneBoundingRect().contains(
                 coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.cut_cm_plot_widget.plotItem.vb.mapSceneToView(coordinates)
@@ -3221,9 +2705,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.cut_cm_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.cut_cm_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_normalized_plot(self, event: QPoint) -> None:
+    def update_crosshair_normalized_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.normalize_plot_widget.sceneBoundingRect().contains(
                 coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.normalize_plot_widget.plotItem.vb.mapSceneToView(coordinates)
@@ -3233,9 +2717,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.normalize_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.normalize_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_smoothed_plot(self, event: QPoint) -> None:
+    def update_crosshair_smoothed_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.smooth_plot_widget.sceneBoundingRect().contains(coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.smooth_plot_widget.plotItem.vb.mapSceneToView(coordinates)
             self.ui.smooth_plot_widget.setTitle(
@@ -3244,9 +2728,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.smooth_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.smooth_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_baseline_plot(self, event: QPoint) -> None:
+    def update_crosshair_baseline_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.baseline_plot_widget.sceneBoundingRect().contains(coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.baseline_plot_widget.plotItem.vb.mapSceneToView(coordinates)
             self.ui.baseline_plot_widget.setTitle(
@@ -3255,9 +2739,9 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.baseline_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.baseline_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_averaged_plot(self, event: QPoint) -> None:
+    def update_crosshair_averaged_plot(self, point_event) -> None:
         """Paint crosshair on mouse"""
-        coordinates = event[0]
+        coordinates = point_event[0]
         if self.ui.average_plot_widget.sceneBoundingRect().contains(coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.average_plot_widget.plotItem.vb.mapSceneToView(coordinates)
             self.ui.average_plot_widget.setTitle(
@@ -3266,8 +2750,8 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.average_plot_widget.vertical_line.setPos(mouse_point.x())
             self.ui.average_plot_widget.horizontal_line.setPos(mouse_point.y())
 
-    def update_crosshair_deconv_plot(self, event: QPoint) -> None:
-        coordinates = event[0]
+    def update_crosshair_deconv_plot(self, point_event) -> None:
+        coordinates = point_event[0]
         if self.ui.deconv_plot_widget.sceneBoundingRect().contains(coordinates) and self.ui.crosshairBtn.isChecked():
             mouse_point = self.ui.deconv_plot_widget.plotItem.vb.mapSceneToView(coordinates)
             self.ui.deconv_plot_widget.setTitle(
@@ -3333,7 +2817,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 and self.preprocessing.BeforeDespike and len(self.preprocessing.BeforeDespike) > 0 \
                 and current_spectrum_name in self.preprocessing.BeforeDespike:
             self.current_spectrum_despiked_name = current_spectrum_name
-            tasks = [create_task(self.despike_history_add_plot())]
+            tasks = [create_task(self.preprocessing.despike_history_add_plot())]
             await wait(tasks)
         self.input_plot_widget_plot_item.getViewBox().updateAutoRange()
 
@@ -3715,40 +3199,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.current_spectrum_despiked_name = self.ui.input_table.model().get_filename_by_row(current_index.row())
         if self.ui.despike_history_Btn.isChecked() \
                 and self.current_spectrum_despiked_name in self.preprocessing.BeforeDespike:
-            tasks = [create_task(self.despike_history_add_plot())]
+            tasks = [create_task(self.preprocessing.despike_history_add_plot())]
             await wait(tasks)
         else:
             tasks = [create_task(self.despike_history_remove_plot())]
             await wait(tasks)
             self.ui.despike_history_Btn.setChecked(False)
-
-    async def despike_history_add_plot(self) -> None:
-        """
-        Add arrows and BeforeDespike plot item to imported_plot for compare
-        """
-        # selected spectrum despiked
-        current_index = self.ui.input_table.selectionModel().currentIndex()
-        group_number = self.ui.input_table.model().cell_data(current_index.row(), 2)
-        arr = self.preprocessing.BeforeDespike[self.current_spectrum_despiked_name]
-        if self.preprocessing.curveDespikedHistory:
-            self.input_plot_widget_plot_item.removeItem(self.preprocessing.curveDespikedHistory)
-        self.preprocessing.curveDespikedHistory = self.get_curve_plot_data_item(arr, group_number)
-        self.input_plot_widget_plot_item.addItem(self.preprocessing.curveDespikedHistory,
-                                                 kargs=['ignoreBounds', 'skipAverage'])
-
-        all_peaks = self.ui.input_table.model().cell_data(current_index.row(), 3)
-        all_peaks = all_peaks.split()
-        text_peaks = []
-        for i in all_peaks:
-            i = i.replace(',', '')
-            i = i.replace(' ', '')
-            text_peaks.append(i)
-        list_peaks = [float(s) for s in text_peaks]
-        for i in list_peaks:
-            idx = nearest_idx(arr[:, 0], i)
-            y_peak = arr[:, 1][idx]
-            arrow = ArrowItem(pos=(i, y_peak), angle=-45)
-            self.input_plot_widget_plot_item.addItem(arrow)
 
     async def despike_history_remove_plot(self) -> None:
         """
@@ -3816,35 +3272,11 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.ignore_dataset_table_view.verticalScrollBar().setValue(event)
         elif self.ui.stackedWidget_mainpages.currentIndex() == 4:
             self.ui.predict_table_view.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 0:
-            self.ui.scrollArea_lda.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 1:
-            self.ui.scrollArea_qda.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 2:
-            self.ui.scrollArea_lr.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 3:
-            self.ui.scrollArea_svc.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 4:
-            self.ui.scrollArea_nearest.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 5:
-            self.ui.scrollArea_gpc.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 6:
-            self.ui.scrollArea_dt.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 7:
-            self.ui.scrollArea_nb.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 8:
-            self.ui.scrollArea_rf.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 9:
-            self.ui.scrollArea_ab.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 10:
-            self.ui.scrollArea_mlp.verticalScrollBar().setValue(event)
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 11:
-            self.ui.scrollArea_xgboost.verticalScrollBar().setValue(event)
 
-    def vertical_scroll_bar_enter_event(self, _: QEnterEvent) -> None:
+    def vertical_scroll_bar_enter_event(self, _) -> None:
         self.ui.verticalScrollBar.setStyleSheet("#verticalScrollBar {background: {{scrollLineHovered}};}")
 
-    def vertical_scroll_bar_leave_event(self, _: QEvent) -> None:
+    def vertical_scroll_bar_leave_event(self, _) -> None:
         self.ui.verticalScrollBar.setStyleSheet("#verticalScrollBar {background: transparent;}")
 
     def move_side_scrollbar(self, idx: int) -> None:
@@ -3919,7 +3351,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         4. using ThreadPoolExecutor add arrays to self.ImportedArray and new row to input_table
         5. update plot
         """
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getOpenFileNames(parent=self, caption='Select files with Raman data',
                                         directory=path, filter="Text files (*.txt *.asc)")
@@ -3947,14 +3379,16 @@ class MainWindow(QMainWindow, QtStyleTools):
         if n_files >= 10_000:
             executor = ProcessPoolExecutor()
         self.current_executor = executor
-        with executor:
-            self.current_futures = [self.loop.run_in_executor(executor, import_spectrum, i, laser_wl) for i in
-                                    path_list]
-            for future in self.current_futures:
-                future.add_done_callback(self.progress_indicator)
-            result = await gather(*self.current_futures)
+        with Manager() as manager:
+            self.break_event = manager.Event()
+            with executor:
+                self.current_futures = [self.loop.run_in_executor(executor, import_spectrum, i, laser_wl) for i in
+                                        path_list]
+                for future in self.current_futures:
+                    future.add_done_callback(self.progress_indicator)
+                result = await gather(*self.current_futures)
 
-        if self.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        if self.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             self.close_progress_bar()
             self.ui.statusBar.showMessage('Import canceled...No one new file was selected.')
             return
@@ -3969,16 +3403,12 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     # region input_table
 
-    def input_table_vertical_scrollbar_value_changed(self, _: QMoveEvent) -> None:
+    def input_table_vertical_scrollbar_value_changed(self, _) -> None:
         self.decide_vertical_scroll_bar_visible()
 
     def decide_vertical_scroll_bar_visible(self, _model_index: QModelIndex = None, _start: int = 0,
                                            _end: int = 0) -> None:
-        if self.ui.data_tables_tab_widget.currentIndex() == 4:
-            X, _, _, _, _ = self.stat_analysis_logic.dataset_for_ml()
-            if not X.empty:
-                df = X.describe()
-                self.ui.describe_dataset_table_view.model().set_dataframe(df)
+
         tv = None
         if self.ui.stackedWidget_mainpages.currentIndex() == 0:
             tv = self.ui.input_table
@@ -3990,34 +3420,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             tv = self.ui.deconvoluted_dataset_table_view
         elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 3:
             tv = self.ui.ignore_dataset_table_view
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 2 and self.ui.data_tables_tab_widget.currentIndex() == 4:
-            tv = self.ui.describe_dataset_table_view
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 0:
-            tv = self.ui.scrollArea_lda
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 1:
-            tv = self.ui.scrollArea_qda
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 2:
-            tv = self.ui.scrollArea_lr
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 3:
-            tv = self.ui.scrollArea_svc
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 4:
-            tv = self.ui.scrollArea_nearest
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 5:
-            tv = self.ui.scrollArea_gpc
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 6:
-            tv = self.ui.scrollArea_dt
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 7:
-            tv = self.ui.scrollArea_nb
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 8:
-            tv = self.ui.scrollArea_rf
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 9:
-            tv = self.ui.scrollArea_ab
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 10:
-            tv = self.ui.scrollArea_mlp
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 and self.ui.stat_tab_widget.currentIndex() == 11:
-            tv = self.ui.scrollArea_xgboost
-        elif self.ui.stackedWidget_mainpages.currentIndex() == 3 \
-                and (self.ui.stat_tab_widget.currentIndex() == 12 or self.ui.stat_tab_widget.currentIndex() == 13):
+        elif self.ui.stackedWidget_mainpages.currentIndex() == 3:
             self.ui.verticalScrollBar.setVisible(False)
             return
         elif self.ui.stackedWidget_mainpages.currentIndex() == 4:
@@ -4030,11 +3433,12 @@ class MainWindow(QMainWindow, QtStyleTools):
             row_height = tv.rowHeight(0)
             self.ui.verticalScrollBar.setValue(tv.verticalScrollBar().value())
             if row_count > 0:
-                page_step = (table_height // row_height)
+                self.ui.input_table.verticalScrollBar().pageStep()
+                page_step = tv.verticalScrollBar().pageStep()
                 self.ui.verticalScrollBar.setMinimum(0)
-                self.ui.verticalScrollBar.setVisible(page_step <= row_count)
-                self.ui.verticalScrollBar.setPageStep(page_step)
-                self.ui.verticalScrollBar.setMaximum(row_count - page_step + 1)
+                self.ui.verticalScrollBar.setVisible(page_step <= row_height * row_count)
+                self.ui.verticalScrollBar.setPageStep(tv.verticalScrollBar().pageStep())
+                self.ui.verticalScrollBar.setMaximum(tv.verticalScrollBar().maximum())
             else:
                 self.ui.verticalScrollBar.setVisible(False)
         elif isinstance(tv, QScrollArea):
@@ -4088,8 +3492,8 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     # region EVENTS
 
-    def key_press_event(self, event: QKeyEvent) -> None:
-        match event.key():
+    def key_press_event(self, key_event) -> None:
+        match key_event.key():
             case (Qt.Key.Key_Control, Qt.Key.Key_Z):
                 self.undo()
             case (Qt.Key.Key_Control, Qt.Key.Key_Y):
@@ -4106,110 +3510,24 @@ class MainWindow(QMainWindow, QtStyleTools):
                 X, _, _, _, _ = self.stat_analysis_logic.dataset_for_ml()
                 print(X.describe())
             case Qt.Key.Key_F2:
+                from modules.stages.fitting.functions.guess_raman_lines import show_distribution
                 if self.ui.stackedWidget_mainpages.currentIndex() != 1:
                     return
                 if self.fitting.intervals_data is None:
                     return
                 for i, v in enumerate(self.fitting.intervals_data.items()):
                     key, item = v
-                    show_distribution(item['x0'], self.fitting.averaged_array,
+                    show_distribution(item['x0'], self.fitting.averaged_spectrum,
                                       self.fitting.all_ranges_clustered_x0_sd[i])
             case Qt.Key.Key_F3:
-                from numpy.polynomial.polynomial import polyval
-                from modules.functions_baseline_correction import baseline_penalized_poly, baseline_loess, baseline_quant_reg, baseline_goldindec
-                from sklearn.metrics import mean_squared_error
-                coefs = [1.27321927e+04, -7.62029464e+01,  2.81669762e-01, -5.66507200e-04, 6.52691243e-07,
-                                  -4.38362720e-10,  1.66449516e-13, -3.21147214e-17]
-                x_axis, y_raman = self.fitting.sum_array()
-                baseline_test = polyval(x_axis, coefs)
-                baseline_and_raman = baseline_test + y_raman
-                test_arr = np.vstack((x_axis, baseline_and_raman)).T
-                _, _, corrected_plus = ex_mod_poly(('1', test_arr), [7., 1e-10, 1000.])
-                _, _, corrected_imod = baseline_imodpoly(('3', test_arr), [7, 1e-8, 1000])
-                _, _, corrected_modp = baseline_modpoly(('3', test_arr), [7, 1e-10, 1000])
-                _, _, corrected_quant = baseline_penalized_poly(('3', test_arr), [7, 1e-8, 1000, 0.999, 'asymmetric_truncated_quadratic'])
-                _, _, corrected_goldin= baseline_goldindec(('3', test_arr), [7, 1e-9, 1000, 'asymmetric_truncated_quadratic', 0.5, .999])
-                corr_matrix_plus = np.corrcoef(y_raman, corrected_plus[:, 1])
-                corr1 = corr_matrix_plus[0, 1] ** 2
-                rms1 = mean_squared_error(corrected_plus[:, 1], y_raman, squared=False)
-                rms2 = mean_squared_error(corrected_imod[:, 1], y_raman, squared=False)
-                rms3 = mean_squared_error(corrected_modp[:, 1], y_raman, squared=False)
-                rms6 = mean_squared_error(corrected_quant[:, 1], y_raman, squared=False)
-                rms7 = mean_squared_error(corrected_goldin[:, 1], y_raman, squared=False)
-                corrected_plus1 = corrected_plus[corrected_plus < 0]
-                corrected_imod1 = corrected_imod[corrected_imod < 0]
-                corrected_modp1 = corrected_modp[corrected_modp < 0]
-                corrected_quant1 = corrected_quant[corrected_quant < 0]
-                corrected_goldin1 = corrected_goldin[corrected_goldin < 0]
-                area0 = np.trapz(corrected_plus1)
-                area1 = np.trapz(corrected_imod1)
-                area2 = np.trapz(corrected_modp1)
-                area3 = np.trapz(corrected_quant1)
-                area4 = np.trapz(corrected_goldin1)
-                print('r2 EX-Mod-Poly+ ', corr1,  'rms ', rms1, 'area ', area0)
-                corr_matrix_imod = np.corrcoef(y_raman, corrected_imod[:, 1])
-                corr2 = corr_matrix_imod[0, 1] ** 2
-                print('r2 I-Mod-Poly ', corr2, 'area ', area1)
-                corr_matrix_modp = np.corrcoef(y_raman, corrected_modp[:, 1])
-                corr3 = corr_matrix_modp[0, 1] ** 2
-                print('r2 Mod-Poly ', corr3, 'area ', area2)
-                corr_matrix_quant = np.corrcoef(y_raman, corrected_quant[:, 1])
-                corr6 = corr_matrix_quant[0, 1] ** 2
-                print('r2 Penalized Poly ', corr6, 'area ', area3)
-                corr_matrix_goldin= np.corrcoef(y_raman, corrected_goldin[:, 1])
-                corr7 = corr_matrix_goldin[0, 1] ** 2
-                print('r2 Goldindec ', corr7, 'area ', area4)
-                fig, ax = plt.subplots()
-                ax.plot(x_axis, y_raman, label='Synthesized spectrum', color = 'black')
-                ax.plot(x_axis, corrected_plus[:, 1], label='Ex-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr1*100, 3)) + '. RMSE=' + str(np.round(rms1, 2)), color = 'red')
-                ax.plot(x_axis, corrected_imod[:, 1], label='I-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr2*100, 3)) + '. RMSE=' + str(np.round(rms2, 2)), color = 'green')
-                ax.plot(x_axis, corrected_modp[:, 1], label='Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr3*100, 3)) + '. RMSE=' + str(np.round(rms3, 2)), color = 'blue', dashes=[6, 2])
-                ax.plot(x_axis, corrected_quant[:, 1], label='Penalized Poly. $\mathregular{r^2}$=' + str(np.round(corr6*100, 3)) + '. RMSE=' + str(np.round(rms6, 2)), color = 'c', dashes=[8, 4])
-                ax.plot(x_axis, corrected_goldin[:, 1], label='Goldindec. $\mathregular{r^2}$=' + str(np.round(corr7*100, 3)) + '. RMSE=' + str(np.round(rms7, 2)), color = 'm', dashes=[8, 4])
-                ax.legend()
-                ax.grid()
-                plt.show()
+                if self.ui.plots_tabWidget.currentIndex() == 5:
+                    self.preprocessing.compare_baseline_methods()
             case Qt.Key.Key_F4:
-                arr = self.preprocessing.smoothed_spectra['[1]_Здоровый (1).asc']
-                y = arr[:, 1]
-                keyarr = '[1]_Здоровый (1).asc', arr
-                before = datetime.now()
-                devs = []
-                fig, ax = plt.subplots()
-                for k, v in self.preprocessing.smoothed_spectra.items():
-                    _, baseline_plus_tru, corrected_tru, pitches = ex_mod_poly((k, v), [8., 1e-7, 1000.])
-
-                    # ax.plot(corrected_tru[:, 0], corrected_tru[:, 1])
-                    devs.append(pitches)
-                # _, baseline_plus_new, corrected_new1, work_my, dev, sc = baseline_imodpoly_plus(keyarr, [7, 1e-20, 250], True)
-                # _, baseline_plus_new, corrected_new2, work_my, dev, sc = baseline_imodpoly_plus(keyarr, [7, 1e-20, 250], False)
-                # info(devs[0])
-                print(datetime.now() - before)
-                # key, baseline_byimodpoly, corrected = baseline_imodpoly(keyarr, [8, 1e-6, 1000])
-                # key, _, corrected_md = baseline_modpoly(keyarr, [8, 1e-6, 1000])
-
-                # for i in sc_diffs:
-                #     ax.plot(i)
-                # ax.plot(arr[:, 0], arr[:, 1], label='original', color='b')
-                # ax.plot(corrected_tru[:, 0], corrected_tru[:, 1], label='tru', color='black')
-                # ax.legend()
-                # plt.show()
-                # ax.plot(work[:, 0], work[:, 1], label='Спектр без пиков I-ModPoly', dashes=[6, 2], color='b')
-                # ax.plot(work_my[:, 0], work_my[:, 1], label='Спектр без пиков предложенным методом', dashes=[4, 4], color='r')
-                #
-                # ax.plot(baseline_plus_new[:, 0], baseline_plus_new[:, 1], label='Базовая линия предложенным методом', color='r')
-                # ax.plot(baseline_byimodpoly[:, 0], baseline_byimodpoly[:, 1], label='Базовая линия I-ModPoly', color='b')
-
-                fig, ax = plt.subplots()
-                for i in devs:
-                    ax.plot(i)
-                ax.grid()
-                plt.show()
-            case Qt.Key.Key_F5:
-                self.arre()
+                if self.ui.plots_tabWidget.currentIndex() == 5:
+                    self.preprocessing.ex_mod_poly_build_dev()
             case Qt.Key.Key_F6:
                 return
-                from modules.functions_peak_shapes import gaussian
+                from modules.stages.fitting.functions.peak_shapes import gaussian
                 from scipy.signal import deconvolve, convolve
                 signal = self.preprocessing.smoothed_spectra['[1]_Здоровый (1).asc']
                 x = signal[:, 0]
@@ -4246,7 +3564,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 mean_area = np.mean(areas)
                 print(mean_area)
             case Qt.Key.Key_F8:
-                from modules.functions_peak_shapes import gaussian
+                from modules.stages.fitting.functions.peak_shapes import gaussian
                 x_axis = next(iter(self.preprocessing.baseline_corrected_dict.values()))[:, 0]
                 self.preprocessing.baseline_corrected_dict.clear()
                 keys = self.preprocessing.smoothed_spectra.keys()
@@ -4256,8 +3574,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                     for i in range(0, params_df_values.shape[0], 3):
                         rnd = np.random.rand(1)[0]
                         a = params_df_values[i][1] * (1 + (0.01 * rnd - 0.005))
-                        x0 = params_df_values[i+1][1]
-                        dx = params_df_values[i+2][1]
+                        x0 = params_df_values[i + 1][1]
+                        dx = params_df_values[i + 2][1]
                         y_shape = gaussian(x_axis, a, x0, dx)
                         y_axis += y_shape
                     std = np.std(y_axis)
@@ -4269,30 +3587,10 @@ class MainWindow(QMainWindow, QtStyleTools):
                     self.showFullScreen()
                 else:
                     self.showMaximized()
-
-    @asyncSlot()
-    async def arre(self):
-        from itertools import islice
-        times = []
-
-        params = [9., 1e-7, 1000.]
-        for i in range(50, 1050, 50):
-            n_items = list(islice(self.preprocessing.smoothed_spectra.items(), i))
-            executor = ProcessPoolExecutor()
-            before = datetime.now()
-            with executor:
-                self.current_futures = [self.loop.run_in_executor(executor, ex_mod_poly, i, params) for i in
-                                        n_items]
-                for future in self.current_futures:
-                    future.add_done_callback(self.progress_indicator)
-                baseline_corrected = await gather(*self.current_futures)
-            after = datetime.now() - before
-            sec = after.total_seconds()
-            print(i)
-            print(sec)
-            times.append(sec)
-        info(times)
-        print(times)
+            case Qt.Key.Key_0:
+                pass
+                # sns.JointGrid()
+                # plt.show()
 
     def undo(self) -> None:
         self.ui.input_table.setCurrentIndex(QModelIndex())
@@ -4416,7 +3714,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     # region ACTIONS FILE MENU
 
     def action_new_project(self) -> None:
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
@@ -4428,54 +3726,44 @@ class MainWindow(QMainWindow, QtStyleTools):
                 raise
 
     def action_open_project(self) -> None:
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getOpenFileName(self, 'Select RS-tool project file to open', path, "(*.zip)")
         if file_path[0] != '':
-            if not self.ask_before_close_project():
+            if not self.can_close_project():
                 return
             self.open_project(file_path[0])
             self.load_params(file_path[0])
 
-    def ask_before_close_project(self):
-        if self.modified:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Question)
-            msg.setText('You have unsaved changes. ' + '\n' + 'Save changes before exit?')
-            if self.project_path:
-                msg.setInformativeText(self.project_path)
-            msg.setWindowTitle("Close")
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-            result = msg.exec()
-            if result == QMessageBox.StandardButton.Yes:
-                self.action_save_project()
-                return True
-            elif result == QMessageBox.StandardButton.Cancel:
-                return False
-            elif result == QMessageBox.StandardButton.No:
-                return True
-        else:
+    def can_close_project(self) -> bool:
+        if not self.modified:
+            return True
+        msg = MessageBox('You have unsaved changes.', 'Save changes before exit?', self, {'Yes', 'No', 'Cancel'})
+        if self.project_path:
+            msg.setInformativeText(self.project_path)
+        result = msg.exec()
+        if result == 1:
+            self.action_save_project()
+            return True
+        elif result == 0:
+            return False
+        elif result == 2:
             return True
 
     def action_open_recent(self, path: str) -> None:
         if Path(path).exists():
-            if not self.ask_before_close_project():
+            if not self.can_close_project():
                 return
             self.open_project(path)
             self.load_params(path)
         else:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setText("Selected file doesn't exists")
+            msg = MessageBox('Recent file open error.', "Selected file doesn't exists", self, {'Ok'})
             msg.setInformativeText(path)
-            msg.setWindowTitle("Recent file open error")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
 
     def action_save_project(self) -> None:
         if self.project_path == '' or self.project_path is None:
-            path = os.getenv('APPDATA') + '/RS-tool'
+            path = getenv('APPDATA') + '/RS-tool'
             fd = QFileDialog(self)
             file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
             if file_path[0] != '':
@@ -4490,7 +3778,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def action_save_production_project(self) -> None:
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getSaveFileName(self, 'Create Production Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
@@ -4498,7 +3786,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def action_save_as(self) -> None:
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
         if file_path[0] != '':
@@ -4514,16 +3802,19 @@ class MainWindow(QMainWindow, QtStyleTools):
             db["GroupsTable"] = self.ui.GroupsTable.model().dataframe()
             db["DeconvLinesTableDF"] = self.ui.deconv_lines_table.model().dataframe()
             db["DeconvParamsTableDF"] = self.ui.fit_params_table.model().dataframe()
-            db["intervals_table_df"] = self.ui.fit_intervals_table_view.model().dataframe()
+            db["intervals_table_df"] = self.ui.fit_borders_TableView.model().dataframe()
             db["DeconvLinesTableChecked"] = self.ui.deconv_lines_table.model().checked()
             db["IgnoreTableChecked"] = self.ui.ignore_dataset_table_view.model().checked
             db["LaserWL"] = self.ui.laser_wl_spinbox.value()
+            db["select_percentile_spin_box"] = self.ui.select_percentile_spin_box.value()
             db["Maxima_count_despike"] = self.ui.maxima_count_despike_spin_box.value()
             db["Despike_fwhm_width"] = self.ui.despike_fwhm_width_doubleSpinBox.value()
             db["cm_CutRangeStart"] = self.ui.cm_range_start.value()
             db["cm_CutRangeEnd"] = self.ui.cm_range_end.value()
             db["trim_start_cm"] = self.ui.trim_start_cm.value()
             db["trim_end_cm"] = self.ui.trim_end_cm.value()
+            db["average_level_spin_box"] = self.ui.average_level_spin_box.value()
+            db["average_n_boot_spin_box"] = self.ui.average_n_boot_spin_box.value()
             db["interval_start_cm"] = self.ui.interval_start_dsb.value()
             db["interval_end_cm"] = self.ui.interval_end_dsb.value()
             db["neg_grad_factor_spinBox"] = self.ui.neg_grad_factor_spinBox.value()
@@ -4532,6 +3823,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             db["smoothing_method_comboBox"] = self.ui.smoothing_method_comboBox.currentText()
             db["guess_method_cb"] = self.ui.guess_method_cb.currentText()
             db["average_function"] = self.ui.average_method_cb.currentText()
+            db["average_errorbar_method_combo_box"] = self.ui.average_errorbar_method_combo_box.currentText()
             db["dataset_type_cb"] = self.ui.dataset_type_cb.currentText()
             db["classes_lineEdit"] = self.ui.classes_lineEdit.text()
             db["test_data_ratio_spinBox"] = self.ui.test_data_ratio_spinBox.value()
@@ -4585,11 +3877,24 @@ class MainWindow(QMainWindow, QtStyleTools):
             db["max_dx_guess"] = self.ui.max_dx_dsb.value()
             db["_y_axis_ref_EMSC"] = self.predict_logic.y_axis_ref_EMSC
             db['baseline_corrected_dict'] = self.preprocessing.baseline_corrected_dict
-            db['groupBox_mlp_checked'] = self.ui.groupBox_mlp.isChecked()
             db['activation_comboBox'] = self.ui.activation_comboBox.currentText()
+            db['criterion_comboBox'] = self.ui.criterion_comboBox.currentText()
+            db['rf_criterion_comboBox'] = self.ui.rf_criterion_comboBox.currentText()
+            db['rf_max_features_comboBox'] = self.ui.rf_max_features_comboBox.currentText()
             db['refit_score'] = self.ui.refit_score.currentText()
             db['solver_mlp_combo_box'] = self.ui.solver_mlp_combo_box.currentText()
             db['mlp_layer_size_spinBox'] = self.ui.mlp_layer_size_spinBox.value()
+            db['rf_min_samples_split_spinBox'] = self.ui.rf_min_samples_split_spinBox.value()
+            db['ab_n_estimators_spinBox'] = self.ui.ab_n_estimators_spinBox.value()
+            db['ab_learning_rate_doubleSpinBox'] = self.ui.ab_learning_rate_doubleSpinBox.value()
+            db['xgb_eta_doubleSpinBox'] = self.ui.xgb_eta_doubleSpinBox.value()
+            db['xgb_gamma_spinBox'] = self.ui.xgb_gamma_spinBox.value()
+            db['xgb_max_depth_spinBox'] = self.ui.xgb_max_depth_spinBox.value()
+            db['xgb_min_child_weight_spinBox'] = self.ui.xgb_min_child_weight_spinBox.value()
+            db['xgb_colsample_bytree_doubleSpinBox'] = self.ui.xgb_colsample_bytree_doubleSpinBox.value()
+            db['xgb_lambda_doubleSpinBox'] = self.ui.xgb_lambda_doubleSpinBox.value()
+            db['xgb_n_estimators_spinBox'] = self.ui.xgb_n_estimators_spinBox.value()
+            db['rf_n_estimators_spinBox'] = self.ui.rf_n_estimators_spinBox.value()
             db['max_epoch_spinBox'] = self.ui.max_epoch_spinBox.value()
             db['learning_rate_doubleSpinBox'] = self.ui.learning_rate_doubleSpinBox.value()
             db['feature_display_max_checkBox'] = self.ui.feature_display_max_checkBox.isChecked()
@@ -4600,6 +3905,39 @@ class MainWindow(QMainWindow, QtStyleTools):
             db['use_pca_checkBox'] = self.ui.use_pca_checkBox.isChecked()
             db['intervals_data'] = self.fitting.intervals_data
             db['all_ranges_clustered_lines_x0'] = self.fitting.all_ranges_clustered_x0_sd
+            db['comboBox_lda_solver'] = self.ui.comboBox_lda_solver.currentText()
+            db['lda_solver_check_box'] = self.ui.lda_solver_check_box.isChecked()
+            db['lda_shrinkage_check_box'] = self.ui.lda_shrinkage_check_box.isChecked()
+            db['lr_penalty_checkBox'] = self.ui.lr_penalty_checkBox.isChecked()
+            db['lr_solver_checkBox'] = self.ui.lr_solver_checkBox.isChecked()
+            db['svc_nu_check_box'] = self.ui.svc_nu_check_box.isChecked()
+            db['n_neighbors_checkBox'] = self.ui.n_neighbors_checkBox.isChecked()
+            db['learning_rate_checkBox'] = self.ui.learning_rate_checkBox.isChecked()
+            db['mlp_layer_size_checkBox'] = self.ui.mlp_layer_size_checkBox.isChecked()
+            db['mlp_solve_checkBox'] = self.ui.mlp_solve_checkBox.isChecked()
+            db['activation_checkBox'] = self.ui.activation_checkBox.isChecked()
+            db['criterion_checkBox'] = self.ui.criterion_checkBox.isChecked()
+            db['rf_max_features_checkBox'] = self.ui.rf_max_features_checkBox.isChecked()
+            db['rf_n_estimators_checkBox'] = self.ui.rf_n_estimators_checkBox.isChecked()
+            db['rf_min_samples_split_checkBox'] = self.ui.rf_min_samples_split_checkBox.isChecked()
+            db['rf_criterion_checkBox'] = self.ui.rf_criterion_checkBox.isChecked()
+            db['ab_learning_rate_checkBox'] = self.ui.ab_learning_rate_checkBox.isChecked()
+            db['ab_n_estimators_checkBox'] = self.ui.ab_n_estimators_checkBox.isChecked()
+            db['xgb_eta_checkBox'] = self.ui.xgb_eta_checkBox.isChecked()
+            db['xgb_gamma_checkBox'] = self.ui.xgb_gamma_checkBox.isChecked()
+            db['xgb_max_depth_checkBox'] = self.ui.xgb_max_depth_checkBox.isChecked()
+            db['xgb_min_child_weight_checkBox'] = self.ui.xgb_min_child_weight_checkBox.isChecked()
+            db['xgb_colsample_bytree_checkBox'] = self.ui.xgb_colsample_bytree_checkBox.isChecked()
+            db['xgb_lambda_checkBox'] = self.ui.xgb_lambda_checkBox.isChecked()
+            db['nn_weights_checkBox'] = self.ui.nn_weights_checkBox.isChecked()
+            db['lr_penalty_comboBox'] = self.ui.lr_penalty_comboBox.currentText()
+            db['lr_solver_comboBox'] = self.ui.lr_solver_comboBox.currentText()
+            db['nn_weights_comboBox'] = self.ui.nn_weights_comboBox.currentText()
+            db['lr_c_doubleSpinBox'] = self.ui.lr_c_doubleSpinBox.value()
+            db['svc_nu_doubleSpinBox'] = self.ui.svc_nu_doubleSpinBox.value()
+            db['n_neighbors_spinBox'] = self.ui.n_neighbors_spinBox.value()
+            db['lr_c_checkBox'] = self.ui.lr_c_checkBox.isChecked()
+            db['lineEdit_lda_shrinkage'] = self.ui.lineEdit_lda_shrinkage.text()
             if not self.predict_logic.is_production_project:
                 self.predict_logic.stat_models = {}
                 for key, v in self.stat_analysis_logic.latest_stat_result.items():
@@ -4700,64 +4038,101 @@ class MainWindow(QMainWindow, QtStyleTools):
         np.savetxt(fname=self.export_folder_path + '/' + item[0], X=item[1], fmt='%10.5f')
 
     @asyncSlot()
-    async def action_export_files_nm(self) -> None:
+    async def action_save_nm_files_to_csv(self) -> None:
+        """
+        Action generates pandas table and save it into .csv format
+        Table consists is like
+
+        Group_id         | Filename | x_nm_0        | x_nm_1 .... x_nm_n
+        int                 str      y_intensity_0  ....  y_intensity_n
+
+        Returns
+        -------
+            None
+        """
         if not self.ImportedArray:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No files to save")
-            msg.setWindowTitle("Export failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Export failed.', 'No data to save', self, {'Ok'})
             msg.exec()
             return
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
+        fd = QFileDialog(self)
+        file_path = fd.getSaveFileName(self, 'Save input nm data to csv table', path, "CSV (*.csv")
+        if not file_path[0]:
+            return
+        self.ui.input_table.model().save_nm_files_to_csv(file_path[0], self.ImportedArray)
+
+    @asyncSlot()
+    async def action_save_decomposed_to_csv(self) -> None:
+        """
+        Action saves decomposed dataset pandas table into .csv format
+        Table consists is like
+
+        Returns
+        -------
+            None
+        """
+        if self.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
+            msg = MessageBox('Export failed.', 'No data to save', self, {'Ok'})
+            msg.setInformativeText('Try to decompose spectra before save.')
+            msg.exec()
+            return
+        path = getenv('APPDATA') + '/RS-tool'
+        fd = QFileDialog(self)
+        file_path = fd.getSaveFileName(self, 'Save decomposed lines data to csv table', path, "CSV (*.csv")
+        if not file_path[0]:
+            return
+        self.ui.deconvoluted_dataset_table_view.model().dataframe().to_csv(file_path[0])
+
+    @asyncSlot()
+    async def action_export_files_nm(self) -> None:
+        if not self.ImportedArray:
+            msg = MessageBox('Export failed.', 'No files to save', self, {'Ok'})
+            msg.exec()
+            return
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in nm', path)
         if folder_path:
             self.ui.statusBar.showMessage('Exporting files...')
             self.close_progress_bar()
-            self.progressBar = QProgressBar(self)
+            self.progressBar = IndeterminateProgressBar(self)
             self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-            self.progressBar.setMinimum(0)
-            self.progressBar.setMaximum(0)
             self.export_folder_path = folder_path + '/nm'
             if not Path(self.export_folder_path).exists():
                 Path(self.export_folder_path).mkdir(parents=True)
-            with ThreadPoolExecutor() as executor:
-                self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
-                                        for i in self.ImportedArray.items()]
-                await gather(*self.current_futures)
+            with Manager() as manager:
+                self.break_event = manager.Event()
+                with ThreadPoolExecutor() as executor:
+                    self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
+                                            for i in self.ImportedArray.items()]
+                    await gather(*self.current_futures)
             self.close_progress_bar()
             self.ui.statusBar.showMessage('Export completed. {} new files created.'.format(len(self.ImportedArray)),
                                           50_000)
 
     @asyncSlot()
     async def action_export_files_cm(self) -> None:
-
         if not self.preprocessing.baseline_corrected_dict:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No files to save")
-            msg.setWindowTitle("Export failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Export failed.', 'No files to save', self, {'Ok'})
             msg.exec()
             return
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', path)
         if folder_path:
             self.ui.statusBar.showMessage('Exporting files...')
             self.close_progress_bar()
-            self.progressBar = QProgressBar(self)
+            self.progressBar = IndeterminateProgressBar(self)
             self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-            self.progressBar.setMinimum(0)
-            self.progressBar.setMaximum(0)
             self.export_folder_path = folder_path + '/cm-1'
             if not Path(self.export_folder_path).exists():
                 Path(self.export_folder_path).mkdir(parents=True)
-            with ThreadPoolExecutor() as executor:
-                self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
-                                        for i in self.preprocessing.baseline_corrected_dict.items()]
-                await gather(*self.current_futures)
+            with Manager() as manager:
+                self.break_event = manager.Event()
+                with ThreadPoolExecutor() as executor:
+                    self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
+                                            for i in self.preprocessing.baseline_corrected_dict.items()]
+                    await gather(*self.current_futures)
             self.close_progress_bar()
             self.ui.statusBar.showMessage('Export completed. {} new files '
                                           'created.'.format(len(self.preprocessing.baseline_corrected_dict)), 50_000)
@@ -4766,44 +4141,36 @@ class MainWindow(QMainWindow, QtStyleTools):
     async def action_export_average(self) -> None:
 
         if not self.preprocessing.averaged_dict:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No files to save")
-            msg.setWindowTitle("Export failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Export failed.', 'No files to save', self, {'Ok'})
             msg.exec()
             return
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', path)
         if folder_path:
             self.ui.statusBar.showMessage('Exporting files...')
             self.close_progress_bar()
-            self.progressBar = QProgressBar(self)
+            self.progressBar = IndeterminateProgressBar(self)
             self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-            self.progressBar.setMinimum(0)
-            self.progressBar.setMaximum(0)
             self.export_folder_path = folder_path + '/average'
             if not Path(self.export_folder_path).exists():
                 Path(self.export_folder_path).mkdir(parents=True)
-            with ThreadPoolExecutor() as executor:
-                self.current_futures = [self.loop.run_in_executor(executor, self._export_files_av, i)
-                                        for i in self.preprocessing.averaged_dict.items()]
-                await gather(*self.current_futures)
+            with Manager() as manager:
+                self.break_event = manager.Event()
+                with ThreadPoolExecutor() as executor:
+                    self.current_futures = [self.loop.run_in_executor(executor, self._export_files_av, i)
+                                            for i in self.preprocessing.averaged_dict.items()]
+                    await gather(*self.current_futures)
             self.close_progress_bar()
             self.ui.statusBar.showMessage('Export completed', 50_000)
 
     @asyncSlot()
     async def action_export_table_excel(self) -> None:
         if not self.ImportedArray:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Table is empty")
-            msg.setWindowTitle("Export failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Export failed.', 'Table is empty', self, {'Ok'})
             msg.exec()
             return
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         folder_path = fd.getExistingDirectory(self, 'Choose folder to save excel file', path)
         if not folder_path:
@@ -4836,7 +4203,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                                                                                      sheet_name='Deconvoluted dataset')
             if self.ui.ignore_dataset_table_view.model().rowCount() > 0:
                 self.ui.ignore_dataset_table_view.model().dataframe().to_excel(writer,
-                                                                                     sheet_name='Ignored features')
+                                                                               sheet_name='Ignored features')
             if self.ui.pca_features_table_view.model().rowCount() > 0:
                 self.ui.pca_features_table_view.model().dataframe().to_excel(writer, sheet_name='PCA loadings')
             if self.ui.plsda_vip_table_view.model().rowCount() > 0:
@@ -4881,11 +4248,12 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.preprocessing.averaged_dict.clear()
                 self.averaged_plotItem.clear()
                 self._initial_averaged_plot()
+                self._initial_averaged_sns_plot()
             case 'Deconvolution':
                 self.deconvolution_plotItem.clear()
                 self.fitting.report_result.clear()
                 self.fitting.sigma3.clear()
-                del self.fitting.fill
+                del self.fitting.sigma3_fill
                 self._initial_deconvolution_plot()
                 self.fitting.data_curve = None
                 self.fitting.current_spectrum_deconvolution_name = ''
@@ -4910,10 +4278,13 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.deconvoluted_dataset_table_view.model().clear_dataframe()
                 self.ui.ignore_dataset_table_view.model().clear_dataframe()
                 self.fitting.update_template_combo_box()
+                self.ui.current_filename_combobox.clear()
             case 'Stat':
                 self._initial_all_stat_plots()
                 self.ui.current_group_shap_comboBox.clear()
                 self.ui.current_feature_comboBox.clear()
+                self.ui.current_dep_feature1_comboBox.clear()
+                self.ui.current_dep_feature2_comboBox.clear()
                 self.ui.coloring_feature_comboBox.clear()
                 self.ui.current_instance_combo_box.clear()
                 self.ui.feature_display_max_checkBox.setChecked(False)
@@ -4922,34 +4293,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.stat_analysis_logic.latest_stat_result = {}
                 self._initial_pca_features_table()
                 self._initial_plsda_vip_table()
-                self.ui.groupBox_mlp.setChecked(True)
                 self.ui.refit_score.setCurrentText('recall_score')
-            case 'LDA':
-                self._initial_lda_plots()
-            case 'QDA':
-                self._initial_qda_plots()
-            case 'Logistic regression':
-                self._initial_lr_plots()
-            case 'NuSVC':
-                self._initial_svc_plots()
-            case 'Nearest Neighbors':
-                self._initial_nearest_plots()
-            case 'GPC':
-                self._initial_gpc_plots()
-            case 'Decision Tree':
-                self._initial_dt_plots()
-            case 'Naive Bayes':
-                self._initial_nb_plots()
-            case 'Random Forest':
-                self._initial_rf_plots()
-            case 'AdaBoost':
-                self._initial_ab_plots()
-            case 'MLP':
-                self._initial_mlp_plots()
-            case 'XGBoost':
-                self._initial_xgboost_plots()
-            case 'Torch':
-                self._initial_torch_plots()
             case 'PCA':
                 self._initial_pca_plots()
                 self._initial_pca_features_table()
@@ -4972,7 +4316,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.dec_table.model().clear_dataframe()
         self.ui.deconv_lines_table.model().clear_dataframe()
         self.ui.fit_params_table.model().clear_dataframe()
-        self.ui.fit_intervals_table_view.model().clear_dataframe()
+        self.ui.fit_borders_TableView.model().clear_dataframe()
         self.ui.smoothed_dataset_table_view.model().clear_dataframe()
         self._reset_smoothed_dataset_table()
         self.ui.baselined_dataset_table_view.model().clear_dataframe()
@@ -5029,10 +4373,13 @@ class MainWindow(QMainWindow, QtStyleTools):
     def set_forms_ability(self) -> None:
         b = not self.predict_logic.is_production_project
         self.ui.left_side_head_stackedWidget.setEnabled(b)
-        self.ui.stackedWidget_left.setEnabled(b)
         self.ui.deconv_lines_table.setEnabled(b)
         self.ui.deconv_buttons_frame_top.setEnabled(b)
         self.ui.fit_params_table.setEnabled(b)
+        self.ui.left_page_1.setEnabled(b)
+        self.ui.left_page_3.setEnabled(b)
+        self.ui.dec_param_frame.setEnabled(b)
+        self.ui.intervals_gb.setEnabled(b)
 
     @asyncSlot()
     async def load_params(self, path: str) -> None:
@@ -5052,20 +4399,16 @@ class MainWindow(QMainWindow, QtStyleTools):
         if self.ui.fit_params_table.model().rowCount() != 0 \
                 and self.ui.deconv_lines_table.model().rowCount() != 0:
             await self.fitting.draw_all_curves()
-        self.currentProgress.setMaximum(1)
-        self.currentProgress.setValue(1)
         self.close_progress_bar()
-        self.stat_analysis_logic.update_force_single_plots()
-        self.stat_analysis_logic.update_force_full_plots()
+        self.stat_analysis_logic.update_force_single_plots('LDA')
+        self.stat_analysis_logic.update_force_full_plots('LDA')
         self.set_buttons_ability()
         self.set_forms_ability()
         seconds = round((datetime.now() - self.time_start).total_seconds())
         self.set_modified(False)
         self.decide_vertical_scroll_bar_visible()
         self.setEnabled(True)
-        await self.redraw_stat_plots()
-        self.stat_analysis_logic.update_force_single_plots()
-        self.stat_analysis_logic.update_force_full_plots()
+        # await self.redraw_stat_plots()
         self.ui.statusBar.showMessage('Project opened for ' + str(seconds) + ' sec.', 15000)
 
     def unzip_project_file(self, path: str) -> None:
@@ -5082,16 +4425,22 @@ class MainWindow(QMainWindow, QtStyleTools):
     def unshelve_project_file(self, file_name: str) -> None:
         with shelve_open(file_name, 'r') as db:
             if "GroupsTable" in db:
-                df = db["GroupsTable"]
-                self.ui.GroupsTable.model().set_dataframe(df)
+                try:
+                    df = db["GroupsTable"]
+                    self.ui.GroupsTable.model().set_dataframe(df)
+                except ModuleNotFoundError:
+                    pass
             if "InputTable" in db:
                 df = db["InputTable"]
                 self.ui.input_table.model().set_dataframe(df)
                 names = df.index
                 self.ui.dec_table.model().append_row_deconv_table(filename=names)
             if "DeconvLinesTableDF" in db:
-                df = db["DeconvLinesTableDF"]
-                self.ui.deconv_lines_table.model().set_dataframe(df)
+                try:
+                    df = db["DeconvLinesTableDF"]
+                    self.ui.deconv_lines_table.model().set_dataframe(df)
+                except ModuleNotFoundError:
+                    pass
             if "DeconvLinesTableChecked" in db:
                 checked = db["DeconvLinesTableChecked"]
                 self.ui.deconv_lines_table.model().set_checked(checked)
@@ -5099,19 +4448,29 @@ class MainWindow(QMainWindow, QtStyleTools):
                 checked = db["IgnoreTableChecked"]
                 self.ui.ignore_dataset_table_view.model().set_checked(checked)
             if "DeconvParamsTableDF" in db:
-                df = db["DeconvParamsTableDF"]
-                self.ui.fit_params_table.model().set_dataframe(df)
+                try:
+                    df = db["DeconvParamsTableDF"]
+                    self.ui.fit_params_table.model().set_dataframe(df)
+                except ModuleNotFoundError:
+                    pass
             if "intervals_table_df" in db:
-                df = db["intervals_table_df"]
-                self.ui.fit_intervals_table_view.model().set_dataframe(df)
+                try:
+                    df = db["intervals_table_df"]
+                    self.ui.fit_borders_TableView.model().set_dataframe(df)
+                except ModuleNotFoundError:
+                    pass
             if "smoothed_dataset_df" in db:
                 self.ui.smoothed_dataset_table_view.model().set_dataframe(db["smoothed_dataset_df"])
             if "stat_models" in db:
-                self.predict_logic.stat_models = db["stat_models"]
+                try:
+                    self.predict_logic.stat_models = db["stat_models"]
+                except AttributeError as err:
+                    print(err)
             if "baselined_dataset_df" in db:
                 self.ui.baselined_dataset_table_view.model().set_dataframe(db["baselined_dataset_df"])
             if "deconvoluted_dataset_df" in db:
                 self.ui.deconvoluted_dataset_table_view.model().set_dataframe(db["deconvoluted_dataset_df"])
+                self._init_current_filename_combobox()
             if "ignore_dataset_df" in db:
                 self.ui.ignore_dataset_table_view.model().set_dataframe(db["ignore_dataset_df"])
             if "interp_ref_array" in db:
@@ -5130,6 +4489,10 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.trim_start_cm.setValue(db["trim_start_cm"])
             if "trim_end_cm" in db:
                 self.ui.trim_end_cm.setValue(db["trim_end_cm"])
+            if "average_n_boot_spin_box" in db:
+                self.ui.average_n_boot_spin_box.setValue(db["average_n_boot_spin_box"])
+            if "average_level_spin_box" in db:
+                self.ui.average_level_spin_box.setValue(db["average_level_spin_box"])
             if "_y_axis_ref_EMSC" in db:
                 self.predict_logic.y_axis_ref_EMSC = db["_y_axis_ref_EMSC"]
             if "interval_start_cm" in db:
@@ -5141,6 +4504,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.update_cm_min_max_range()
             if "LaserWL" in db:
                 self.ui.laser_wl_spinbox.setValue(db["LaserWL"])
+            if "select_percentile_spin_box" in db:
+                self.ui.select_percentile_spin_box.setValue(db["select_percentile_spin_box"])
             if "BeforeDespike" in db:
                 self.preprocessing.BeforeDespike = db["BeforeDespike"]
             if "Maxima_count_despike" in db:
@@ -5175,6 +4540,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.guess_method_cb.setCurrentText(db["guess_method_cb"])
             if "average_function" in db:
                 self.ui.average_method_cb.setCurrentText(db["average_function"])
+            if "average_errorbar_method_combo_box" in db:
+                self.ui.average_errorbar_method_combo_box.setCurrentText(db["average_errorbar_method_combo_box"])
             if "dataset_type_cb" in db:
                 self.ui.dataset_type_cb.setCurrentText(db["dataset_type_cb"])
             if "classes_lineEdit" in db:
@@ -5185,6 +4552,72 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.max_noise_level_dsb.setValue(db["max_noise_level"])
             if "l_ratio_doubleSpinBox" in db:
                 self.ui.l_ratio_doubleSpinBox.setValue(db["l_ratio_doubleSpinBox"])
+            if "comboBox_lda_solver" in db:
+                self.ui.comboBox_lda_solver.setCurrentText(db["comboBox_lda_solver"])
+            if "lr_penalty_comboBox" in db:
+                self.ui.lr_penalty_comboBox.setCurrentText(db["lr_penalty_comboBox"])
+            if "lr_solver_comboBox" in db:
+                self.ui.lr_solver_comboBox.setCurrentText(db["lr_solver_comboBox"])
+            if "nn_weights_comboBox" in db:
+                self.ui.nn_weights_comboBox.setCurrentText(db["nn_weights_comboBox"])
+            if "lr_c_doubleSpinBox" in db:
+                self.ui.lr_c_doubleSpinBox.setValue(db["lr_c_doubleSpinBox"])
+            if "svc_nu_doubleSpinBox" in db:
+                self.ui.svc_nu_doubleSpinBox.setValue(db["svc_nu_doubleSpinBox"])
+            if "n_neighbors_spinBox" in db:
+                self.ui.n_neighbors_spinBox.setValue(db["n_neighbors_spinBox"])
+            if "lineEdit_lda_shrinkage" in db:
+                self.ui.lineEdit_lda_shrinkage.setText(db["lineEdit_lda_shrinkage"])
+            if "lda_solver_check_box" in db:
+                self.ui.lda_solver_check_box.setChecked(db["lda_solver_check_box"])
+            if "lda_shrinkage_check_box" in db:
+                self.ui.lda_shrinkage_check_box.setChecked(db["lda_shrinkage_check_box"])
+            if "lr_penalty_checkBox" in db:
+                self.ui.lr_penalty_checkBox.setChecked(db["lr_penalty_checkBox"])
+            if "lr_solver_checkBox" in db:
+                self.ui.lr_solver_checkBox.setChecked(db["lr_solver_checkBox"])
+            if "svc_nu_check_box" in db:
+                self.ui.svc_nu_check_box.setChecked(db["svc_nu_check_box"])
+            if "nn_weights_checkBox" in db:
+                self.ui.nn_weights_checkBox.setChecked(db["nn_weights_checkBox"])
+            if "n_neighbors_checkBox" in db:
+                self.ui.n_neighbors_checkBox.setChecked(db["n_neighbors_checkBox"])
+            if "activation_checkBox" in db:
+                self.ui.activation_checkBox.setChecked(db["activation_checkBox"])
+            if "criterion_checkBox" in db:
+                self.ui.criterion_checkBox.setChecked(db["criterion_checkBox"])
+            if "rf_criterion_checkBox" in db:
+                self.ui.rf_criterion_checkBox.setChecked(db["rf_criterion_checkBox"])
+            if "ab_n_estimators_checkBox" in db:
+                self.ui.ab_n_estimators_checkBox.setChecked(db["ab_n_estimators_checkBox"])
+            if "xgb_lambda_checkBox" in db:
+                self.ui.xgb_lambda_checkBox.setChecked(db["xgb_lambda_checkBox"])
+            if "xgb_colsample_bytree_checkBox" in db:
+                self.ui.xgb_colsample_bytree_checkBox.setChecked(db["xgb_colsample_bytree_checkBox"])
+            if "xgb_min_child_weight_checkBox" in db:
+                self.ui.xgb_min_child_weight_checkBox.setChecked(db["xgb_min_child_weight_checkBox"])
+            if "xgb_max_depth_checkBox" in db:
+                self.ui.xgb_max_depth_checkBox.setChecked(db["xgb_max_depth_checkBox"])
+            if "xgb_gamma_checkBox" in db:
+                self.ui.xgb_gamma_checkBox.setChecked(db["xgb_gamma_checkBox"])
+            if "xgb_eta_checkBox" in db:
+                self.ui.xgb_eta_checkBox.setChecked(db["xgb_eta_checkBox"])
+            if "ab_learning_rate_checkBox" in db:
+                self.ui.ab_learning_rate_checkBox.setChecked(db["ab_learning_rate_checkBox"])
+            if "rf_min_samples_split_checkBox" in db:
+                self.ui.rf_min_samples_split_checkBox.setChecked(db["rf_min_samples_split_checkBox"])
+            if "rf_n_estimators_checkBox" in db:
+                self.ui.rf_n_estimators_checkBox.setChecked(db["rf_n_estimators_checkBox"])
+            if "rf_max_features_checkBox" in db:
+                self.ui.rf_max_features_checkBox.setChecked(db["rf_max_features_checkBox"])
+            if "mlp_solve_checkBox" in db:
+                self.ui.mlp_solve_checkBox.setChecked(db["mlp_solve_checkBox"])
+            if "mlp_layer_size_checkBox" in db:
+                self.ui.mlp_layer_size_checkBox.setChecked(db["mlp_layer_size_checkBox"])
+            if "learning_rate_checkBox" in db:
+                self.ui.learning_rate_checkBox.setChecked(db["learning_rate_checkBox"])
+            if "lr_c_checkBox" in db:
+                self.ui.lr_c_checkBox.setChecked(db["lr_c_checkBox"])
             if "smooth_method" in db:
                 self.read_smoothing_method_used(db["smooth_method"])
             if "window_length_spinBox" in db:
@@ -5244,7 +4677,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             if 'EMSC_N_PCA' in db:
                 self.ui.emsc_pca_n_spinBox.setValue(db['EMSC_N_PCA'])
             if "max_CCD_value" in db:
-                self.ui.max_CCD_value_spinBox.setValue(db["max_CCD_value"])
+                self.ui.max_CCD_value_spinBox.setValue(int(db["max_CCD_value"]))
             if "baseline_method_comboBox" in db:
                 self.ui.baseline_correction_method_comboBox.setCurrentText(db["baseline_method_comboBox"])
             if "baseline_dict" in db:
@@ -5266,8 +4699,8 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.fitting.sigma3_style = db["sigma3_style"].copy()
                 self.sigma3_style_button_style_sheet(self.fitting.sigma3_style['color'].name())
                 pen, brush = curve_pen_brush_by_style(self.fitting.sigma3_style)
-                self.fitting.fill.setPen(pen)
-                self.fitting.fill.setBrush(brush)
+                self.fitting.sigma3_fill.setPen(pen)
+                self.fitting.sigma3_fill.setBrush(brush)
             if "sum_curve_checked" in db:
                 self.ui.sum_checkBox.setChecked(db["sum_curve_checked"])
             if "sigma3_checked" in db:
@@ -5291,17 +4724,48 @@ class MainWindow(QMainWindow, QtStyleTools):
             if 'max_dx_guess' in db:
                 self.ui.max_dx_dsb.setValue(db['max_dx_guess'])
             if 'latest_stat_result' in db:
-                self.stat_analysis_logic.latest_stat_result = db['latest_stat_result']
-            if 'groupBox_mlp_checked' in db:
-                self.ui.groupBox_mlp.setChecked(db['groupBox_mlp_checked'])
+                try:
+                    self.stat_analysis_logic.latest_stat_result = db['latest_stat_result']
+                except AttributeError as err:
+                    print(err)
+                except ModuleNotFoundError:
+                    pass
             if 'activation_comboBox' in db:
                 self.ui.activation_comboBox.setCurrentText(db['activation_comboBox'])
+            if 'criterion_comboBox' in db:
+                self.ui.criterion_comboBox.setCurrentText(db['criterion_comboBox'])
+            if 'rf_criterion_comboBox' in db:
+                self.ui.rf_criterion_comboBox.setCurrentText(db['rf_criterion_comboBox'])
+            if 'rf_max_features_comboBox' in db:
+                self.ui.rf_max_features_comboBox.setCurrentText(db['rf_max_features_comboBox'])
             if 'solver_mlp_combo_box' in db:
                 self.ui.solver_mlp_combo_box.setCurrentText(db['solver_mlp_combo_box'])
             if 'mlp_layer_size_spinBox' in db:
                 self.ui.mlp_layer_size_spinBox.setValue(db['mlp_layer_size_spinBox'])
             if 'max_epoch_spinBox' in db:
                 self.ui.max_epoch_spinBox.setValue(db['max_epoch_spinBox'])
+            if 'rf_min_samples_split_spinBox' in db:
+                self.ui.rf_min_samples_split_spinBox.setValue(db['rf_min_samples_split_spinBox'])
+            if 'ab_learning_rate_doubleSpinBox' in db:
+                self.ui.ab_learning_rate_doubleSpinBox.setValue(db['ab_learning_rate_doubleSpinBox'])
+            if 'xgb_n_estimators_spinBox' in db:
+                self.ui.xgb_n_estimators_spinBox.setValue(db['xgb_n_estimators_spinBox'])
+            if 'xgb_lambda_doubleSpinBox' in db:
+                self.ui.xgb_lambda_doubleSpinBox.setValue(db['xgb_lambda_doubleSpinBox'])
+            if 'xgb_colsample_bytree_doubleSpinBox' in db:
+                self.ui.xgb_colsample_bytree_doubleSpinBox.setValue(db['xgb_colsample_bytree_doubleSpinBox'])
+            if 'xgb_min_child_weight_spinBox' in db:
+                self.ui.xgb_min_child_weight_spinBox.setValue(db['xgb_min_child_weight_spinBox'])
+            if 'xgb_max_depth_spinBox' in db:
+                self.ui.xgb_max_depth_spinBox.setValue(db['xgb_max_depth_spinBox'])
+            if 'xgb_gamma_spinBox' in db:
+                self.ui.xgb_gamma_spinBox.setValue(db['xgb_gamma_spinBox'])
+            if 'xgb_eta_doubleSpinBox' in db:
+                self.ui.xgb_eta_doubleSpinBox.setValue(db['xgb_eta_doubleSpinBox'])
+            if 'ab_n_estimators_spinBox' in db:
+                self.ui.ab_n_estimators_spinBox.setValue(db['ab_n_estimators_spinBox'])
+            if 'rf_n_estimators_spinBox' in db:
+                self.ui.rf_n_estimators_spinBox.setValue(db['rf_n_estimators_spinBox'])
             if 'learning_rate_doubleSpinBox' in db:
                 self.ui.learning_rate_doubleSpinBox.setValue(db['learning_rate_doubleSpinBox'])
             if 'refit_score' in db:
@@ -5324,7 +4788,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             if 'new_Y' in db:
                 self.stat_analysis_logic.new_labels = db['new_Y']
 
-            if self.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+            if self.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
                 self.ui.statusBar.showMessage('Import canceled by user.')
                 self._clear_all_parameters()
                 return
@@ -5388,248 +4852,145 @@ class MainWindow(QMainWindow, QtStyleTools):
     def set_baseline_parameters_disabled(self, value: str) -> None:
         self.set_modified()
         self.ui.alpha_factor_doubleSpinBox.setVisible(False)
-        self.ui.label_alpha_factor.setVisible(False)
         self.ui.cost_func_comboBox.setVisible(False)
-        self.ui.label_cost_func.setVisible(False)
         self.ui.eta_doubleSpinBox.setVisible(False)
-        self.ui.label_eta.setVisible(False)
         self.ui.fill_half_window_spinBox.setVisible(False)
-        self.ui.label_fill_half_window.setVisible(False)
         self.ui.fraction_doubleSpinBox.setVisible(False)
-        self.ui.label_fraction.setVisible(False)
         self.ui.grad_doubleSpinBox.setVisible(False)
-        self.ui.label_grad.setVisible(False)
         self.ui.interp_half_window_spinBox.setVisible(False)
-        self.ui.label_interp_half_window.setVisible(False)
         self.ui.lambda_spinBox.setVisible(False)
-        self.ui.label_lambda.setVisible(False)
         self.ui.min_length_spinBox.setVisible(False)
-        self.ui.label_min_length.setVisible(False)
         self.ui.n_iterations_spinBox.setVisible(False)
-        self.ui.label_n_iterations.setVisible(False)
         self.ui.num_std_doubleSpinBox.setVisible(False)
-        self.ui.label_num_std.setVisible(False)
         self.ui.opt_method_oer_comboBox.setVisible(False)
-        self.ui.label_opt_method_oer.setVisible(False)
         self.ui.p_doubleSpinBox.setVisible(False)
-        self.ui.label_p.setVisible(False)
         self.ui.polynome_degree_spinBox.setVisible(False)
-        self.ui.polynome_degree_label.setVisible(False)
         self.ui.quantile_doubleSpinBox.setVisible(False)
-        self.ui.label_quantile.setVisible(False)
         self.ui.sections_spinBox.setVisible(False)
-        self.ui.label_sections.setVisible(False)
         self.ui.scale_doubleSpinBox.setVisible(False)
-        self.ui.label_scale.setVisible(False)
         self.ui.spline_degree_spinBox.setVisible(False)
-        self.ui.label_spline_degree.setVisible(False)
         self.ui.peak_ratio_doubleSpinBox.setVisible(False)
-        self.ui.label_peak_ratio.setVisible(False)
 
         match value:
             case 'Poly':
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
             case 'ModPoly' | 'iModPoly' | 'ExModPoly':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
             case 'Penalized poly':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
                 self.ui.alpha_factor_doubleSpinBox.setVisible(True)
-                self.ui.label_alpha_factor.setVisible(True)
                 self.ui.cost_func_comboBox.setVisible(True)
-                self.ui.label_cost_func.setVisible(True)
             case 'LOESS':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
                 self.ui.fraction_doubleSpinBox.setVisible(True)
-                self.ui.label_fraction.setVisible(True)
                 self.ui.scale_doubleSpinBox.setVisible(True)
-                self.ui.label_scale.setVisible(True)
             case 'Quantile regression':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
                 self.ui.quantile_doubleSpinBox.setVisible(True)
-                self.ui.label_quantile.setVisible(True)
             case 'Goldindec':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
                 self.ui.alpha_factor_doubleSpinBox.setVisible(True)
-                self.ui.label_alpha_factor.setVisible(True)
                 self.ui.cost_func_comboBox.setVisible(True)
-                self.ui.label_cost_func.setVisible(True)
                 self.ui.peak_ratio_doubleSpinBox.setVisible(True)
-                self.ui.label_peak_ratio.setVisible(True)
             case 'AsLS' | 'arPLS' | 'airPLS' | 'iAsLS' | 'psaLSA' | 'DerPSALSA' | 'MPLS' | 'iarPLS' | 'asPLS':
                 self.ui.lambda_spinBox.setVisible(True)
-                self.ui.label_lambda.setVisible(True)
                 self.ui.p_doubleSpinBox.setVisible(True)
-                self.ui.label_p.setVisible(True)
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
             case 'drPLS':
                 self.ui.lambda_spinBox.setVisible(True)
-                self.ui.label_lambda.setVisible(True)
                 self.ui.p_doubleSpinBox.setVisible(True)
-                self.ui.label_p.setVisible(True)
                 self.ui.eta_doubleSpinBox.setVisible(True)
-                self.ui.label_eta.setVisible(True)
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
             case 'iMor' | 'MorMol' | 'AMorMol' | 'JBCD':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
             case 'MPSpline':
                 self.ui.lambda_spinBox.setVisible(True)
-                self.ui.label_lambda.setVisible(True)
                 self.ui.p_doubleSpinBox.setVisible(True)
-                self.ui.label_p.setVisible(True)
                 self.ui.spline_degree_spinBox.setVisible(True)
-                self.ui.label_spline_degree.setVisible(True)
             case 'Mixture Model':
                 self.ui.lambda_spinBox.setVisible(True)
-                self.ui.label_lambda.setVisible(True)
                 self.ui.p_doubleSpinBox.setVisible(True)
-                self.ui.label_p.setVisible(True)
                 self.ui.spline_degree_spinBox.setVisible(True)
-                self.ui.label_spline_degree.setVisible(True)
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
             case 'IRSQR':
                 self.ui.lambda_spinBox.setVisible(True)
-                self.ui.label_lambda.setVisible(True)
                 self.ui.quantile_doubleSpinBox.setVisible(True)
-                self.ui.label_quantile.setVisible(True)
                 self.ui.spline_degree_spinBox.setVisible(True)
-                self.ui.label_spline_degree.setVisible(True)
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
             case 'Corner-Cutting':
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
             case 'RIA':
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
             case 'Dietrich':
                 self.ui.num_std_doubleSpinBox.setVisible(True)
-                self.ui.label_num_std.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
-                self.ui.polynome_degree_label.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
-                self.ui.label_grad.setVisible(True)
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
                 self.ui.interp_half_window_spinBox.setVisible(True)
-                self.ui.label_interp_half_window.setVisible(True)
                 self.ui.min_length_spinBox.setVisible(True)
-                self.ui.label_min_length.setVisible(True)
             case 'Golotvin':
                 self.ui.num_std_doubleSpinBox.setVisible(True)
-                self.ui.label_num_std.setVisible(True)
                 self.ui.interp_half_window_spinBox.setVisible(True)
-                self.ui.label_interp_half_window.setVisible(True)
                 self.ui.min_length_spinBox.setVisible(True)
-                self.ui.label_min_length.setVisible(True)
                 self.ui.sections_spinBox.setVisible(True)
-                self.ui.label_sections.setVisible(True)
             case 'Std Distribution':
                 self.ui.num_std_doubleSpinBox.setVisible(True)
-                self.ui.label_num_std.setVisible(True)
                 self.ui.interp_half_window_spinBox.setVisible(True)
-                self.ui.label_interp_half_window.setVisible(True)
                 self.ui.fill_half_window_spinBox.setVisible(True)
-                self.ui.label_fill_half_window.setVisible(True)
             case 'FastChrom':
                 self.ui.interp_half_window_spinBox.setVisible(True)
-                self.ui.label_interp_half_window.setVisible(True)
                 self.ui.min_length_spinBox.setVisible(True)
-                self.ui.label_min_length.setVisible(True)
                 self.ui.n_iterations_spinBox.setVisible(True)
-                self.ui.label_n_iterations.setVisible(True)
             case 'FABC':
                 self.ui.lambda_spinBox.setVisible(True)
-                self.ui.label_lambda.setVisible(True)
                 self.ui.num_std_doubleSpinBox.setVisible(True)
-                self.ui.label_num_std.setVisible(True)
                 self.ui.min_length_spinBox.setVisible(True)
-                self.ui.label_min_length.setVisible(True)
             case 'OER' | 'Adaptive MinMax':
                 self.ui.opt_method_oer_comboBox.setVisible(True)
-                self.ui.label_opt_method_oer.setVisible(True)
 
     def set_smooth_parameters_disabled(self, value: str) -> None:
         self.set_modified()
         self.ui.window_length_spinBox.setVisible(False)
-        self.ui.window_length_label.setVisible(False)
         self.ui.smooth_polyorder_spinBox.setVisible(False)
-        self.ui.smooth_polyorder_label.setVisible(False)
         self.ui.whittaker_lambda_spinBox.setVisible(False)
-        self.ui.whittaker_lambda_label.setVisible(False)
         self.ui.kaiser_beta_doubleSpinBox.setVisible(False)
-        self.ui.kaiser_beta_label.setVisible(False)
         self.ui.emd_noise_modes_spinBox.setVisible(False)
-        self.ui.emd_noise_modes_label.setVisible(False)
         self.ui.eemd_trials_spinBox.setVisible(False)
-        self.ui.eemd_trials_label.setVisible(False)
         self.ui.sigma_spinBox.setVisible(False)
-        self.ui.sigma_label.setVisible(False)
         match value:
             case 'Savitsky-Golay filter':
                 self.ui.window_length_spinBox.setVisible(True)
-                self.ui.window_length_label.setVisible(True)
                 self.ui.smooth_polyorder_spinBox.setVisible(True)
-                self.ui.smooth_polyorder_label.setVisible(True)
             case 'MLESG':
                 self.ui.sigma_spinBox.setVisible(True)
-                self.ui.sigma_label.setVisible(True)
             case 'Whittaker smoother':
                 self.ui.whittaker_lambda_spinBox.setVisible(True)
-                self.ui.whittaker_lambda_label.setVisible(True)
             case 'Flat window' | 'hanning' | 'hamming' | 'bartlett' | 'blackman' | 'Median filter' | 'Wiener filter':
                 self.ui.window_length_spinBox.setVisible(True)
-                self.ui.window_length_label.setVisible(True)
             case 'kaiser':
                 self.ui.window_length_spinBox.setVisible(True)
-                self.ui.window_length_label.setVisible(True)
                 self.ui.kaiser_beta_doubleSpinBox.setVisible(True)
-                self.ui.kaiser_beta_label.setVisible(True)
             case 'EMD':
                 self.ui.emd_noise_modes_spinBox.setVisible(True)
-                self.ui.emd_noise_modes_label.setVisible(True)
             case 'EEMD' | 'CEEMDAN':
                 self.ui.emd_noise_modes_spinBox.setVisible(True)
-                self.ui.emd_noise_modes_label.setVisible(True)
                 self.ui.eemd_trials_spinBox.setVisible(True)
-                self.ui.eemd_trials_label.setVisible(True)
 
     @asyncSlot()
     async def action_import_fit_template(self):
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getOpenFileName(self, 'Open fit template file', path, "ZIP (*.zip)")
         if not file_path[0]:
@@ -5664,12 +5025,10 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.ui.fit_params_table.model().set_dataframe(df)
             if "intervals_table_df" in db:
                 df = db["intervals_table_df"]
-                self.ui.fit_intervals_table_view.model().set_dataframe(df)
+                self.ui.fit_borders_TableView.model().set_dataframe(df)
         Path(str(directory) + '/data.dat').unlink()
         Path(str(directory) + '/data.dir').unlink()
         Path(str(directory) + '/data.bak').unlink()
-        self.currentProgress.setMaximum(1)
-        self.currentProgress.setValue(1)
         self.close_progress_bar()
         seconds = round((datetime.now() - self.time_start).total_seconds())
         self.set_modified(False)
@@ -5678,18 +5037,14 @@ class MainWindow(QMainWindow, QtStyleTools):
                 and self.ui.deconv_lines_table.model().rowCount() != 0:
             await self.fitting.draw_all_curves()
 
-    @asyncSlot
+    @asyncSlot()
     async def action_export_fit_template(self):
         if self.ui.deconv_lines_table.model().rowCount() == 0 \
                 and self.ui.fit_params_table.model().rowCount() == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setText("Fit template is empty.")
-            msg.setWindowTitle("Export failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Export failed.', 'Fit template is empty', self, {'Ok'})
             msg.exec()
             return
-        path = os.getenv('APPDATA') + '/RS-tool'
+        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getSaveFileName(self, 'Save fit template file', path, "ZIP (*.zip)")
         if not file_path[0]:
@@ -5701,7 +5056,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         with shelve_open(filename, 'n') as db:
             db["DeconvLinesTableDF"] = self.ui.deconv_lines_table.model().dataframe()
             db["DeconvParamsTableDF"] = self.ui.fit_params_table.model().dataframe()
-            db["intervals_table_df"] = self.ui.fit_intervals_table_view.model().dataframe()
+            db["intervals_table_df"] = self.ui.fit_borders_TableView.model().dataframe()
             db["DeconvLinesTableChecked"] = self.ui.deconv_lines_table.model().checked()
             db["IgnoreTableChecked"] = self.ui.ignore_dataset_table_view.model().checked
         zf = ZipFile(filename, "w", ZIP_DEFLATED, compresslevel=9)
@@ -5732,11 +5087,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         critical(err)
         tb = format_exc()
         error(tb)
-        if self.currentProgress:
-            self.currentProgress.setMaximum(1)
-            self.currentProgress.setValue(1)
+        if self.stateTooltip:
+            self.stateTooltip.setContent('Error! 😵')
+            self.stateTooltip.close()
         self.close_progress_bar()
-        modules.start_program.show_error(type(err), err, str(tb))
+        show_error_msg(type(err), err, str(tb), parent=self)
         self.executor_stop()
 
     def get_curve_plot_data_item(self, n_array: np.ndarray, group_number: str = 0, color: QColor = None, name: str = '',
@@ -5758,15 +5113,13 @@ class MainWindow(QMainWindow, QtStyleTools):
         await self.preprocessing.update_plot_item(self.preprocessing.baseline_corrected_dict.items(), 5)
         await self.preprocessing.update_plot_item(self.preprocessing.averaged_dict.items(), 6)
 
-    def open_progress_dialog(self, text: str, buttons: str, maximum: int = 0) -> None:
-        self.currentProgress = QProgressDialog(text, buttons, 0, maximum)
-        self.currentProgress.setWindowFlags(Qt.WindowType.WindowSystemMenuHint | Qt.WindowType.WindowTitleHint)
-        self.currentProgress.setWindowModality(Qt.WindowModal)
-        self.currentProgress.setWindowTitle(' ')
-        self.currentProgress.open()
-        cancel_button = self.currentProgress.findChild(QPushButton)
+    def open_progress_dialog(self, text: str, buttons: str = '', maximum: int = 0) -> None:
         environ['CANCEL'] = '0'
-        cancel_button.clicked.connect(self.executor_stop)
+        if self.stateTooltip is None:
+            self.stateTooltip = StateToolTip(text, 'Please wait patiently', self, maximum)
+            self.stateTooltip.move(self.ui.centralwidget.width() // 2 - 120, self.ui.centralwidget.height() // 2 - 50)
+            self.stateTooltip.closedSignal.connect(self.executor_stop)
+            self.stateTooltip.show()
 
     def executor_stop(self) -> None:
         if not self.current_executor or self.break_event is None:
@@ -5785,15 +5138,21 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def progress_indicator(self, _=None) -> None:
         current_value = self.progressBar.value() + 1
-        self.progressBar.setValue(current_value)
-        self.currentProgress.setValue(current_value)
-        self.taskbar_progress.setValue(current_value)
-        self.taskbar_progress.show()
+        if self.progressBar:
+            self.progressBar.setValue(current_value)
+        if self.stateTooltip is not None:
+            self.stateTooltip.setValue(current_value)
+        if self.taskbar_progress:
+            self.taskbar_progress.setValue(current_value)
+            self.taskbar_progress.show()
 
     def open_progress_bar(self, min_value: int = 0, max_value: int = 0) -> None:
-        self.progressBar = QProgressBar(self)
+        if max_value == 0:
+            self.progressBar = IndeterminateProgressBar(self)
+        else:
+            self.progressBar = ProgressBar(self)
+            self.progressBar.setRange(min_value, max_value)
         self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-        self.progressBar.setRange(min_value, max_value)
         self.taskbar_button = QWinTaskbarButton()
         self.taskbar_progress = self.taskbar_button.progress()
         self.taskbar_progress.setRange(min_value, max_value)
@@ -5809,7 +5168,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         out: bool
             True if Cancel button pressed
         """
-        if self.currentProgress.wasCanceled() or environ['CANCEL'] == '1':
+        if self.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             self.close_progress_bar()
             self.ui.statusBar.showMessage('Cancelled by user.')
             info('Cancelled by user')
@@ -5818,13 +5177,16 @@ class MainWindow(QMainWindow, QtStyleTools):
             return False
 
     def close_progress_bar(self) -> None:
-        if self.currentProgress is not None:
-            self.currentProgress.close()
         if self.progressBar is not None:
             self.statusBar().removeWidget(self.progressBar)
         if self.taskbar_progress is not None:
             self.taskbar_progress.hide()
             self.taskbar_progress.stop()
+        if self.stateTooltip is not None:
+            text = 'Completed! 😆' if not self.stateTooltip.wasCanceled() else 'Canceled! 🥲'
+            self.stateTooltip.setContent(text)
+            self.stateTooltip.setState(True)
+            self.stateTooltip = None
 
     def set_buttons_ability(self) -> None:
         self.action_despike.setDisabled(len(self.ImportedArray) == 0)
@@ -5838,16 +5200,22 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.action_average.setDisabled(len(self.preprocessing.baseline_corrected_not_trimmed_dict) == 0)
 
     def set_timer_memory_update(self) -> None:
+        """
+        Prints at statusBar how much RAM memory used at this moment
+        Returns
+        -------
+            None
+        """
         try:
             string_selected_files = ''
             n_selected = len(self.ui.input_table.selectionModel().selectedIndexes())
             if n_selected > 0:
-                string_selected_files = str(n_selected) + ' selected of '
+                string_selected_files = str(n_selected // 8) + ' selected of '
             string_n = ''
             n_spectrum = len(self.ImportedArray)
             if n_spectrum > 0:
                 string_n = str(n_spectrum) + ' files. '
-            string_mem = str(round(get_memory_used())) + ' Mb used'
+            string_mem = str(round(get_memory_used())) + ' Mb RAM used'
             usage_string = string_selected_files + string_n + string_mem
             self.memory_usage_label.setText(usage_string)
         except KeyboardInterrupt:
@@ -5856,10 +5224,6 @@ class MainWindow(QMainWindow, QtStyleTools):
     def set_cpu_load(self) -> None:
         cpu_perc = int(cpu_percent())
         self.ui.cpuLoadBar.setValue(cpu_perc)
-
-    def auto_save(self) -> None:
-        if self.modified and self.project_path and self.project_path != '':
-            self.save_with_shelve(self.project_path)
 
     def disable_buttons(self, b: bool) -> None:
         self.set_buttons_ability()
@@ -5893,6 +5257,17 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.ui.leftsideBtn.setIcon(QIcon("material/resources/source/chevron-left.svg"))
             self.ui.gt_add_Btn.setIcon(QIcon("material/resources/source/plus.svg"))
             self.ui.gt_dlt_Btn.setIcon(QIcon("material/resources/source/minus.svg"))
+
+    def open_demo_project(self) -> None:
+        """
+        1. Open Demo project
+        Returns
+        -------
+        None
+        """
+        path = 'examples/demo_project.zip'
+        self.open_project(path)
+        self.load_params(path)
 
     # endregion
 
@@ -5934,25 +5309,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.linearRegionBaseline.setBounds((min_cm, max_cm))
         self.linearRegionDeconv.setBounds((min_cm, max_cm))
 
-    def cm_range_start_change_event(self, new_value: float) -> None:
-        self.set_modified()
-        if self.preprocessing.ConvertedDict:
-            x_axis = next(iter(self.preprocessing.ConvertedDict.values()))[:, 0]
-            new_value = find_nearest(x_axis, new_value)
-            self.ui.cm_range_start.setValue(new_value)
-        if new_value >= self.ui.cm_range_end.value():
-            self.ui.cm_range_start.setValue(self.ui.cm_range_start.minimum())
-        self.linearRegionCmConverted.setRegion((self.ui.cm_range_start.value(), self.ui.cm_range_end.value()))
-
-    def cm_range_end_change_event(self, new_value: float) -> None:
-        self.set_modified()
-        if self.preprocessing.ConvertedDict:
-            x_axis = next(iter(self.preprocessing.ConvertedDict.values()))[:, 0]
-            new_value = find_nearest(x_axis, new_value)
-            self.ui.cm_range_end.setValue(new_value)
-        if new_value <= self.ui.cm_range_start.value():
-            self.ui.cm_range_end.setValue(self.ui.cm_range_end.maximum())
-        self.linearRegionCmConverted.setRegion((self.ui.cm_range_start.value(), self.ui.cm_range_end.value()))
 
     def lr_cm_region_changed(self) -> None:
         current_region = self.linearRegionCmConverted.getRegion()
@@ -5973,26 +5329,6 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.ui.trim_start_cm.setValue(current_region[0])
         self.ui.trim_end_cm.setValue(current_region[1])
 
-    def _trim_start_change_event(self, new_value: float) -> None:
-        self.set_modified()
-        if self.preprocessing.baseline_corrected_not_trimmed_dict:
-            x_axis = next(iter(self.preprocessing.baseline_corrected_not_trimmed_dict.values()))[:, 0]
-            new_value = find_nearest(x_axis, new_value)
-            self.ui.trim_start_cm.setValue(new_value)
-        if new_value >= self.ui.trim_end_cm.value():
-            self.ui.trim_start_cm.setValue(self.ui.trim_start_cm.minimum())
-        self.linearRegionBaseline.setRegion((self.ui.trim_start_cm.value(), self.ui.trim_end_cm.value()))
-
-    def _trim_end_change_event(self, new_value: float) -> None:
-        self.set_modified()
-        if self.preprocessing.baseline_corrected_not_trimmed_dict:
-            x_axis = next(iter(self.preprocessing.baseline_corrected_not_trimmed_dict.values()))[:, 0]
-            new_value = find_nearest(x_axis, new_value)
-            self.ui.trim_end_cm.setValue(new_value)
-        if new_value <= self.ui.trim_start_cm.value():
-            self.ui.trim_end_cm.setValue(self.ui.trim_end_cm.maximum())
-        self.linearRegionBaseline.setRegion((self.ui.trim_start_cm.value(), self.ui.trim_end_cm.value()))
-
     def update_trim_range_btn_clicked(self) -> None:
         if self.preprocessing.baseline_corrected_not_trimmed_dict:
             self.preprocessing.update_range_baseline_corrected()
@@ -6002,25 +5338,33 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     # endregion
 
+    # region Average
+    @asyncSlot()
+    async def average(self) -> None:
+        self.ui.statusBar.showMessage('Average plots refresh in progress...')
+        self.close_progress_bar()
+        self.open_progress_dialog("Average plots refresh in progress...")
+        self.open_progress_bar()
+        tasks = [create_task(self.preprocessing.update_averaged()),
+                 create_task(self.preprocessing.refresh_averaged_spectrum_plot())]
+        await wait(tasks)
+
+        self.close_progress_bar()
+        self.ui.statusBar.showMessage('Averaged plot update finished.', 10_000)
+
+    # endregion
+
     # region Fitting page 2
 
     # region Add line
     @asyncSlot()
     async def add_deconv_line(self, line_type: str):
         if not self.fitting.is_template:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Switch to Template mode to add new line")
-            msg.setWindowTitle("Add line failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Add line failed.', 'Switch to Template mode to add new line', self, {'Ok'})
             msg.exec()
             return
         elif not self.preprocessing.baseline_corrected_dict:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("No baseline corrected spectrum")
-            msg.setWindowTitle("Add line failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Add line failed.', 'No baseline corrected spectrum', self, {'Ok'})
             msg.exec()
             return
         try:
@@ -6044,20 +5388,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         Должна быть хотя бы 1 линия и есть спектры
         """
         if self.ui.deconv_lines_table.model().rowCount() == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Add some new lines before fitting")
-            msg.setWindowTitle("Fitting failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg = MessageBox('Fitting failed.', 'Add some new lines before fitting', self, {'Ok'})
             msg.exec()
             return
         elif not self.preprocessing.baseline_corrected_dict or len(self.preprocessing.baseline_corrected_dict) == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("There is No any data to fit")
-            msg.setWindowTitle("Fitting failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Fitting failed.', 'There is No any data to fit', self, {'Ok'}).exec()
             return
         try:
             await self.fitting.do_batch_fit()
@@ -6069,6 +5404,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             return
         df = self.fitting.create_deconvoluted_dataset_new()
         self.ui.deconvoluted_dataset_table_view.model().set_dataframe(df)
+        self._init_current_filename_combobox()
         self.fitting.update_ignore_features_table()
 
     @asyncSlot()
@@ -6079,20 +5415,10 @@ class MainWindow(QMainWindow, QtStyleTools):
         Должна быть хотя бы 1 линия и выделен текущий спектр
         """
         if self.ui.deconv_lines_table.model().rowCount() == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Add some new lines before fitting")
-            msg.setWindowTitle("Fitting failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Fitting failed.', 'Add some new lines before fitting', self, {'Ok'}).exec()
             return
         elif self.fitting.array_of_current_filename_in_deconvolution is None:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("There is No any data to fit")
-            msg.setWindowTitle("Fitting failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Fitting failed.', 'There is No any data to fit', self, {'Ok'}).exec()
             return
         try:
             await self.fitting.do_fit()
@@ -6105,56 +5431,40 @@ class MainWindow(QMainWindow, QtStyleTools):
         Auto guess lines, finds number of lines and positions x0
         """
         if not self.preprocessing.baseline_corrected_dict:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Do baseline correction before guessing peaks")
-            msg.setWindowTitle("Guess failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Guess failed.', 'Do baseline correction before guessing peaks', self, {'Ok'}).exec()
             return
         if self.ui.interval_checkBox.isChecked() and self.ui.intervals_gb.isChecked():
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("'Split by intervals' и 'Interval' активны. Нужно оставить один из них")
-            msg.setWindowTitle("Guess failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Guess failed.', "'Split spectrum' and 'Interval' both active. Leave only one of them turned on",
+                       self, {'Ok'}).exec()
             return
-        if self.ui.intervals_gb.isChecked() and self.ui.fit_intervals_table_view.model().rowCount() == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Если 'Split by intervals' активно, то нужно заполнить таблицу")
-            msg.setWindowTitle("Guess failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+        if self.ui.intervals_gb.isChecked() and self.ui.fit_borders_TableView.model().rowCount() == 0:
+            MessageBox('Guess failed.', "If 'Split spectrum' table is active, you must fill the table", self,
+                       {'Ok'}).exec()
             return
         if self.ui.guess_method_cb.currentText() == 'Average groups' and \
                 (not self.preprocessing.averaged_dict or len(self.preprocessing.averaged_dict) < 2):
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Если выбран метод 'Average groups', то должно быть больше 1 группы")
-            msg.setWindowTitle("Guess failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Guess failed.', "Если выбран метод 'Average groups', то должно быть больше 1 группы",
+                       self, {'Ok'}).exec()
             return
         if not self.ui.interval_checkBox.isChecked() and not self.ui.intervals_gb.isChecked():
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Question)
-            msg.setText('Авто определение линий в полном диапазоне может занимать очень много времени' + '\n'
-                        + 'Точно продолжить?')
+            msg = MessageBox('Achtung!', 'Авто определение линий в полном диапазоне может занимать очень много '
+                                         'времени' + '\n' + 'Точно продолжить?', self, {'Yes', 'No', 'Cancel'})
             msg.setInformativeText('Разделение спектра на диапазоны может сократить время анализа на 2-3 порядка. '
                                    'А без разделения вычисление может идти часами')
-            msg.setWindowTitle("Achtung!")
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-            if msg.exec() == QMessageBox.StandardButton.Yes:
-                msg = QMessageBox()
-                msg.setIcon(QMessageBox.Icon.Question)
-                msg.setText('Последний шанс передумать' + '\n' + 'Точно продолжить?')
-                msg.setWindowTitle("Achtung!")
-                msg.setStandardButtons(
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
-                if not msg.exec() == QMessageBox.StandardButton.Yes:
+            if self.project_path:
+                msg.setInformativeText(self.project_path)
+            result = msg.exec()
+            if result == 1:
+                self.action_save_project()
+                return True
+            elif result == 0:
+                return False
+            elif result == 2:
+                return True
+            if result == 1:
+                msg = MessageBox('Achtung!', 'Последний шанс передумать' + '\n' + 'Точно продолжить?', self,
+                                 {'Yes', 'No', 'Cancel'})
+                if not msg.exec() == 1:
                     return
             else:
                 return
@@ -6212,7 +5522,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     # region Stat analysis (machine learning) page4
     @asyncSlot()
-    async def fit_classificator(self, cl_type: str):
+    async def fit_classificator(self, cl_type=None):
         """
         Проверяем что датасет заполнен.
         Переходим в процедуру создания классификатора
@@ -6223,21 +5533,10 @@ class MainWindow(QMainWindow, QtStyleTools):
                 and self.ui.baselined_dataset_table_view.model().rowCount() == 0 \
                 or current_dataset == 'Deconvoluted' \
                 and self.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Нет данных для обучения классификатора")
-            msg.setWindowTitle("Classificator Fitting failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            MessageBox('Classificator Fitting failed.', 'Нет данных для обучения классификатора', self, {'Ok'})
             return
-        if cl_type == 'Torch':
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setText("На этой версии убрана возможность создания PyTorch сети.")
-            msg.setWindowTitle("Classificator Fitting failed")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
-            return
+        if not cl_type:
+            cl_type = self.ui.current_classificator_comboBox.currentText()
         try:
             await self.stat_analysis_logic.do_fit_classificator(cl_type)
         except Exception as err:
@@ -6245,31 +5544,58 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     @asyncSlot()
     async def redraw_stat_plots(self) -> None:
-        clfs = list(self.stat_analysis_logic.classificator_funcs.keys())
-        if 'PCA' in clfs:
-            clfs.remove('PCA')
-        if 'PLS-DA' in clfs:
-            clfs.remove('PLS-DA')
-        self.stat_analysis_logic.update_stat_report_text()
-        self.stat_analysis_logic.update_force_single_plots()
-        self.stat_analysis_logic.update_force_full_plots()
-        for clf in clfs:
-            await self.loop.run_in_executor(None, self.stat_analysis_logic.update_plots, clf)
-        await self.loop.run_in_executor(None, self.stat_analysis_logic.update_pca_plots)
-        await self.loop.run_in_executor(None, self.stat_analysis_logic.update_plsda_plots)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            warnings.filterwarnings('once')
+            self.stat_analysis_logic.update_stat_report_text(self.ui.current_classificator_comboBox.currentText())
+            await self.loop.run_in_executor(None, self.stat_analysis_logic.update_plots,
+                                            self.ui.current_classificator_comboBox.currentText())
+            await self.loop.run_in_executor(None, self.stat_analysis_logic.update_pca_plots)
+            await self.loop.run_in_executor(None, self.stat_analysis_logic.update_plsda_plots)
 
     def current_tree_sb_changed(self, idx: int) -> None:
-        if self.ui.stat_tab_widget.currentIndex() == 8 \
+        if self.ui.current_classificator_comboBox.currentText() == 'Random Forest' \
                 and 'Random Forest' in self.stat_analysis_logic.latest_stat_result:
             model_results = self.stat_analysis_logic.latest_stat_result['Random Forest']
             model = model_results['model']
-            update_plot_tree(model.best_estimator_.estimators_[idx], self.ui.rf_tree_plot_widget,
-                             model_results['feature_names'], model_results['target_names'])
-        elif self.ui.stat_tab_widget.currentIndex() == 11 and \
+            self.stat_analysis_logic.update_plot_tree(model.best_estimator_.estimators_[idx],
+                                                      model_results['feature_names'], model_results['target_names'])
+        elif self.ui.current_classificator_comboBox.currentText() == 'XGBoost' and \
                 'XGBoost' in self.stat_analysis_logic.latest_stat_result:
             model_results = self.stat_analysis_logic.latest_stat_result['XGBoost']
             model = model_results['model']
             self.stat_analysis_logic.update_xgboost_tree_plot(model.best_estimator_, idx)
+
+    @asyncSlot()
+    async def refresh_shap_push_button_clicked(self) -> None:
+        """
+            Refresh all shap plots for currently selected classificator
+        Returns
+        -------
+            None
+        """
+        cl_type = self.ui.current_classificator_comboBox.currentText()
+        if cl_type not in self.stat_analysis_logic.latest_stat_result \
+                or 'target_names' not in self.stat_analysis_logic.latest_stat_result[cl_type]\
+                or 'shap_values' not in self.stat_analysis_logic.latest_stat_result[cl_type]:
+            msg = MessageBox('SHAP plots refresh error.', 'Selected classificator is not fitted.', self, {'Ok'})
+            msg.setInformativeText('Try to turn on Use Shapley option before fit classificator.')
+            msg.exec()
+            return
+        await self.loop.run_in_executor(None, self._update_shap_plots)
+        await self.loop.run_in_executor(None, self._update_shap_plots_by_instance)
+        self.stat_analysis_logic.update_force_single_plots(cl_type)
+        self.stat_analysis_logic.update_force_full_plots(cl_type)
+        self.reload_force(self.ui.force_single)
+        self.reload_force(self.ui.force_full, True)
+
+    @asyncSlot()
+    async def current_dep_feature_changed(self, g: str = '') -> None:
+        cl_type = self.ui.current_classificator_comboBox.currentText()
+        if cl_type not in self.stat_analysis_logic.latest_stat_result:
+            return
+        model_results = self.stat_analysis_logic.latest_stat_result[cl_type]
+        self.stat_analysis_logic.build_partial_dependence_plot(model_results['model'], model_results['X'])
 
     # endregion
 

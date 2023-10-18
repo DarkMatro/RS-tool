@@ -1,8 +1,10 @@
 - File "joblib\_memmapping_reducer.py", line 594 and 609, in register_folder_finalizer commented to avoid running program process copy.
+# resource_tracker.register(pool_subfolder, "folder")
 
 pyqtgraph -
 1. exporters -SVGExporter - generateSvg no backgroundtag,
   __init__ comment in self.params background and scaling stroke, add self.params.param('width').setValue(6000.) to end of __init_
+
 2. FillBetweenItem - setCurves - comment            # curve1.sigPlotChanged.connect(self.curveChanged)
                                                     # curve2.sigPlotChanged.connect(self.curveChanged)
 из-за вылетов после компиляции в С при sigPlotChanged.emit() (не обязательно)
