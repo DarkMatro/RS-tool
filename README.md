@@ -11,7 +11,7 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 2. Install Graphviz https://graphviz.org/download/. (only needed to display XGBoost trees).
 
 # Program functionality
-- Classifier training and measurement classification using models: 'LDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest' , 'AdaBoost', 'MLP' (neural network), XGBoost, Voting and Stacking.
+- Classifier training and measurement classification using models: 'LDA', 'Logistic regression', 'NuSVC', 'Nearest Neighbors', 'GPC', 'Decision Tree', 'Naive Bayes', 'Random Forest' , 'AdaBoost', 'MLP' (1 hidden layer neural network), XGBoost, Voting and Stacking.
 - Data dimensionality reduction using PCA and PLS-DA methods.
 - Obtaining Variable importance in projections (VIP) PLS-DA values.
 - The ability to use the program to classify new measured spectra using trained models.
