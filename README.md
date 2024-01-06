@@ -1,6 +1,6 @@
 # Raman spectroscopy tool (RS-tool)
 
-![splash](https://github.com/DarkMatro/RS-tool/assets/113565324/8e359ff6-0a3a-4628-b8ab-bd0364bc8bb2)
+![splash](https://github.com/DarkMatro/RS-tool/assets/113565324/4fe69b39-29d5-4b93-9b1b-200ab41920c3)
 
 Implementation of a full cycle of biomedical machine learning classification problem.
 The program is designed for a realtime full cycle of processing Raman spectra: preprocessing, decomposition of spectra, creation of classifier models for further work with new measured spectra.
