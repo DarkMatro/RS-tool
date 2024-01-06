@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from re import findall
 from typing import Any
-
+from logging import error
 import lmfit.model
 import numpy as np
 import pandas as pd
@@ -432,16 +432,27 @@ def find_first_left_local_minimum(i: tuple[str, np.ndarray]) -> int:
 # endregion
 
 # region Average
-def get_average_spectrum(item: list[np.ndarray], method: str = 'Mean') -> np.ndarray:
-    x_axis = item[0][:, 0]
-    y_axes = []
-    for array in item:
-        y_axes.append(array[:, 1])
-    np_y_axes = np.array(y_axes)
-    if method == 'Mean':
-        np_y_axis = np.mean(np_y_axes, axis=0)
-    else:
-        np_y_axis = np.median(np_y_axes, axis=0)
+def get_average_spectrum(spectra: list[np.ndarray], method: str = 'Mean') -> np.ndarray:
+    """
+    Returns mean / median spectrum for all spectra
+    Parameters
+    ----------
+    spectra: list[np.ndarray]
+       Contains lists of Raman spectra with 2 columns: x - cm-1, y - Intensity
+    method: str
+        'Mean' or 'Median'
+
+    Returns
+    -------
+    np.ndarray
+       averaged spectrum
+    """
+    assert spectra
+    assert method in ['Mean', 'Median']
+    x_axis = spectra[0][:, 0]
+    y_axes = [spectrum[:, 1] for spectrum in spectra]
+    y_axes = np.array(y_axes)
+    np_y_axis = np.mean(y_axes, axis=0) if method == 'Mean' else np.median(y_axes, axis=0)
     return np.vstack((x_axis, np_y_axis)).T
 
 
@@ -579,7 +590,7 @@ def eval_uncert(item: tuple[str, lmfit.model.ModelResult]) -> tuple[str, np.ndar
     key, fit_result = item
     if not fit_result:
         return
-    return key, fit_result.eval_uncertainty(fit_result.params, 3)
+    return key, fit_result.eval_uncertainty(fit_result.params)
 
 
 def insert_table_to_text_edit(cursor, headers, rows) -> None:
@@ -616,6 +627,8 @@ def action_help() -> None:
 
 def show_error_msg(exc_type, exc_value, exc_tb, parent=None):
     msg = MessageBox(str(exc_type), str(exc_value), parent, {'Ok'})
-    msg.setInformativeText('For full text of error go to %appdata%/RS-Tool/log.log')
+    msg.setInformativeText('For full text of error go to %appdata%/RS-Tool/log.log' + '\n' + exc_tb)
+    print(exc_tb)
+    error(exc_tb)
     pyperclip_copy(exc_tb)
     msg.exec()

@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self._ascending_input_table = False
         self._ascending_ignore_table = False
         self._ascending_deconv_lines_table = False
+        self._latest_file_path = getenv('APPDATA') + '/RS-tool'  # save folder path for file dialogs
         try:
             check_recent_files()
         except Exception as err:
@@ -354,6 +355,8 @@ class MainWindow(QMainWindow):
         self.ui.xgb_n_estimators_spinBox.setValue(self.default_values['xgb_n_estimators_spinBox'])
         self.ui.rf_n_estimators_spinBox.setValue(self.default_values['rf_n_estimators_spinBox'])
         self.ui.max_epoch_spinBox.setValue(self.default_values['max_epoch_spinBox'])
+        self.ui.dt_min_samples_split_spin_box.setValue(self.default_values['dt_min_samples_split_spin_box'])
+        self.ui.dt_max_depth_spin_box.setValue(self.default_values['dt_max_depth_spin_box'])
         self.ui.learning_rate_doubleSpinBox.setValue(self.default_values['learning_rate_doubleSpinBox'])
         self.ui.feature_display_max_spinBox.setValue(self.default_values['feature_display_max_spinBox'])
         self.ui.l_ratio_doubleSpinBox.setValue(self.default_values['l_ratio'])
@@ -371,6 +374,8 @@ class MainWindow(QMainWindow):
         self.ui.mlp_solve_checkBox.setChecked(True)
         self.ui.activation_checkBox.setChecked(True)
         self.ui.criterion_checkBox.setChecked(True)
+        self.ui.dt_min_samples_split_check_box.setChecked(True)
+        self.ui.dt_max_depth_check_box.setChecked(True)
         self.ui.rf_max_features_checkBox.setChecked(True)
         self.ui.rf_n_estimators_checkBox.setChecked(True)
         self.ui.rf_min_samples_split_checkBox.setChecked(True)
@@ -712,9 +717,10 @@ class MainWindow(QMainWindow):
 
     def web_view_print_pdf(self, page):
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Print page to PDF', getenv('APPDATA') + '/RS-tool', "PDF (*.pdf)")
+        file_path = fd.getSaveFileName(self, 'Print page to PDF', self._latest_file_path, "PDF (*.pdf)")
         if file_path[0] == '':
             return
+        self._latest_file_path = str(Path(file_path[0]).parent)
         ps = QPageSize(QPageSize.A4)
         pl = QPageLayout(ps, QPageLayout.Orientation.Landscape, QMarginsF())
         page.printToPdf(file_path[0], pageLayout=pl)
@@ -993,11 +999,22 @@ class MainWindow(QMainWindow):
         self.clear_menu.addSeparator()
         self.clear_menu.addAction('Smoothed dataset', self._initial_smoothed_dataset_table)
         self.clear_menu.addAction('Baseline corrected dataset', self._initial_baselined_dataset_table)
-        self.clear_menu.addAction('Deconvoluted dataset', self._initial_deconvoluted_dataset_table)
+        self.clear_menu.addAction('Decomposed dataset', self._initial_deconvoluted_dataset_table)
         self.clear_menu.addAction('Ignore features', self._initial_ignore_dataset_table)
         self.clear_menu.addSeparator()
-        for i in classificators_names():
-            self.clear_menu.addAction(i, lambda: self.clear_selected_step(i))
+        self.clear_menu.addAction('LDA', lambda: self.clear_selected_step('LDA'))
+        self.clear_menu.addAction('Logistic regression', lambda: self.clear_selected_step('Logistic regression'))
+        self.clear_menu.addAction('NuSVC', lambda: self.clear_selected_step('NuSVC'))
+        self.clear_menu.addAction('Nearest Neighbors', lambda: self.clear_selected_step('Nearest Neighbors'))
+        self.clear_menu.addAction('GPC', lambda: self.clear_selected_step('GPC'))
+        self.clear_menu.addAction('Naive Bayes', lambda: self.clear_selected_step('Naive Bayes'))
+        self.clear_menu.addAction('MLP', lambda: self.clear_selected_step('MLP'))
+        self.clear_menu.addAction('Decision Tree', lambda: self.clear_selected_step('Decision Tree'))
+        self.clear_menu.addAction('Random Forest', lambda: self.clear_selected_step('Random Forest'))
+        self.clear_menu.addAction('AdaBoost', lambda: self.clear_selected_step('AdaBoost'))
+        self.clear_menu.addAction('XGBoost', lambda: self.clear_selected_step('XGBoost'))
+        self.clear_menu.addAction('Voting', lambda: self.clear_selected_step('Voting'))
+        self.clear_menu.addAction('Stacking', lambda: self.clear_selected_step('Stacking'))
         self.clear_menu.addAction('PCA', lambda: self.clear_selected_step('PCA'))
         self.clear_menu.addAction('PLS-DA', lambda: self.clear_selected_step('PLS-DA'))
         self.clear_menu.addSeparator()
@@ -1051,8 +1068,10 @@ class MainWindow(QMainWindow):
         self.action_refresh_plots.triggered.connect(self.redraw_stat_plots)
         self.action_refresh_shap = QAction('Refresh SHAP')
         self.action_refresh_shap.triggered.connect(self.refresh_shap_push_button_clicked)
+        self.action_refresh_learning_curve = QAction('Refresh learning curve')
+        self.action_refresh_learning_curve.triggered.connect(self.stat_analysis_logic.refresh_learning_curve)
         actions = [self.action_fit, self.action_fit_pca, self.action_fit_plsda, self.action_refresh_plots,
-                   self.action_refresh_shap]
+                   self.action_refresh_shap, self.action_refresh_learning_curve]
         self.stat_analysis_menu.addActions(actions)
         self.ui.stat_analysis_btn.setMenu(self.stat_analysis_menu)
 
@@ -1262,6 +1281,8 @@ class MainWindow(QMainWindow):
         self.ui.n_neighbors_checkBox.stateChanged.connect(self.set_modified)
         self.ui.activation_checkBox.stateChanged.connect(self.set_modified)
         self.ui.criterion_checkBox.stateChanged.connect(self.set_modified)
+        self.ui.dt_max_depth_check_box.stateChanged.connect(self.set_modified)
+        self.ui.dt_min_samples_split_check_box.stateChanged.connect(self.set_modified)
         self.ui.rf_criterion_checkBox.stateChanged.connect(self.set_modified)
         self.ui.ab_n_estimators_checkBox.stateChanged.connect(self.set_modified)
         self.ui.xgb_lambda_checkBox.stateChanged.connect(self.set_modified)
@@ -1296,7 +1317,7 @@ class MainWindow(QMainWindow):
         self.ui.refit_score.addItems(scorer_metrics().keys())
 
     def _init_dataset_type_cb(self) -> None:
-        self.ui.dataset_type_cb.addItems(['Smoothed', 'Baseline corrected', 'Deconvoluted'])
+        self.ui.dataset_type_cb.addItems(['Smoothed', 'Baseline corrected', 'Decomposed'])
         self.ui.dataset_type_cb.currentTextChanged.connect(self.dataset_type_cb_current_text_changed)
 
     def _init_current_feature_cb(self) -> None:
@@ -3347,18 +3368,17 @@ class MainWindow(QMainWindow):
         4. using ThreadPoolExecutor add arrays to self.ImportedArray and new row to input_table
         5. update plot
         """
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
         file_path = fd.getOpenFileNames(parent=self, caption='Select files with Raman data',
-                                        directory=path, filter="Text files (*.txt *.asc)")
-        for i in reversed(file_path[0]):
-            if Path(i).name in self.ImportedArray:
-                file_path[0].remove(i)  # exclude filename existing in ImportedArray
-        if file_path[0] == '':
-            self.ui.statusBar.showMessage('Не было выбрано ни одного файлы')
+                                        directory=self._latest_file_path, filter="Text files (*.txt *.asc)")
+        if not file_path[0]:
+            self.ui.statusBar.showMessage('Не было выбрано ни одного файла')
             return
+        # exclude filename existing in ImportedArray
+        filenames = [x for x in file_path[0] if Path(x).name not in self.ImportedArray]
+        self._latest_file_path = str(Path(filenames[0]).parent)
         try:
-            await self.import_files(file_path[0])
+            await self.import_files(filenames)
         except Exception as err:
             self.show_error(err)
 
@@ -3425,18 +3445,16 @@ class MainWindow(QMainWindow):
             return
         if isinstance(tv, QTableView):
             row_count = tv.model().rowCount()
-            table_height = tv.height()
             row_height = tv.rowHeight(0)
-            self.ui.verticalScrollBar.setValue(tv.verticalScrollBar().value())
             if row_count > 0:
-                self.ui.input_table.verticalScrollBar().pageStep()
                 page_step = tv.verticalScrollBar().pageStep()
-                self.ui.verticalScrollBar.setMinimum(0)
+                self.ui.verticalScrollBar.setMinimum(tv.verticalScrollBar().minimum())
                 self.ui.verticalScrollBar.setVisible(page_step <= row_height * row_count)
-                self.ui.verticalScrollBar.setPageStep(tv.verticalScrollBar().pageStep())
+                self.ui.verticalScrollBar.setPageStep(page_step)
                 self.ui.verticalScrollBar.setMaximum(tv.verticalScrollBar().maximum())
             else:
                 self.ui.verticalScrollBar.setVisible(False)
+            self.ui.verticalScrollBar.setValue(tv.verticalScrollBar().value())
         elif isinstance(tv, QScrollArea):
             self.ui.verticalScrollBar.setValue(tv.verticalScrollBar().value())
             self.ui.verticalScrollBar.setMinimum(0)
@@ -3502,9 +3520,6 @@ class MainWindow(QMainWindow):
                 self.executor_stop()
             case Qt.Key.Key_F1:
                 action_help()
-            case Qt.Key.Key_F7:
-                X, _, _, _, _ = self.stat_analysis_logic.dataset_for_ml()
-                print(X.describe())
             case Qt.Key.Key_F2:
                 from modules.stages.fitting.functions.guess_raman_lines import show_distribution
                 if self.ui.stackedWidget_mainpages.currentIndex() != 1:
@@ -3521,6 +3536,17 @@ class MainWindow(QMainWindow):
             case Qt.Key.Key_F4:
                 if self.ui.plots_tabWidget.currentIndex() == 5:
                     self.preprocessing.ex_mod_poly_build_dev()
+            case Qt.Key.Key_F7:
+                self.ui.input_table.model().dataframe()
+            case Qt.Key.Key_F5:
+                ovcs = list(self.fitting.overlapping_coefficients_for_each_line().values())
+                print(ovcs)
+                # ovcs = ovcs[~np.isnan(ovcs)]
+                # print(ovcs)
+                print(np.mean(ovcs))
+                print(np.median(ovcs))
+                print(np.min(ovcs))
+                print(np.max(ovcs))
             case Qt.Key.Key_F6:
                 return
                 from modules.stages.fitting.functions.peak_shapes import gaussian
@@ -3583,10 +3609,6 @@ class MainWindow(QMainWindow):
                     self.showFullScreen()
                 else:
                     self.showMaximized()
-            case Qt.Key.Key_0:
-                pass
-                # sns.JointGrid()
-                # plt.show()
 
     def undo(self) -> None:
         self.ui.input_table.setCurrentIndex(QModelIndex())
@@ -3710,26 +3732,27 @@ class MainWindow(QMainWindow):
     # region ACTIONS FILE MENU
 
     def action_new_project(self) -> None:
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
-        if file_path[0] != '':
-            try:
-                f = shelve_open(file_path[0], 'n')
-                f.close()
-                self.open_project(file_path[0], new=True)
-            except BaseException:
-                raise
+        file_path = fd.getSaveFileName(self, 'Create Project File', self._latest_file_path, "ZIP (*.zip)")
+        if file_path[0] == '':
+            return
+        self._latest_file_path = str(Path(file_path[0]).parent)
+        try:
+            self.save_with_shelve(file_path[0])
+            self.open_project(file_path[0], new=True)
+        except BaseException:
+            raise
 
     def action_open_project(self) -> None:
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getOpenFileName(self, 'Select RS-tool project file to open', path, "(*.zip)")
-        if file_path[0] != '':
-            if not self.can_close_project():
-                return
-            self.open_project(file_path[0])
-            self.load_params(file_path[0])
+        file_path = fd.getOpenFileName(self, 'Select RS-tool project file to open', self._latest_file_path, "(*.zip)")
+        if file_path[0] == '':
+            return
+        self._latest_file_path = str(Path(file_path[0]).parent)
+        if not self.can_close_project():
+            return
+        self.open_project(file_path[0])
+        self.load_params(file_path[0])
 
     def can_close_project(self) -> bool:
         if not self.modified:
@@ -3759,35 +3782,38 @@ class MainWindow(QMainWindow):
 
     def action_save_project(self) -> None:
         if self.project_path == '' or self.project_path is None:
-            path = getenv('APPDATA') + '/RS-tool'
             fd = QFileDialog(self)
-            file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
-            if file_path[0] != '':
-                self.save_with_shelve(file_path[0])
-                self.ui.projectLabel.setText(file_path[0])
-                self.setWindowTitle(file_path[0])
-                self._add_path_to_recent(file_path[0])
-                self.update_recent_list()
-                self.project_path = file_path[0]
+            file_path = fd.getSaveFileName(self, 'Create Project File', self._latest_file_path, "ZIP (*.zip)")
+            if file_path[0] == '':
+                return
+            self._latest_file_path = str(Path(file_path[0]).parent)
+            self.save_with_shelve(file_path[0])
+            self.ui.projectLabel.setText(file_path[0])
+            self.setWindowTitle(file_path[0])
+            self._add_path_to_recent(file_path[0])
+            self.update_recent_list()
+            self.project_path = file_path[0]
         else:
             self.save_with_shelve(self.project_path)
 
     @asyncSlot()
     async def action_save_production_project(self) -> None:
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Create Production Project File', path, "ZIP (*.zip)")
-        if file_path[0] != '':
-            self.save_with_shelve(file_path[0], True)
+        file_path = fd.getSaveFileName(self, 'Create Production Project File', self._latest_file_path, "ZIP (*.zip)")
+        if file_path[0] == '':
+            return
+        self._latest_file_path = str(Path(file_path[0]).parent)
+        self.save_with_shelve(file_path[0], True)
 
     @asyncSlot()
     async def action_save_as(self) -> None:
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Create Project File', path, "ZIP (*.zip)")
-        if file_path[0] != '':
-            self.save_with_shelve(file_path[0])
-            self.project_path = file_path[0]
+        file_path = fd.getSaveFileName(self, 'Create Project File', self._latest_file_path, "ZIP (*.zip)")
+        if file_path[0] == '':
+            return
+        self._latest_file_path = str(Path(file_path[0]).parent)
+        self.save_with_shelve(file_path[0])
+        self.project_path = file_path[0]
 
     def save_with_shelve(self, path: str, production_export: bool = False) -> None:
         self.ui.statusBar.showMessage('Saving file...')
@@ -3892,6 +3918,8 @@ class MainWindow(QMainWindow):
             db['xgb_n_estimators_spinBox'] = self.ui.xgb_n_estimators_spinBox.value()
             db['rf_n_estimators_spinBox'] = self.ui.rf_n_estimators_spinBox.value()
             db['max_epoch_spinBox'] = self.ui.max_epoch_spinBox.value()
+            db['dt_min_samples_split_spin_box'] = self.ui.dt_min_samples_split_spin_box.value()
+            db['dt_max_depth_spin_box'] = self.ui.dt_max_depth_spin_box.value()
             db['learning_rate_doubleSpinBox'] = self.ui.learning_rate_doubleSpinBox.value()
             db['feature_display_max_checkBox'] = self.ui.feature_display_max_checkBox.isChecked()
             db['include_x0_checkBox'] = self.ui.include_x0_checkBox.isChecked()
@@ -3913,6 +3941,8 @@ class MainWindow(QMainWindow):
             db['mlp_solve_checkBox'] = self.ui.mlp_solve_checkBox.isChecked()
             db['activation_checkBox'] = self.ui.activation_checkBox.isChecked()
             db['criterion_checkBox'] = self.ui.criterion_checkBox.isChecked()
+            db['dt_min_samples_split_check_box'] = self.ui.dt_min_samples_split_check_box.isChecked()
+            db['dt_max_depth_check_box'] = self.ui.dt_max_depth_check_box.isChecked()
             db['rf_max_features_checkBox'] = self.ui.rf_max_features_checkBox.isChecked()
             db['rf_n_estimators_checkBox'] = self.ui.rf_n_estimators_checkBox.isChecked()
             db['rf_min_samples_split_checkBox'] = self.ui.rf_min_samples_split_checkBox.isChecked()
@@ -4050,11 +4080,11 @@ class MainWindow(QMainWindow):
             msg = MessageBox('Export failed.', 'No data to save', self, {'Ok'})
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Save input nm data to csv table', path, "CSV (*.csv")
+        file_path = fd.getSaveFileName(self, 'Save input nm data to csv table', self._latest_file_path , "CSV (*.csv")
         if not file_path[0]:
             return
+        self._latest_file_path = str(Path(file_path[0]).parent)
         self.ui.input_table.model().save_nm_files_to_csv(file_path[0], self.ImportedArray)
 
     @asyncSlot()
@@ -4072,11 +4102,12 @@ class MainWindow(QMainWindow):
             msg.setInformativeText('Try to decompose spectra before save.')
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Save decomposed lines data to csv table', path, "CSV (*.csv")
+        file_path = fd.getSaveFileName(self, 'Save decomposed lines data to csv table', self._latest_file_path,
+                                       "CSV (*.csv")
         if not file_path[0]:
             return
+        self._latest_file_path = str(Path(file_path[0]).parent)
         self.ui.deconvoluted_dataset_table_view.model().dataframe().to_csv(file_path[0])
 
     @asyncSlot()
@@ -4085,26 +4116,27 @@ class MainWindow(QMainWindow):
             msg = MessageBox('Export failed.', 'No files to save', self, {'Ok'})
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in nm', path)
-        if folder_path:
-            self.ui.statusBar.showMessage('Exporting files...')
-            self.close_progress_bar()
-            self.progressBar = IndeterminateProgressBar(self)
-            self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-            self.export_folder_path = folder_path + '/nm'
-            if not Path(self.export_folder_path).exists():
-                Path(self.export_folder_path).mkdir(parents=True)
-            with Manager() as manager:
-                self.break_event = manager.Event()
-                with ThreadPoolExecutor() as executor:
-                    self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
-                                            for i in self.ImportedArray.items()]
-                    await gather(*self.current_futures)
-            self.close_progress_bar()
-            self.ui.statusBar.showMessage('Export completed. {} new files created.'.format(len(self.ImportedArray)),
-                                          50_000)
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in nm', self._latest_file_path)
+        if not folder_path:
+            return
+        self._latest_file_path = folder_path
+        self.ui.statusBar.showMessage('Exporting files...')
+        self.close_progress_bar()
+        self.progressBar = IndeterminateProgressBar(self)
+        self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
+        self.export_folder_path = folder_path + '/nm'
+        if not Path(self.export_folder_path).exists():
+            Path(self.export_folder_path).mkdir(parents=True)
+        with Manager() as manager:
+            self.break_event = manager.Event()
+            with ThreadPoolExecutor() as executor:
+                self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
+                                        for i in self.ImportedArray.items()]
+                await gather(*self.current_futures)
+        self.close_progress_bar()
+        self.ui.statusBar.showMessage('Export completed. {} new files created.'.format(len(self.ImportedArray)),
+                                      50_000)
 
     @asyncSlot()
     async def action_export_files_cm(self) -> None:
@@ -4112,26 +4144,27 @@ class MainWindow(QMainWindow):
             msg = MessageBox('Export failed.', 'No files to save', self, {'Ok'})
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', path)
-        if folder_path:
-            self.ui.statusBar.showMessage('Exporting files...')
-            self.close_progress_bar()
-            self.progressBar = IndeterminateProgressBar(self)
-            self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-            self.export_folder_path = folder_path + '/cm-1'
-            if not Path(self.export_folder_path).exists():
-                Path(self.export_folder_path).mkdir(parents=True)
-            with Manager() as manager:
-                self.break_event = manager.Event()
-                with ThreadPoolExecutor() as executor:
-                    self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
-                                            for i in self.preprocessing.baseline_corrected_dict.items()]
-                    await gather(*self.current_futures)
-            self.close_progress_bar()
-            self.ui.statusBar.showMessage('Export completed. {} new files '
-                                          'created.'.format(len(self.preprocessing.baseline_corrected_dict)), 50_000)
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', self._latest_file_path)
+        if not folder_path:
+            return
+        self._latest_file_path = folder_path
+        self.ui.statusBar.showMessage('Exporting files...')
+        self.close_progress_bar()
+        self.progressBar = IndeterminateProgressBar(self)
+        self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
+        self.export_folder_path = folder_path + '/cm-1'
+        if not Path(self.export_folder_path).exists():
+            Path(self.export_folder_path).mkdir(parents=True)
+        with Manager() as manager:
+            self.break_event = manager.Event()
+            with ThreadPoolExecutor() as executor:
+                self.current_futures = [self.loop.run_in_executor(executor, self._export_files, i)
+                                        for i in self.preprocessing.baseline_corrected_dict.items()]
+                await gather(*self.current_futures)
+        self.close_progress_bar()
+        self.ui.statusBar.showMessage('Export completed. {} new files '
+                                      'created.'.format(len(self.preprocessing.baseline_corrected_dict)), 50_000)
 
     @asyncSlot()
     async def action_export_average(self) -> None:
@@ -4140,25 +4173,26 @@ class MainWindow(QMainWindow):
             msg = MessageBox('Export failed.', 'No files to save', self, {'Ok'})
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', path)
-        if folder_path:
-            self.ui.statusBar.showMessage('Exporting files...')
-            self.close_progress_bar()
-            self.progressBar = IndeterminateProgressBar(self)
-            self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
-            self.export_folder_path = folder_path + '/average'
-            if not Path(self.export_folder_path).exists():
-                Path(self.export_folder_path).mkdir(parents=True)
-            with Manager() as manager:
-                self.break_event = manager.Event()
-                with ThreadPoolExecutor() as executor:
-                    self.current_futures = [self.loop.run_in_executor(executor, self._export_files_av, i)
-                                            for i in self.preprocessing.averaged_dict.items()]
-                    await gather(*self.current_futures)
-            self.close_progress_bar()
-            self.ui.statusBar.showMessage('Export completed', 50_000)
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', self._latest_file_path )
+        if not folder_path:
+            return
+        self._latest_file_path = folder_path
+        self.ui.statusBar.showMessage('Exporting files...')
+        self.close_progress_bar()
+        self.progressBar = IndeterminateProgressBar(self)
+        self.statusBar().insertPermanentWidget(0, self.progressBar, 1)
+        self.export_folder_path = folder_path + '/average'
+        if not Path(self.export_folder_path).exists():
+            Path(self.export_folder_path).mkdir(parents=True)
+        with Manager() as manager:
+            self.break_event = manager.Event()
+            with ThreadPoolExecutor() as executor:
+                self.current_futures = [self.loop.run_in_executor(executor, self._export_files_av, i)
+                                        for i in self.preprocessing.averaged_dict.items()]
+                await gather(*self.current_futures)
+        self.close_progress_bar()
+        self.ui.statusBar.showMessage('Export completed', 50_000)
 
     @asyncSlot()
     async def action_export_table_excel(self) -> None:
@@ -4166,11 +4200,11 @@ class MainWindow(QMainWindow):
             msg = MessageBox('Export failed.', 'Table is empty', self, {'Ok'})
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to save excel file', path)
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to save excel file', self._latest_file_path)
         if not folder_path:
             return
+        self._latest_file_path = folder_path
         self.ui.statusBar.showMessage('Saving file...')
         self.close_progress_bar()
         self.open_progress_bar(max_value=0)
@@ -4582,6 +4616,10 @@ class MainWindow(QMainWindow):
                 self.ui.activation_checkBox.setChecked(db["activation_checkBox"])
             if "criterion_checkBox" in db:
                 self.ui.criterion_checkBox.setChecked(db["criterion_checkBox"])
+            if "dt_max_depth_check_box" in db:
+                self.ui.dt_max_depth_check_box.setChecked(db["dt_max_depth_check_box"])
+            if "dt_min_samples_split_check_box" in db:
+                self.ui.dt_min_samples_split_check_box.setChecked(db["dt_min_samples_split_check_box"])
             if "rf_criterion_checkBox" in db:
                 self.ui.rf_criterion_checkBox.setChecked(db["rf_criterion_checkBox"])
             if "ab_n_estimators_checkBox" in db:
@@ -4740,6 +4778,10 @@ class MainWindow(QMainWindow):
                 self.ui.mlp_layer_size_spinBox.setValue(db['mlp_layer_size_spinBox'])
             if 'max_epoch_spinBox' in db:
                 self.ui.max_epoch_spinBox.setValue(db['max_epoch_spinBox'])
+            if 'dt_max_depth_spin_box' in db:
+                self.ui.dt_max_depth_spin_box.setValue(db['dt_max_depth_spin_box'])
+            if 'dt_min_samples_split_spin_box' in db:
+                self.ui.dt_min_samples_split_spin_box.setValue(db['dt_min_samples_split_spin_box'])
             if 'rf_min_samples_split_spinBox' in db:
                 self.ui.rf_min_samples_split_spinBox.setValue(db['rf_min_samples_split_spinBox'])
             if 'ab_learning_rate_doubleSpinBox' in db:
@@ -4985,12 +5027,12 @@ class MainWindow(QMainWindow):
 
     @asyncSlot()
     async def action_import_fit_template(self):
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getOpenFileName(self, 'Open fit template file', path, "ZIP (*.zip)")
+        file_path = fd.getOpenFileName(self, 'Open fit template file', self._latest_file_path, "ZIP (*.zip)")
         if not file_path[0]:
             return
         path = file_path[0]
+        self._latest_file_path = str(Path(path).parent)
         self.ui.statusBar.showMessage('Reading data file...')
         self.close_progress_bar()
         self.open_progress_bar()
@@ -5039,11 +5081,11 @@ class MainWindow(QMainWindow):
             msg = MessageBox('Export failed.', 'Fit template is empty', self, {'Ok'})
             msg.exec()
             return
-        path = getenv('APPDATA') + '/RS-tool'
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Save fit template file', path, "ZIP (*.zip)")
+        file_path = fd.getSaveFileName(self, 'Save fit template file', self._latest_file_path, "ZIP (*.zip)")
         if not file_path[0]:
             return
+        self._latest_file_path = str(Path(file_path[0]).parent)
         self.ui.statusBar.showMessage('Saving file...')
         self.close_progress_bar()
         self.open_progress_bar()
@@ -5449,13 +5491,6 @@ class MainWindow(QMainWindow):
             if self.project_path:
                 msg.setInformativeText(self.project_path)
             result = msg.exec()
-            if result == 1:
-                self.action_save_project()
-                return True
-            elif result == 0:
-                return False
-            elif result == 2:
-                return True
             if result == 1:
                 msg = MessageBox('Achtung!', 'Последний шанс передумать' + '\n' + 'Точно продолжить?', self,
                                  {'Yes', 'No', 'Cancel'})

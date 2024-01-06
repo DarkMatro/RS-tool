@@ -69,11 +69,10 @@ def start_program() -> None:
     frame.showMaximized()
     splash_show_message(splash, 'Initializing finished.')
     splash.finish(frame)
-    if Path('examples/demo_project.zip').exists() and recent_files_exists_and_empty():
-        msg_res = MessageBox('Open demo project?', '', frame, {'Yes', 'Cancel'}).exec()
-        if msg_res == 1:
-            frame.open_demo_project()
-            action_help()
+    if Path('examples/demo_project.zip').exists() and recent_files_exists_and_empty() \
+            and MessageBox('Open demo project?', '', frame, {'Yes', 'Cancel'}).exec() == 1:
+        frame.open_demo_project()
+        action_help()
     with loop:
         loop.run_forever()
 
@@ -83,5 +82,3 @@ def _except_hook(exc_type, exc_value, exc_tb, **kwargs):
     if exc_value.args[0][0: 19] == 'invalid result from':
         return
     show_error_msg(exc_type, exc_value, tb, **kwargs)
-
-

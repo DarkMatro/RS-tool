@@ -71,7 +71,7 @@ def default_values() -> dict[float | str]:
             'average_function': 'Mean',
             'n_lines_method': 'Min',
             'max_noise_level': 30.,
-            'dataset_type_cb': 'Deconvoluted',
+            'dataset_type_cb': 'Decomposed',
             'test_data_ratio_spinBox': 25,
             'random_state_sb': 0,
             'mlp_layer_size_spinBox': 100,
@@ -102,11 +102,9 @@ def default_values() -> dict[float | str]:
             'average_n_boot_spin_box': 100,
             'average_level_spin_box': 95,
             'select_percentile_spin_box': 50,
+            'dt_max_depth_spin_box': 0,
+            'dt_min_samples_split_spin_box': 2,
             }
-
-
-def program_version() -> str:
-    return 'ver. 1.0.8 '
 
 
 def peak_shape_params_limits() -> dict[str, tuple[float, float]]:

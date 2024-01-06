@@ -6,7 +6,7 @@ from gc import collect
 from logging import info, debug
 import numpy as np
 from pandas import DataFrame, concat
-from shap import Explainer, KernelExplainer
+from shap import Explainer, KernelExplainer, TreeExplainer
 from asyncqtpy import asyncSlot
 from lmfit.model import ModelResult
 from pyqtgraph import mkPen, ROI
@@ -406,7 +406,7 @@ class CommandDeleteInputSpectrum(QUndoCommand):
                 self.BaselineDict_old[filename] = self.rs.preprocessing.baseline_dict[filename]
             if self.rs.preprocessing.baseline_corrected_dict and filename in self.rs.preprocessing.baseline_corrected_dict:
                 self.BaselineCorrectedDict_old[filename] = self.rs.preprocessing.baseline_corrected_dict[filename]
-            if self.rs.fitting.report_result and filename in self.rs.report_result:
+            if self.rs.fitting.report_result and filename in self.rs.fitting.report_result:
                 self.report_result_old[filename] = self.rs.fitting.report_result[filename]
             if self.rs.fitting.sigma3 and filename in self.rs.fitting.sigma3:
                 self.sigma3_old[filename] = self.rs.fitting.sigma3[filename]
@@ -2090,7 +2090,7 @@ class CommandAfterFitting(QUndoCommand):
         self.prepare_data()
 
     def prepare_data(self) -> None:
-        av_text, sigma3_top, sigma3_bottom = fitting_metrics(self.results)
+        av_text, self.sigma3_top, self.sigma3_bottom = fitting_metrics(self.results)
         for fit_result in self.results:
             self.fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False),
                                                       fit_result) + '\n' + '\n'
@@ -2788,7 +2788,7 @@ class CommandAfterFittingStat(QUndoCommand):
         elif self.cl_type == 'PLS-DA':
             stat_result_new = self.create_stat_result_plsda()
         else:
-            stat_result_new = self.create_stat_result_rest()
+            stat_result_new = self.create_stat_result_rest(self.cl_type)
         if self.mw.ui.dataset_type_cb.currentText() == 'Smoothed':
             X_display = self.mw.ui.smoothed_dataset_table_view.model().dataframe()
         elif self.mw.ui.dataset_type_cb.currentText() == 'Baseline corrected':
@@ -2866,7 +2866,7 @@ class CommandAfterFittingStat(QUndoCommand):
             result['shap_values_legacy'] = kernel_explainer.shap_values(self.result['X'])
         return result
 
-    def create_stat_result_rest(self) -> dict:
+    def create_stat_result_rest(self, cl_type: str) -> dict:
         result = deepcopy(self.result)
         y_test = result['y_test']
         x_train = result['x_train']
@@ -2983,7 +2983,7 @@ def fitting_metrics(fit_results: list[ModelResult]) \
             rsquared_av.append(fit_result.rsquared)
         except:
             debug("fit_result.rsquared error")
-        dely = fit_result.eval_uncertainty(sigma=3)
+        dely = fit_result.eval_uncertainty()
         sigma3_top = np.concatenate((sigma3_top, fit_result.best_fit + dely))
         sigma3_bottom = np.concatenate((sigma3_bottom, fit_result.best_fit - dely))
     if ranges != 0:

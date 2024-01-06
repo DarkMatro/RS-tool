@@ -4177,6 +4177,70 @@ state</string>
                          <item row="0" column="1">
                           <widget class="ComboBox" name="criterion_comboBox"/>
                          </item>
+                         <item row="1" column="0">
+                          <widget class="CheckBox" name="dt_max_depth_check_box">
+                           <property name="toolTip">
+                            <string>max_depth : int, default= 0 (None)
+The maximum depth of the tree. If None, then nodes are expanded until
+all leaves are pure or until all leaves contain less than
+min_samples_split samples.</string>
+                           </property>
+                           <property name="text">
+                            <string>max_depth</string>
+                           </property>
+                           <property name="checked">
+                            <bool>true</bool>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="2" column="0">
+                          <widget class="CheckBox" name="dt_min_samples_split_check_box">
+                           <property name="toolTip">
+                            <string>min_samples_split : int, default=2
+The minimum number of samples required to split an internal node:
+- Consider `min_samples_split` as the minimum number.
+</string>
+                           </property>
+                           <property name="text">
+                            <string>min_samples_split</string>
+                           </property>
+                           <property name="checked">
+                            <bool>true</bool>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="1" column="1">
+                          <widget class="SpinBox" name="dt_max_depth_spin_box">
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="minimum">
+                            <number>0</number>
+                           </property>
+                           <property name="maximum">
+                            <number>10</number>
+                           </property>
+                           <property name="value">
+                            <number>0</number>
+                           </property>
+                          </widget>
+                         </item>
+                         <item row="2" column="1">
+                          <widget class="SpinBox" name="dt_min_samples_split_spin_box">
+                           <property name="alignment">
+                            <set>Qt::AlignCenter</set>
+                           </property>
+                           <property name="minimum">
+                            <number>2</number>
+                           </property>
+                           <property name="maximum">
+                            <number>10</number>
+                           </property>
+                           <property name="value">
+                            <number>2</number>
+                           </property>
+                          </widget>
+                         </item>
                         </layout>
                        </item>
                       </layout>
@@ -6497,8 +6561,8 @@ state</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>1159</width>
-                           <height>731</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -6858,8 +6922,8 @@ state</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>100</width>
-                           <height>30</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -7013,8 +7077,8 @@ state</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>1159</width>
-                           <height>731</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -7206,8 +7270,8 @@ state</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>100</width>
-                           <height>30</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -7316,7 +7380,7 @@ state</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>83</width>
+                           <width>98</width>
                            <height>200</height>
                           </rect>
                          </property>

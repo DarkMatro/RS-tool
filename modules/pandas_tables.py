@@ -71,8 +71,11 @@ class PandasModel(QAbstractTableModel):
             result = self._dataframe.at[row, column]
         return result
 
-    def cell_data_by_idx_col_name(self, index: int, column_name: str) -> dict:
-        return self._dataframe.loc[index, column_name]
+    def cell_data_by_idx_col_name(self, index: int, column_name: str) -> dict | None:
+        try:
+            return self._dataframe.loc[index, column_name]
+        except KeyError:
+            return
 
     def set_cell_data_by_idx_col_name(self, index: int, column_name: str, value: str) -> dict:
         self._dataframe.loc[index, column_name] = value
@@ -881,6 +884,14 @@ class PandasModelFitParamsTable(PandasModel):
         list_idx = list(self._dataframe.index)
         row_num = list_idx.index((mi[0], mi[1], 'a'))
         return range(row_num, row_num + row_count)
+
+    def lines_idx_by_x0_sorted(self) -> list[int]:
+        """
+        Returns indexes of lines sorted by x0 value cm-1
+        """
+        ser = self._dataframe.query('filename == "" and param_name == "x0"')['Value']
+        vals = ser.sort_values().index.values
+        return [i[1] for i in vals]
 
 
 class PandasModelSmoothedDataset(PandasModel):

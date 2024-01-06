@@ -1,7 +1,7 @@
 Dark
-Default
+Cyan
 10
 20
 16
-15
+14
 14

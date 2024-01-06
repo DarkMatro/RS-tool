@@ -3,7 +3,8 @@ from numpy.linalg import norm
 from pybaselines import Baseline
 from scipy.sparse import csc_matrix, spdiags, diags, eye as sparse_eye
 from scipy.sparse.linalg import spsolve
-from modules.mutual_functions.work_with_arrays import normalize_between_0_1, diff
+from scipy.signal import detrend
+from modules.mutual_functions.work_with_arrays import normalize_between_0_1, diff, extend_bool_false_mask
 from numba import njit
 from modules.stages.preprocessing.functions.baseline_correction.numba_polyfit import polyfit, polyval, fit_poly
 
@@ -65,7 +66,8 @@ def baseline_modpoly(item: tuple[str, np.ndarray], params: list[int, float, int]
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_imodpoly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_imodpoly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     """IModPoly from paper: Automated Autofluorescence Background Subtraction Algorithm for Biomedical Raman
      Spectroscopy, by Zhao, Jianhua, Lui, Harvey, McLean, David I., Zeng, Haishan (2007)
 
@@ -160,7 +162,7 @@ def baseline_imodpoly(item: tuple[str, np.ndarray], params: list[int, float, int
 #     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 # @njit(cache=True, fastmath=True)
-def ex_mod_poly(item: tuple[str, np.ndarray], params: list[float, float, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def ex_mod_poly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
     """
     Ex-ModPoly is extension of ModPoly method from paper: 'Automated Method for Subtraction of Fluorescence from
     Biological Raman Spectra, by Lieber & Mahadevan-Jansen (2003)'
@@ -211,7 +213,6 @@ def ex_mod_poly(item: tuple[str, np.ndarray], params: list[float, float, float])
     key, input_array = item
     x_input, y_input = input_array[:, 0], input_array[:, 1]
     degree, threshold, max_iter = params
-    degree, max_iter = int(degree), int(max_iter)
     x, y = x_input.copy(), y_input.copy()
     stop_criteria = [0.]
     dev = 0.
@@ -220,18 +221,28 @@ def ex_mod_poly(item: tuple[str, np.ndarray], params: list[float, float, float])
         dev_prev = dev
         poly_coef = fit_poly(x, y, degree, _weights(y))
         baseline = polyval(x, poly_coef)
-        if i == 0:                                                          # Remove strong raman peaks.
-            idx = np.argwhere(y <= baseline).T[0]
-            x, y, baseline = x[idx], y[idx], baseline[idx]
+        if i == 0:
+            # Remove strong raman peaks.
+            indexes = np.argwhere(y <= baseline).T[0]
+            x, y, baseline = x[indexes], y[indexes], baseline[indexes]
+        elif i == 1:
+            # Remove strong absorption lines.
+            detrended = detrend(y)
+            sd = np.std(detrended)
+            cond = y > (baseline - 3. * sd)  # Remove 3. by new parameter later 'absorption coefficient'
+            cond = extend_bool_false_mask(cond.tolist())
+            indexes = np.argwhere(cond).T[0]
+            x, y, baseline = x[indexes], y[indexes], baseline[indexes]
         dev = max(_residual_deviation(y - baseline), 1e-30)
-        y = np.minimum(y, baseline + dev)                                   # Reconstruct model input y data.
+        y = np.minimum(y, baseline + dev)  # Reconstruct model input y data.
         sc = np.abs((dev - dev_prev) / dev)
         stop_criteria.append(sc)
-        if i != 0 and _pitch(i, stop_criteria, window_size) < threshold:    # Check that further iterations cannot ...
-            break                                                           # ... significantly improve the fitting.
-    poly_coef = fit_poly(x, y, degree, _weights(y))              # Final fitting.
-    baseline = polyval(x_input, poly_coef)                       # Make baseline same shape like x_input.
-    y_raman = y_input - baseline                                 # Baseline corrected spectrum
+        # Check that further iterations cannot significantly improve the fitting.
+        if i != 0 and _pitch(i, stop_criteria, window_size) < threshold:
+            break
+    poly_coef = fit_poly(x, y, degree, _weights(y))  # Final fitting.
+    baseline = polyval(x_input, poly_coef)  # Make baseline same shape like x_input.
+    y_raman = y_input - baseline  # Baseline corrected spectrum
     return key, np.vstack((x_input, baseline)).T, np.vstack((x_input, y_raman)).T
 
 
@@ -355,7 +366,8 @@ def baseline_loess(item: tuple[str, np.ndarray], params: list[int, float, int, f
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_quant_reg(item: tuple[str, np.ndarray], params: list[int, float, int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_quant_reg(item: tuple[str, np.ndarray], params: list[int, float, int, float]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -539,7 +551,8 @@ def baseline_airpls(item: tuple[str, np.ndarray], params: list[int, float, int])
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_drpls(item: tuple[str, np.ndarray], params: list[int, float, int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_drpls(item: tuple[str, np.ndarray], params: list[int, float, int, float]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     # according to Applied Optics, 2019, 58, 3913-3920. https://doi.org/10.1364/AO.58.003913
     key = item[0]
     input_array = item[1]
@@ -637,7 +650,8 @@ def baseline_psalsa(item: tuple[str, np.ndarray], params: list[int, int, float])
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_derpsalsa(item: tuple[str, np.ndarray], params: list[int, int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_derpsalsa(item: tuple[str, np.ndarray], params: list[int, int, float]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -768,7 +782,8 @@ def baseline_tophat(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, n
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mpspline(item: tuple[str, np.ndarray], params: tuple[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_mpspline(item: tuple[str, np.ndarray], params: tuple[int, float, int]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -816,7 +831,8 @@ def baseline_mixture_model(item: tuple[str, np.ndarray], params: list[int, float
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_irsqr(item: tuple[str, np.ndarray], params: list[int, float, int, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_irsqr(item: tuple[str, np.ndarray], params: list[int, float, int, int]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -929,7 +945,8 @@ def baseline_dietrich(item: tuple[str, np.ndarray], params: list[float, int, flo
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_golotvin(item: tuple[str, np.ndarray], params: list[float, int, int, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_golotvin(item: tuple[str, np.ndarray], params: list[float, int, int, int]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -947,7 +964,8 @@ def baseline_golotvin(item: tuple[str, np.ndarray], params: list[float, int, int
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_std_distribution(item: tuple[str, np.ndarray], params: list[float, int, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_std_distribution(item: tuple[str, np.ndarray], params: list[float, int, int]) -> tuple[
+    str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]

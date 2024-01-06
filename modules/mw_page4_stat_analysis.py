@@ -316,18 +316,23 @@ class StatAnalysisLogic:
             parameters = [{'solver': [solver], 'activation': activation, 'hidden_layer_sizes': h_sizes,
                            'learning_rate_init': learning_rate_init_range}]
         else:
-            parameters = [{'solver': ['lbfgs'], 'activation': [activation], 'hidden_layer_sizes': h_sizes},
+            parameters = [{'solver': ['lbfgs'], 'activation': activation, 'hidden_layer_sizes': h_sizes},
                           {'activation': activation, 'solver': ['sgd', 'adam'],
                            'hidden_layer_sizes': h_sizes, 'learning_rate_init': learning_rate_init_range}]
         return parameters
 
     def create_dt_gridsearch_params(self):
         criterion_checked = self.parent.ui.criterion_checkBox.isChecked()
+        max_depth_checked = self.parent.ui.dt_max_depth_check_box.isChecked()
+        min_samples_split_checked = self.parent.ui.dt_min_samples_split_check_box.isChecked()
         criterion = self.parent.ui.criterion_comboBox.currentText()
-        if criterion_checked:
-            parameters = {'criterion': [criterion]}
-        else:
-            parameters = {'criterion': ["gini", "entropy", "log_loss"]}
+        max_depth = self.parent.ui.dt_max_depth_spin_box.value()
+        max_depth = None if max_depth == 0 else max_depth
+        min_samples_split = self.parent.ui.dt_min_samples_split_spin_box.value()
+        criterion = [criterion] if criterion_checked else ["gini", "entropy", "log_loss"]
+        max_depth = [max_depth] if max_depth_checked else np.arange(1, 11)
+        min_samples_split = [min_samples_split] if min_samples_split_checked else np.arange(2, 11)
+        parameters = {'criterion': criterion, 'max_depth': max_depth, 'min_samples_split': min_samples_split}
         return parameters
 
     def create_rf_gridsearch_params(self):
@@ -498,7 +503,7 @@ class StatAnalysisLogic:
             model = main_window.ui.smoothed_dataset_table_view.model()
         elif selected_dataset == 'Baseline corrected':
             model = main_window.ui.baselined_dataset_table_view.model()
-        elif selected_dataset == 'Deconvoluted':
+        elif selected_dataset == 'Decomposed':
             model = main_window.ui.deconvoluted_dataset_table_view.model()
         else:
             return
@@ -510,7 +515,7 @@ class StatAnalysisLogic:
                 classes.append(int(i))
             if len(classes) > 1:
                 q_res = model.query_result_with_list('Class == @input_list', classes)
-        if selected_dataset == 'Deconvoluted':
+        if selected_dataset == 'Decomposed':
             ignored_features = main_window.ui.ignore_dataset_table_view.model().ignored_features
             q_res = q_res.drop(ignored_features, axis=1)
         y = list(q_res['Class'])
@@ -593,7 +598,7 @@ class StatAnalysisLogic:
             text += 'top 5 features per class:' + '\n' + str(top) + '\n'
         if cv_scores is not None:
             text += '\n' + cv_scores + '\n'
-        if model is not None and not isinstance(model, HalvingGridSearchCV):
+        if model is not None and not isinstance(model, HalvingGridSearchCV) and not isinstance(model, GridSearchCV):
             model = model.best_estimator_ if isinstance(model, GridSearchCV) else model
             evr = model.explained_variance_ratio_
             text += '\n' + 'Explained variance ratio : %s' % evr + '\n'
@@ -908,6 +913,8 @@ class StatAnalysisLogic:
             pass
 
     def do_update_shap_plots(self, classificator_type):
+        if classificator_type not in self.latest_stat_result:
+            return
         target_names = self.latest_stat_result[classificator_type]['target_names']
         num = np.where(target_names == self.parent.ui.current_group_shap_comboBox.currentText())
         if len(num[0]) == 0:
@@ -919,6 +926,8 @@ class StatAnalysisLogic:
         self.update_shap_heatmap_plot(False, i, classificator_type)
 
     def do_update_shap_plots_by_instance(self, classificator_type):
+        if classificator_type not in self.latest_stat_result:
+            return
         target_names = self.latest_stat_result[classificator_type]['target_names']
         num = np.where(target_names == self.parent.ui.current_group_shap_comboBox.currentText())
         if len(num[0]) == 0:
@@ -982,8 +991,8 @@ class StatAnalysisLogic:
         else:
             plt.style.use(self.parent.plt_style)
         if self.parent.ui.sun_Btn.isChecked():
-            # color = None
-            color = plt.get_cmap("copper")
+            color = None
+            # color = plt.get_cmap("cool")
         else:
             color = plt.get_cmap("cool")
         if binary:
@@ -1442,7 +1451,6 @@ class StatAnalysisLogic:
         if binary:
             self.build_calibration_plot(model, x_test, y_test)
             self.build_dev_curve_plot(model, x_test, y_test)
-            self.build_learning_curve(model, model_results['X'], model_results['Y'])
 
     def build_permutation_importance_plot(self, estimator, x, y, test: bool = False) -> None:
         plot_widget = self.parent.ui.perm_imp_test_plot_widget if test else self.parent.ui.perm_imp_train_plot_widget
@@ -1513,6 +1521,14 @@ class StatAnalysisLogic:
         except ValueError:
             pass
 
+    def refresh_learning_curve(self):
+        cl_type = self.parent.ui.current_classificator_comboBox.currentText()
+        if cl_type not in self.latest_stat_result:
+            return
+        model_results = self.latest_stat_result[cl_type]
+        model = model_results['model']
+        self.build_learning_curve(model, model_results['X'], model_results['Y'])
+
     def build_learning_curve(self, clf, X, y) -> None:
         plot_widget = self.parent.ui.learning_plot_widget
         ax = plot_widget.canvas.axes
@@ -1520,7 +1536,7 @@ class StatAnalysisLogic:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             with parallel_backend('multiprocessing', n_jobs=-1):
-                LearningCurveDisplay.from_estimator(clf, X, y, ax=ax, verbose=0, cv=3)
+                LearningCurveDisplay.from_estimator(clf, X, y, ax=ax, verbose=0)
         try:
             plot_widget.canvas.draw()
             plot_widget.canvas.figure.tight_layout()

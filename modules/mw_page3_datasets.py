@@ -97,7 +97,10 @@ class DatasetsManager:
             vp = violinplot(data=df, x='Feature', y='Value', hue='Class', order=order,
                             split=True, inner="quart", fill=False, palette=palette, ax=ax)
         else:
-            vp = boxplot(data=df, x='Feature', y='Value', hue='Class', order=order, fill=False, palette=palette, ax=ax)
+            try:
+                vp = boxplot(data=df, x='Feature', y='Value', hue='Class', order=order, fill=False, palette=palette, ax=ax)
+            except UnboundLocalError:
+                pass
         cur_filename = self.parent.ui.current_filename_combobox.currentText()
         if cur_filename is not None:
             ax2 = ax.twinx()

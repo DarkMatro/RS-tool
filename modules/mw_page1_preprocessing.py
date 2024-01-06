@@ -62,7 +62,11 @@ class PreprocessingLogic:
             i = 0
             for key, arr in items:
                 if len(arr) != 0:
-                    self.add_lines(np.array([arr[:, 0]]), np.array([arr[:, 1]]), groups_styles[i], key, plot_item_id)
+                    try:
+                        self.add_lines(np.array([arr[:, 0]]), np.array([arr[:, 1]]), groups_styles[i], key,
+                                       plot_item_id)
+                    except IndexError:
+                        pass
                 i += 1
         else:
             arrays = self.get_arrays_by_group(items)
@@ -791,14 +795,14 @@ class PreprocessingLogic:
         if n_files >= n_samples_limit:
             executor = ProcessPoolExecutor()
         mw.current_executor = executor
-        with Manager() as manager:
-            mw.break_event = manager.Event()
-            with executor:
-                mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
-                                      for i in self.smoothed_spectra.items()]
-                for future in mw.current_futures:
-                    future.add_done_callback(mw.progress_indicator)
-                baseline_corrected = await gather(*mw.current_futures)
+        # with Manager() as manager:
+        #     mw.break_event = manager.Event()
+        with executor:
+            mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+                                  for i in self.smoothed_spectra.items()]
+            for future in mw.current_futures:
+                future.add_done_callback(mw.progress_indicator)
+            baseline_corrected = await gather(*mw.current_futures)
         if mw.stateTooltip.wasCanceled() or environ['CANCEL'] == '1':
             mw.close_progress_bar()
             mw.ui.statusBar.showMessage('Cancelled.')
@@ -821,8 +825,8 @@ class PreprocessingLogic:
                           mw.ui.n_iterations_spinBox.value()]
             case 'ExModPoly':
                 # params = List()
-                params = [float(mw.ui.polynome_degree_spinBox.value()), mw.ui.grad_doubleSpinBox.value(),
-                           float(mw.ui.n_iterations_spinBox.value())]
+                params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
+                           mw.ui.n_iterations_spinBox.value()]
                 # [params.append(x) for x in params_]
             case 'Penalized poly':
                 params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
@@ -1023,7 +1027,9 @@ class PreprocessingLogic:
             filenames = mw.ui.input_table.model().names_of_group(group_id)
             if len(filenames) == 0:
                 continue
-            arrays_list = [self.baseline_corrected_dict[x] for x in filenames]
+            arrays_list = [self.baseline_corrected_dict[x] for x in filenames if x in self.baseline_corrected_dict]
+            if not arrays_list:
+                continue
             arrays_list_av = get_average_spectrum(arrays_list, averaging_method)
             self.averaged_dict[group_id] = arrays_list_av
 
@@ -1175,14 +1181,23 @@ class PreprocessingLogic:
         """
         from matplotlib import pyplot as plt
         from modules.stages.preprocessing.functions.baseline_correction import ex_mod_poly
-        before = datetime.now()
-        devs = []
+        from modules.stages.preprocessing.functions.baseline_correction import baseline_modpoly, baseline_imodpoly
+        x_axis = next(iter(self.smoothed_spectra.values()))[:, 0]
+        y_axis = next(iter(self.smoothed_spectra.values()))[:, 1]
+        poly = self.parent.ui.polynome_degree_spinBox.value()
         for k, v in self.smoothed_spectra.items():
-            _, baseline_plus_tru, corrected_tru, pitches = ex_mod_poly((k, v), [12., 1e-12, 1000.])
-            devs.append(pitches)
-        print(datetime.now() - before)
+            _, baseline_plus_tru, corrected_tru, arrx, arry, arr = ex_mod_poly((k, v), [poly, 1e-12, 1000.])
+            _, baseline_mod_tru, corrected_mod = baseline_modpoly((k, v), [poly, 1e-12, 1000])
+            _, baseline_mod_itru, corrected_imod = baseline_imodpoly((k, v), [poly, 1e-12, 1000])
+            # devs.append(pitches)
         fig, ax = plt.subplots()
-        for i in devs:
-            ax.plot(i)
+        # ax.plot(arrx, arry, label='Cпектр без линий поглощения и интенсивных Рамановских линий', color='black')
+        ax.plot(x_axis, y_axis, label='Исходный спектр', color='black')
+        ax.plot(x_axis, baseline_plus_tru[:, 1], label='Ex-ModPoly', color='red')
+        # ax.plot(arrx, arr, label='Нижняя граница', color='blue')
+        # ax.plot(x_axis, arrb, label='Вержняя граница', color='orange')
+        ax.plot(x_axis, baseline_mod_tru[:, 1], label='ModPoly', color='blue')
+        ax.plot(x_axis, baseline_mod_itru[:, 1], label='I-ModPoly', color='orange')
         ax.grid()
+        ax.legend()
         plt.show()

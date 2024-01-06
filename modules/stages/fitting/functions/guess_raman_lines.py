@@ -18,8 +18,7 @@ from modules.stages.fitting.functions.fitting import fitting_model, fit_model
 from modules.mutual_functions.work_with_arrays import find_nearest, nearest_idx
 
 
-def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user, verbose: int = 1) \
-        -> ModelResult:
+def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user, verbose: int = 1) -> ModelResult:
     """
     Part of the algorithm for iterative selection of Raman lines in the n_array spectral contour.
     Here we collect possible variations in the number of lines and their positions by fitting them across all spectra.
@@ -114,7 +113,7 @@ def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user
     method = input_parameters['method']
     noise_level = input_parameters['noise_level']
     max_dx = input_parameters['max_dx']
-    static_parameters = input_parameters['param_names'], input_parameters['min_fwhm'],\
+    static_parameters = input_parameters['param_names'], input_parameters['min_fwhm'], \
         input_parameters['params_limits']
 
     func_legend, params = func_legend_params(input_parameters['func_legend'], input_parameters['params'], x_input[0],
@@ -127,39 +126,42 @@ def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user
     used_idx_dead_zone = {}  # Same as used_legends_dead_zone, but key is float like 977.15
     n_peaks = len(func_legend)
 
-    time_start = datetime.now()                                                 # Executing timelimit is 5 min here. lol
+    time_start = datetime.now()  # Executing timelimit is 5 min here. lol
     while y_residual.max() > noise_level and not break_event_by_user.is_set() \
-            and (datetime.now() - time_start).total_seconds() / 60. < 3.:
+            and (datetime.now() - time_start).total_seconds() / 60. < 5.:
         n_peaks += 1
-        x_max_idx = np.argmax(y_residual)                                          # idx of maximal value in y_residual
-        x_max = x_input[x_max_idx]                                                 # x value of maximal y_residual
+        x_max_idx = np.argmax(y_residual)  # idx of maximal value in y_residual
+        x_max = x_input[x_max_idx]  # x value of maximal y_residual
         if this_idx_already_was(x_max_idx, used_idx_x, used_idx_dead_zone, y_residual):
             continue
         legend = legend_from_float(x_max)
         if this_legend_already_was(legend, x_max_idx, y_residual, used_legends, used_legends_dead_zone):
             continue
-        used_idx_x.append(x_max_idx)                    # Save idx for duplicates control.
+        used_idx_x.append(x_max_idx)  # Save idx for duplicates control.
         # Prepare model and parameters including new peak for new fitting iteration.
         func_legend.append((func, legend))
         init_params = init_model_params.copy()
-        init_params[0] = y_input[x_max_idx]             # Max y of new peak as starting parameter value for 'a'.
-        init_params[1] = x_max                          # x position of new peak as starting parameter value for 'x0'.
+        init_params[0] = y_input[x_max_idx]  # Max y of new peak as starting parameter value for 'a'.
+        init_params[1] = x_max  # x position of new peak as starting parameter value for 'x0'.
         dx_left, dx_right, arg_left, arg_right, arg_left_qr, arg_right_qr = possible_peak_dx(n_array, x_max_idx)
-        used_idx_dead_zone[x_max_idx] = (arg_left_qr, arg_right_qr)        # Update dead zone for used peaks idx.
-        dx_left = min(dx_left, max_dx)                                     # Starting dx_left and dx_right for new peak.
+        used_idx_dead_zone[x_max_idx] = (arg_left_qr, arg_right_qr)  # Update dead zone for used peaks idx.
+        dx_left = min(dx_left, max_dx)  # Starting dx_left and dx_right for new peak.
         dx_right = min(dx_right, max_dx)
-        y_max_in_range = np.amax(y_input[arg_left:arg_right])                   # Possible max limit for amplitude
+        y_max_in_range = np.amax(y_input[arg_left:arg_right])  # Possible max limit for amplitude
         dynamic_parameters = legend, init_params, y_max_in_range, dx_left, dx_right
         params = update_fit_parameters(params, static_parameters, dynamic_parameters)
         model = fitting_model(func_legend)
         # fit model and estimate y_residual.
-        fit_result = fit_model(model, y_input, params, x_input, method)
+        try:
+            fit_result = fit_model(model, y_input, params, x_input, method)
+        except np.linalg.LinAlgError:
+            return fit_result
         y_residual = y_input - fit_result.best_fit
-        y_residual[y_residual < 0.] = 0.                                        # we don't want see negative amplitude.
+        y_residual[y_residual < 0.] = 0.  # we don't want see negative amplitude.
         if verbose:
             debug_msg = 'n_peaks: {!s}, max_amp {!s},' \
-                        ' max x_arg_max {!s}, calc time {!s}'.format(n_peaks, np.round(np.max(y_residual), 2),
-                                                                     np.round(x_max, 2), (datetime.now() - time_start))
+                        ' x_arg_max {!s}, calc time {!s}'.format(n_peaks, np.round(np.max(y_residual), 3),
+                                                                 np.round(x_max, 1), (datetime.now() - time_start))
             print(debug_msg)
             info(debug_msg)
     return fit_result
@@ -460,7 +462,7 @@ async def centers_of_clusters(x0: list[list], hwhm: float) -> list[list]:
     return x_merged
 
 
-def estimate_n_lines_in_range(x0_lines_spl: list[list[float]], hwhm: float = 12., x_merged=None) \
+def estimate_n_lines_in_range(x0_lines_spl: list[list[float]], hwhm: float = 12., x_merged=None | list[list[float]]) \
         -> np.ndarray:
     """
     1. Create first clusters using first 2 (randomly selected) spectrum data
@@ -481,13 +483,18 @@ def estimate_n_lines_in_range(x0_lines_spl: list[list[float]], hwhm: float = 12.
     np.ndarray
         2D np.array with 2 columns: center of cluster x0 and standard deviation of each cluster
     """
+    idx_1 = idx_2 = None
     if x_merged is None:
-        idx_1 = np.random.randint(0, len(x0_lines_spl))
-        idx_2 = np.random.randint(0, len(x0_lines_spl))
+        idx_1 = idx_2 = np.random.randint(0, len(x0_lines_spl))
+        if len(x0_lines_spl) > 1:
+            while idx_2 == idx_1:
+                idx_2 = np.random.randint(0, len(x0_lines_spl))
         x_merged = create_first_clusters(x0_lines_spl[idx_1], x0_lines_spl[idx_2], hwhm)
         if len(x0_lines_spl) == 2:
             return clusters_means(x_merged, std=True).T
     for i in range(0, len(x0_lines_spl)):
+        if idx_1 is not None and idx_2 is not None and i in [idx_1, idx_2]:
+            continue
         x_means = clusters_means(x_merged)
         for x in x0_lines_spl[i]:
             distances = np.abs(x_means - x)

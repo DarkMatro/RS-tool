@@ -1426,12 +1426,12 @@ class FittingLogic:
 
     def sum_array(self) -> tuple[np.ndarray, np.ndarray]:
         """
-                Return x, y arrays of sum spectra of all visible fit curves
+        Return x, y arrays of sum spectra of all visible fit curves
 
-                Returns
-                -------
-                out : tuple[np.ndarray, np.ndarray]
-                    x_axis, y_axis of sum curve
+        Returns
+        -------
+        out : tuple[np.ndarray, np.ndarray]
+            x_axis, y_axis of sum curve
         """
         mw = self.parent
         x_axis = next(iter(mw.preprocessing.baseline_corrected_dict.values()))[:, 0]
@@ -1441,17 +1441,54 @@ class FittingLogic:
         y_axis = np.zeros(x_axis.shape[0])
 
         for i in data_items:
-            if isinstance(i, PlotCurveItem) and i.isVisible():
-                x, y = i.getData()
-                idx = nearest_idx(x_axis, x[0])
-                y_z = np.zeros(x_axis.shape[0])
-                if x_axis.shape[0] < y.shape[0]:
-                    idx_right = x_axis.shape[0] - idx - 1
-                    y_z[idx: idx + idx_right] += y[:idx_right]
-                else:
-                    y_z[idx: idx + y.shape[0]] += y
-                y_axis += y_z
+            if not (isinstance(i, PlotCurveItem) and i.isVisible()):
+                continue
+            x, y = i.getData()
+            idx = nearest_idx(x_axis, x[0])
+            y_z = np.zeros(x_axis.shape[0])
+            if x_axis.shape[0] < y.shape[0]:
+                idx_right = x_axis.shape[0] - idx - 1
+                y_z[idx: idx + idx_right] += y[:idx_right]
+            else:
+                y_z[idx: idx + y.shape[0]] += y
+            y_axis += y_z
         return x_axis, y_axis
+
+    def overlapping_coefficients_for_each_line(self) -> dict:
+        """
+        Returns list of overlapping coefficients (OVC) of lines sorted by cm-1 position.
+        OVC = overlapping_area * 100 / current_line_area
+        overlapping_area is meant overlapping between current line and all rest
+
+        Returns
+        -------
+        out: dict
+            key is line index
+            value - OVC
+        """
+        ovcs = {}
+        x_axis = next(iter(self.parent.preprocessing.baseline_corrected_dict.values()))[:, 0]
+        # get IDs of lines sorted by their positions cm-1
+        idxs = self.parent.ui.fit_params_table.model().lines_idx_by_x0_sorted()
+        # get curves with x, y data
+        data_items = self.parent.deconvolution_plotItem.listDataItems()
+        for idx in idxs:
+            y_z = np.zeros(x_axis.shape[0])
+            area_of_current_curve = .0
+            for i in data_items:
+                if not (isinstance(i, PlotCurveItem) and i.isVisible()):
+                    continue
+                if i.name() == idx:
+                    x_cur, y_cur = i.getData()
+                    area_of_current_curve = np.trapz(y_cur, x_cur)
+                else:
+                    _, y = i.getData()
+                    y_z += y
+            area_overlapping = np.trapz(np.minimum(y_z, y_cur), x_axis)
+            area_overlapping = area_overlapping * 100 / area_of_current_curve
+            ovcs[idx] = area_overlapping
+
+        return ovcs
 
     def draw_residual_curve(self) -> None:
         """

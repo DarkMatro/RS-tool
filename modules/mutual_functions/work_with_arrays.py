@@ -125,3 +125,35 @@ def diff(x: np.ndarray) -> np.ndarray:
     d = np.zeros(x.shape)
     d[1:] = x[1:] - x[:-1]
     return d
+
+
+@njit(cache=True, fastmath=True)
+def extend_bool_false_mask(x: list[bool], window_size: int = 2) -> list[bool]:
+    """
+    Makes True value False if near this value +- window_size in the list False stored.
+
+    Parameters
+    ----------
+    x : array_like of bool
+        Input array
+    window_size: int
+        distance from current cell to find False values
+
+    Returns
+    -------
+    out : list[bool]
+
+    Examples
+    --------
+    >>> x = [True, True, True, False, False, False, True, True, True]
+    >>> extend_bool_false_mask(x)
+    [True, True, False, False, False, False, False, True, True]
+    """
+    out = []
+    out.extend(x[:window_size])
+    for i in range(window_size, len(x) - window_size):
+        wind = x[i - window_size:i + window_size + 1]
+        count_of_false = wind.count(False)
+        out.append(count_of_false == 0)
+    out.extend(x[-window_size:])
+    return out
