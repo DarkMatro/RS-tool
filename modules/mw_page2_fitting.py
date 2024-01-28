@@ -77,7 +77,10 @@ class FittingLogic:
         main_window.ui.statusBar.showMessage('Batch fitting...')
         main_window.close_progress_bar()
         baseline_corrected_spectra = {}
-
+        filenames = main_window.preprocessing.baseline_corrected_dict.keys() \
+                   & main_window.ui.input_table.model().filenames()
+        # fitted_keys = main_window.ui.fit_params_table.model().fitted_filenames()
+        # filenames = all_keys if samples == 'All' else all_keys ^ fitted_keys
         if main_window.predict_logic.is_production_project \
                 and main_window.ui.deconvoluted_dataset_table_view.model().rowCount() != 0:
             filenames_in_dataset = list(main_window.ui.deconvoluted_dataset_table_view.model().column_data(1).values)
@@ -85,9 +88,11 @@ class FittingLogic:
                 if key not in filenames_in_dataset:
                     baseline_corrected_spectra[key] = [arr]
         else:
-            for key, arr in main_window.preprocessing.baseline_corrected_dict.items():
-                baseline_corrected_spectra[key] = [arr]
-        # baseline_corrected_spectra = {'1 Miner peripulpal 1_1.asc': baseline_corrected_spectra['1 Miner peripulpal 1_1.asc']}
+            for key in filenames:
+                try:
+                    baseline_corrected_spectra[key] = [main_window.preprocessing.baseline_corrected_dict[key]]
+                except KeyError:
+                    pass
         splitted_arrays = self._split_array_for_fitting(baseline_corrected_spectra)
         idx_type_param_count_legend_func = self.prepare_data_fitting()
         list_params_full = self._fitting_params_batch(idx_type_param_count_legend_func, baseline_corrected_spectra)
@@ -675,7 +680,11 @@ class FittingLogic:
         filename_group = self.parent.ui.input_table.model().column_data(2)
         for filename in filenames:
             if not self.parent.predict_logic.is_production_project:
-                class_ids.append(filename_group.loc[filename])
+                try:
+                    group_id = filename_group.loc[filename]
+                    class_ids.append(group_id)
+                except KeyError:
+                    class_ids.append(1)
             values_a = []
             for i in line_indexes:
                 v = params.loc[(filename, i, 'a')]
@@ -704,6 +713,7 @@ class FittingLogic:
         features = self.parent.ui.deconvoluted_dataset_table_view.model().features
         df = DataFrame({'Feature': features}, columns=['Feature', 'Score', 'P value'])
         self.parent.ui.ignore_dataset_table_view.model().set_dataframe(df)
+        self.parent.ui.ignore_dataset_table_view.model().set_checked({})
 
     # region GUESS
     def _parameters_to_guess(self, line_type: str) -> dict:

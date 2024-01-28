@@ -1,5 +1,6 @@
 import pandas as pd
 import seaborn as sns
+from functools import partial
 from asyncqtpy import asyncSlot
 from pyqtgraph import ArrowItem
 from datetime import datetime
@@ -630,6 +631,7 @@ class PreprocessingLogic:
         if new_value <= mw.ui.cm_range_start.value():
             mw.ui.cm_range_end.setValue(mw.ui.cm_range_end.maximum())
         mw.linearRegionCmConverted.setRegion((mw.ui.cm_range_start.value(), mw.ui.cm_range_end.value()))
+
     # endregion
 
     # region Normalizing
@@ -654,14 +656,14 @@ class PreprocessingLogic:
         mw.open_progress_dialog("Normalization...", "Cancel", maximum=n_files)
         method = mw.ui.normalizing_method_comboBox.currentText()
         func = self.normalize_methods[method][0]
-        params = None
+        params = {}
         n_limit = self.normalize_methods[method][1]
         if method == 'EMSC':
             if mw.predict_logic.is_production_project:
-                params = mw.predict_logic.y_axis_ref_EMSC, mw.ui.emsc_pca_n_spinBox.value()
+                params = {'y_axis_mean': mw.predict_logic.y_axis_ref_EMSC, 'n_pca': mw.ui.emsc_pca_n_spinBox.value()}
             else:
                 np_y_axis = get_emsc_average_spectrum(self.CuttedFirstDict.values())
-                params = np_y_axis, mw.ui.emsc_pca_n_spinBox.value()
+                params = {'y_axis_mean': np_y_axis, 'n_pca': mw.ui.emsc_pca_n_spinBox.value()}
                 mw.predict_logic.y_axis_ref_EMSC = np_y_axis
         executor = ThreadPoolExecutor()
         if n_files >= n_limit:
@@ -670,7 +672,7 @@ class PreprocessingLogic:
         with Manager() as manager:
             mw.break_event = manager.Event()
             with mw.current_executor as executor:
-                mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+                mw.current_futures = [mw.loop.run_in_executor(executor, partial(func, i, **params))
                                       for i in self.CuttedFirstDict.items()]
                 for future in mw.current_futures:
                     future.add_done_callback(mw.progress_indicator)
@@ -798,7 +800,7 @@ class PreprocessingLogic:
         # with Manager() as manager:
         #     mw.break_event = manager.Event()
         with executor:
-            mw.current_futures = [mw.loop.run_in_executor(executor, func, i, params)
+            mw.current_futures = [mw.loop.run_in_executor(executor, partial(func, i, **params))
                                   for i in self.smoothed_spectra.items()]
             for future in mw.current_futures:
                 future.add_done_callback(mw.progress_indicator)
@@ -814,75 +816,92 @@ class PreprocessingLogic:
         if not mw.predict_logic.is_production_project:
             await self.update_range_baseline_corrected()
 
-    def baseline_correction_params(self, method: str) -> float | list:
-        params = None
+    def baseline_correction_params(self, method: str) -> dict:
+        params = {}
         mw = self.parent
         match method:
             case 'Poly':
-                params = mw.ui.polynome_degree_spinBox.value()
-            case 'ModPoly' | 'iModPoly':
-                params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
-                          mw.ui.n_iterations_spinBox.value()]
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value()}
+            case 'ModPoly':
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value(), 'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value()}
+            case 'iModPoly':
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value(), 'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'num_std': mw.ui.num_std_doubleSpinBox.value()}
             case 'ExModPoly':
-                # params = List()
-                params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
-                           mw.ui.n_iterations_spinBox.value()]
-                # [params.append(x) for x in params_]
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value(), 'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'quantile': mw.ui.quantile_doubleSpinBox.value(),
+                          'w_scale_factor': mw.ui.scale_doubleSpinBox.value(),
+                          'recalc_y': mw.ui.rebuild_y_check_box.isChecked(),
+                          'num_std': mw.ui.num_std_doubleSpinBox.value(),
+                          'window_size': mw.ui.fill_half_window_spinBox.value()}
             case 'Penalized poly':
-                params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
-                          mw.ui.n_iterations_spinBox.value(), mw.ui.alpha_factor_doubleSpinBox.value(),
-                          mw.ui.cost_func_comboBox.currentText()]
-            case 'LOESS':
-                poly_order = min(6, mw.ui.polynome_degree_spinBox.value())
-                params = [poly_order, mw.ui.grad_doubleSpinBox.value(), mw.ui.n_iterations_spinBox.value(),
-                          mw.ui.fraction_doubleSpinBox.value(), mw.ui.scale_doubleSpinBox.value()]
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value(), 'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'alpha_factor': mw.ui.alpha_factor_doubleSpinBox.value(),
+                          'cost_function': mw.ui.cost_func_comboBox.currentText()}
             case 'Goldindec':
-                params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
-                          mw.ui.n_iterations_spinBox.value(), mw.ui.cost_func_comboBox.currentText(),
-                          mw.ui.peak_ratio_doubleSpinBox.value(), mw.ui.alpha_factor_doubleSpinBox.value()]
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value(), 'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'alpha_factor': mw.ui.alpha_factor_doubleSpinBox.value(),
+                          'cost_function': mw.ui.cost_func_comboBox.currentText(),
+                          'peak_ratio': mw.ui.peak_ratio_doubleSpinBox.value()}
             case 'Quantile regression':
-                params = [mw.ui.polynome_degree_spinBox.value(), mw.ui.grad_doubleSpinBox.value(),
-                          mw.ui.n_iterations_spinBox.value(), mw.ui.quantile_doubleSpinBox.value()]
+                params = {'poly_order': mw.ui.polynome_degree_spinBox.value(), 'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'quantile': mw.ui.quantile_doubleSpinBox.value()}
             case 'AsLS' | 'iAsLS' | 'arPLS' | 'airPLS' | 'iarPLS' | 'asPLS' | 'psaLSA' | 'DerPSALSA' | 'MPLS':
-                params = [mw.ui.lambda_spinBox.value(), mw.ui.p_doubleSpinBox.value(),
-                          mw.ui.n_iterations_spinBox.value()]
+                params = {'lam': mw.ui.lambda_spinBox.value(), 'p': mw.ui.p_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value()}
             case 'drPLS':
-                params = [mw.ui.lambda_spinBox.value(), mw.ui.p_doubleSpinBox.value(),
-                          mw.ui.n_iterations_spinBox.value(), mw.ui.eta_doubleSpinBox.value()]
+                params = {'lam': mw.ui.lambda_spinBox.value(), 'p': mw.ui.p_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(), 'eta': mw.ui.eta_doubleSpinBox.value()}
             case 'iMor' | 'MorMol' | 'AMorMol' | 'JBCD':
-                params = [mw.ui.n_iterations_spinBox.value(), mw.ui.grad_doubleSpinBox.value()]
+                params = {'tol': mw.ui.grad_doubleSpinBox.value(), 'max_iter': mw.ui.n_iterations_spinBox.value()}
             case 'MPSpline':
-                params = [mw.ui.lambda_spinBox.value(), mw.ui.p_doubleSpinBox.value(),
-                          mw.ui.spline_degree_spinBox.value()]
+                params = {'lam': mw.ui.lambda_spinBox.value(), 'spline_degree': mw.ui.spline_degree_spinBox.value(),
+                          'p': mw.ui.p_doubleSpinBox.value()}
             case 'Mixture Model':
-                params = [mw.ui.lambda_spinBox.value(), mw.ui.p_doubleSpinBox.value(),
-                          mw.ui.spline_degree_spinBox.value(), mw.ui.n_iterations_spinBox.value(),
-                          mw.ui.grad_doubleSpinBox.value()]
+                params = {'lam': mw.ui.lambda_spinBox.value(), 'spline_degree': mw.ui.spline_degree_spinBox.value(),
+                          'p': mw.ui.p_doubleSpinBox.value(), 'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'tol': mw.ui.grad_doubleSpinBox.value()}
             case 'IRSQR':
-                params = [mw.ui.lambda_spinBox.value(), mw.ui.quantile_doubleSpinBox.value(),
-                          mw.ui.spline_degree_spinBox.value(), mw.ui.n_iterations_spinBox.value()]
+                params = {'lam': mw.ui.lambda_spinBox.value(), 'spline_degree': mw.ui.spline_degree_spinBox.value(),
+                          'quantile': mw.ui.quantile_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value()}
             case 'Corner-Cutting':
-                params = mw.ui.n_iterations_spinBox.value()
+                params = {'max_iter': mw.ui.n_iterations_spinBox.value()}
+            case 'Noise Median':
+                params = {'half_window': mw.ui.interp_half_window_spinBox.value()}
             case 'RIA':
-                params = mw.ui.grad_doubleSpinBox.value()
+                params = {'tol': mw.ui.grad_doubleSpinBox.value()}
             case 'Dietrich':
-                params = [mw.ui.num_std_doubleSpinBox.value(), mw.ui.polynome_degree_spinBox.value(),
-                          mw.ui.grad_doubleSpinBox.value(), mw.ui.n_iterations_spinBox.value(),
-                          mw.ui.interp_half_window_spinBox.value(), mw.ui.min_length_spinBox.value()]
+                params = {'num_std': mw.ui.num_std_doubleSpinBox.value(),
+                          'poly_order': mw.ui.polynome_degree_spinBox.value(),
+                          'tol': mw.ui.grad_doubleSpinBox.value(),
+                          'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'interp_half_window': mw.ui.interp_half_window_spinBox.value(),
+                          'min_length': mw.ui.min_length_spinBox.value()}
             case 'Golotvin':
-                params = [mw.ui.num_std_doubleSpinBox.value(), mw.ui.interp_half_window_spinBox.value(),
-                          mw.ui.min_length_spinBox.value(), mw.ui.sections_spinBox.value()]
+                params = {'num_std': mw.ui.num_std_doubleSpinBox.value(),
+                          'interp_half_window': mw.ui.interp_half_window_spinBox.value(),
+                          'min_length': mw.ui.min_length_spinBox.value(), 'sections': mw.ui.sections_spinBox.value()}
             case 'Std Distribution':
-                params = [mw.ui.num_std_doubleSpinBox.value(), mw.ui.interp_half_window_spinBox.value(),
-                          mw.ui.fill_half_window_spinBox.value()]
+                params = {'num_std': mw.ui.num_std_doubleSpinBox.value(),
+                          'interp_half_window': mw.ui.interp_half_window_spinBox.value(),
+                          'fill_half_window': mw.ui.fill_half_window_spinBox.value()}
             case 'FastChrom':
-                params = [mw.ui.interp_half_window_spinBox.value(), mw.ui.n_iterations_spinBox.value(),
-                          mw.ui.min_length_spinBox.value()]
+                params = {'max_iter': mw.ui.n_iterations_spinBox.value(),
+                          'interp_half_window': mw.ui.interp_half_window_spinBox.value(),
+                          'min_length': mw.ui.min_length_spinBox.value()}
             case 'FABC':
-                params = [mw.ui.lambda_spinBox.value(), mw.ui.num_std_doubleSpinBox.value(),
-                          mw.ui.min_length_spinBox.value()]
+                params = {'num_std': mw.ui.num_std_doubleSpinBox.value(),
+                          'min_length': mw.ui.min_length_spinBox.value(),
+                          'lam': mw.ui.lambda_spinBox.value()}
             case 'OER' | 'Adaptive MinMax':
-                params = mw.ui.opt_method_oer_comboBox.currentText()
+                params = {'method': mw.ui.opt_method_oer_comboBox.currentText()}
         return params
 
     @asyncSlot()
@@ -973,8 +992,8 @@ class PreprocessingLogic:
     def trim_start_change_event(self, new_value: float) -> None:
         mw = self.parent
         mw.set_modified()
-        if self.baseline_corrected_not_trimmed_dict:
-            x_axis = next(iter(self.baseline_corrected_not_trimmed_dict.values()))[:, 0]
+        if self.smoothed_spectra:
+            x_axis = next(iter(self.smoothed_spectra.values()))[:, 0]
             new_value = find_nearest(x_axis, new_value)
             mw.ui.trim_start_cm.setValue(new_value)
         if new_value >= mw.ui.trim_end_cm.value():
@@ -991,6 +1010,7 @@ class PreprocessingLogic:
         if new_value <= mw.ui.trim_start_cm.value():
             mw.ui.trim_end_cm.setValue(mw.ui.trim_end_cm.maximum())
         mw.linearRegionBaseline.setRegion((mw.ui.trim_start_cm.value(), mw.ui.trim_end_cm.value()))
+
     # endregion
 
     # region Average spectrum
@@ -1103,72 +1123,89 @@ class PreprocessingLogic:
         """
         mw = self.parent
         from numpy.polynomial.polynomial import polyval
-        from modules.stages.preprocessing.functions.baseline_correction import baseline_penalized_poly, baseline_goldindec, ex_mod_poly, \
-            baseline_imodpoly, baseline_modpoly
-        from sklearn.metrics import mean_squared_error
+        # from modules.stages.preprocessing.functions.baseline_correction.numba_polyfit import polyval
+        from modules.stages.preprocessing.functions.baseline_correction import baseline_penalized_poly, \
+            baseline_goldindec, ex_mod_poly, \
+            baseline_imodpoly, baseline_modpoly, baseline_quant_reg
+        from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error, mean_absolute_percentage_error
         from matplotlib import pyplot as plt
+        from datetime import datetime
+        from modules.mutual_functions.static_functions import rmsle
+        baseline_coef = [12732.19, -76.20, 0.28, -5.67e-04, 6.53e-07, -4.38e-10, 1.66e-13, -3.21e-17]
         coefs = [1.27321927e+04, -7.62029464e+01, 2.81669762e-01, -5.66507200e-04, 6.52691243e-07,
                  -4.38362720e-10, 1.66449516e-13, -3.21147214e-17]
+        coefs = [-3.99880041e+04, 3.81778174e+02, -1.22337343e+00, 2.02346528e-03, -1.90155751e-06, 1.02135600e-09,
+                 -2.91860701e-13, 3.44068975e-17]
+        coefs = [-5.74361962e+00, 7.32050671e-02, -2.59314456e-04, 4.51191487e-07, -4.37996609e-10, 2.40419101e-13,
+                 -6.97689133e-17, 8.32338058e-21]
+
         x_axis, y_raman = mw.fitting.sum_array()
+        idx = nearest_idx(x_axis, 1705.)
+        x_axis, y_raman = x_axis[:idx], y_raman[:idx]
+        item = np.vstack((x_axis, y_raman)).T
+        np.savetxt(fname='test_sample', X=item, fmt='%10.10f')
         baseline_test = polyval(x_axis, coefs)
         baseline_and_raman = baseline_test + y_raman
-        test_arr = np.vstack((x_axis, baseline_and_raman)).T
-        _, _, corrected_plus = ex_mod_poly(('1', test_arr), [7., 1e-10, 1000.])
-        _, _, corrected_imod = baseline_imodpoly(('3', test_arr), [7, 1e-8, 1000])
-        _, _, corrected_modp = baseline_modpoly(('3', test_arr), [7, 1e-10, 1000])
-        _, _, corrected_quant = baseline_penalized_poly(('3', test_arr), [7, 1e-8, 1000, 0.999,
-                                                                          'asymmetric_truncated_quadratic'])
-        _, _, corrected_goldin = baseline_goldindec(('3', test_arr),
-                                                    [7, 1e-9, 1000, 'asymmetric_truncated_quadratic', 0.5,
-                                                     .999])
-        corr_matrix_plus = np.corrcoef(y_raman, corrected_plus[:, 1])
-        corr1 = corr_matrix_plus[0, 1] ** 2
-        rms1 = mean_squared_error(corrected_plus[:, 1], y_raman, squared=False)
-        rms2 = mean_squared_error(corrected_imod[:, 1], y_raman, squared=False)
-        rms3 = mean_squared_error(corrected_modp[:, 1], y_raman, squared=False)
-        rms6 = mean_squared_error(corrected_quant[:, 1], y_raman, squared=False)
-        rms7 = mean_squared_error(corrected_goldin[:, 1], y_raman, squared=False)
-        corrected_plus1 = corrected_plus[corrected_plus < 0]
-        corrected_imod1 = corrected_imod[corrected_imod < 0]
-        corrected_modp1 = corrected_modp[corrected_modp < 0]
-        corrected_quant1 = corrected_quant[corrected_quant < 0]
-        corrected_goldin1 = corrected_goldin[corrected_goldin < 0]
-        area0 = np.trapz(corrected_plus1)
-        area1 = np.trapz(corrected_imod1)
-        area2 = np.trapz(corrected_modp1)
-        area3 = np.trapz(corrected_quant1)
-        area4 = np.trapz(corrected_goldin1)
-        print('r2 EX-Mod-Poly+ ', corr1, 'rms ', rms1, 'area ', area0)
-        corr_matrix_imod = np.corrcoef(y_raman, corrected_imod[:, 1])
-        corr2 = corr_matrix_imod[0, 1] ** 2
-        print('r2 I-Mod-Poly ', corr2, 'area ', area1)
-        corr_matrix_modp = np.corrcoef(y_raman, corrected_modp[:, 1])
-        corr3 = corr_matrix_modp[0, 1] ** 2
-        print('r2 Mod-Poly ', corr3, 'area ', area2)
-        corr_matrix_quant = np.corrcoef(y_raman, corrected_quant[:, 1])
-        corr6 = corr_matrix_quant[0, 1] ** 2
-        print('r2 Penalized Poly ', corr6, 'area ', area3)
-        corr_matrix_goldin = np.corrcoef(y_raman, corrected_goldin[:, 1])
-        corr7 = corr_matrix_goldin[0, 1] ** 2
-        print('r2 Goldindec ', corr7, 'area ', area4)
         fig, ax = plt.subplots()
-        ax.plot(x_axis, y_raman, label='Synthesized spectrum', color='black')
-        ax.plot(x_axis, corrected_plus[:, 1],
-                label='Ex-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr1 * 100, 3)) + '. RMSE=' + str(
-                    np.round(rms1, 2)), color='red')
-        ax.plot(x_axis, corrected_imod[:, 1],
-                label='I-Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr2 * 100, 3)) + '. RMSE=' + str(
-                    np.round(rms2, 2)), color='green')
-        ax.plot(x_axis, corrected_modp[:, 1],
-                label='Mod-Poly. $\mathregular{r^2}$=' + str(np.round(corr3 * 100, 3)) + '. RMSE=' + str(
-                    np.round(rms3, 2)), color='blue', dashes=[6, 2])
-        ax.plot(x_axis, corrected_quant[:, 1],
-                label='Penalized Poly. $\mathregular{r^2}$=' + str(np.round(corr6 * 100, 3)) + '. RMSE=' + str(
-                    np.round(rms6, 2)), color='c', dashes=[8, 4])
-        ax.plot(x_axis, corrected_goldin[:, 1],
-                label='Goldindec. $\mathregular{r^2}$=' + str(np.round(corr7 * 100, 3)) + '. RMSE=' + str(
-                    np.round(rms7, 2)), color='m', dashes=[8, 4])
+        # ax.plot(x_axis, baseline_and_raman, label='Синтезированный спектр', color='black')
+        # plt.show()
+        # return
+
+        test_spectrum = np.vstack((x_axis, baseline_and_raman)).T
+
+        # s1 = datetime.now()
+        # _, _, y_raman_ex_mod_poly = ex_mod_poly(('ex_mod_poly', test_spectrum), [7, 1e-6, 1000])
+        # y_raman = y_raman_ex_mod_poly[:,1]
+        # baseline_test = polyval(x_axis, coefs)
+        # baseline_and_raman = baseline_test + y_raman
+        # test_spectrum = np.vstack((x_axis, baseline_and_raman)).T
+
+        # print(datetime.now() - s1)
+
+        _, _, y_raman_ex_mod_poly, w = ex_mod_poly(('ex_mod_poly', test_spectrum), [7, 1e-6, 1000])
+        sns.lineplot(w)
+        plt.show()
+        # return
+        s2 = datetime.now()
+        _, _, y_raman_imodpoly = baseline_imodpoly(('imodpoly', test_spectrum), [7, 1e-6, 1000])
+        print(datetime.now() - s2)
+        _, _, y_raman_modpoly = baseline_modpoly(('modpoly', test_spectrum), [7, 1e-6, 1000])
+        _, _, y_raman_penalized = baseline_penalized_poly(('penalized_poly', test_spectrum), [7, 1e-6, 1000, 0.999,
+                                                                                              'asymmetric_truncated_quadratic'])
+        # _, _, y_raman_goldindec = baseline_goldindec(('goldindec', test_spectrum),
+        #                                             [7, 1e-6, 1000, 'asymmetric_truncated_quadratic', 0.5,
+        #                                              .999])
+        # _, _, y_raman_loess = baseline_loess(('LOESS', test_spectrum), [7, 1e-3, 250, 0.2, 3.0])
+        _, _, y_raman_quant_reg = baseline_quant_reg(('Quantile regression', test_spectrum), [7, 1e-6, 1000, 1e-4])
+        results = [y_raman_ex_mod_poly, y_raman_imodpoly, y_raman_quant_reg]
+        names = ['ExModPoly', 'IModPoly', 'Quantile regression']
+        colors = ['red', 'blue', 'purple', 'darkorange', 'darkgreen']
+        fig, ax = plt.subplots()
+        ax.plot(x_axis, y_raman, label='Синтезированный спектр', color='black')
+        for i, (name, corrected_spectrum) in enumerate(zip(names, results)):
+            y_pred = corrected_spectrum[:, 1]
+            mae = mean_absolute_error(y_raman, y_pred)
+            r2 = r2_score(y_raman, y_pred)
+            mse = mean_squared_error(y_raman, y_pred)
+            rmse = np.sqrt(mse)
+            # rmsle_ = rmsle(y_raman, y_pred)
+            # rmsle_ = 'None' if rmsle_ == None else rmsle_
+            # mpe = np.mean((y_raman - y_pred) / y_raman) * 100
+            mape = mean_absolute_percentage_error(y_raman, y_pred)
+            wape = np.sum(np.abs(y_pred - y_raman)) / np.sum(y_raman) * 100
+            area_under_zero = np.trapz(y_pred[y_pred < 0])
+            print(name + str(area_under_zero))
+            metrics = f'{name} MAPE = {mape:.2f} %, WAPE = {wape:.2f}%, R2 = {r2:.6f}'
+            print(metrics)
+
+            ax.plot(x_axis, y_pred, label=f'{name}, r\N{superscript two} = {r2:.6f}', color=colors[i])
+        # wes = w[1]
+        # wes -= np.max(wes)
+        # wes = np.abs(wes)
+        # ax.plot(x_axis, wes, label='веса', color='purple')
         ax.legend()
+        ax.set_xlabel('Рамановский сдвиг, см\N{superscript minus}\N{superscript one}')
+        ax.set_ylabel('Интенсивность, отн. ед.')
         ax.grid()
         plt.show()
 

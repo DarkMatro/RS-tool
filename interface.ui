@@ -1167,15 +1167,15 @@ border: 1px;}</string>
                      <string>Preprocessing parameters</string>
                     </property>
                     <property name="currentIndex">
-                     <number>0</number>
+                     <number>5</number>
                     </property>
                     <widget class="QWidget" name="pp_converting">
                      <property name="geometry">
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>78</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -1287,8 +1287,8 @@ border: 1px;}</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>84</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -1397,8 +1397,8 @@ border: 1px;}</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>112</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -1635,8 +1635,8 @@ border: 1px;}</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>83</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -1724,8 +1724,8 @@ border: 1px;}</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>353</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -1991,7 +1991,7 @@ border: 1px;}</string>
                        <x>0</x>
                        <y>0</y>
                        <width>335</width>
-                       <height>891</height>
+                       <height>913</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -2239,13 +2239,16 @@ border: 1px;}</string>
                          <string>Quantile: </string>
                         </property>
                         <property name="decimals">
-                         <number>3</number>
+                         <number>10</number>
+                        </property>
+                        <property name="minimum">
+                         <double>0.000000000000000</double>
                         </property>
                         <property name="maximum">
                          <double>1.000000000000000</double>
                         </property>
                         <property name="value">
-                         <double>0.050000000000000</double>
+                         <double>0.000100000000000</double>
                         </property>
                        </widget>
                       </item>
@@ -2285,8 +2288,11 @@ border: 1px;}</string>
                         <property name="prefix">
                          <string>α-factor: </string>
                         </property>
+                        <property name="decimals">
+                         <number>6</number>
+                        </property>
                         <property name="minimum">
-                         <double>0.010000000000000</double>
+                         <double>0.000001000000000</double>
                         </property>
                         <property name="maximum">
                          <double>1.000000000000000</double>
@@ -2355,6 +2361,9 @@ border: 1px;}</string>
                         </property>
                         <property name="prefix">
                          <string>Scale: </string>
+                        </property>
+                        <property name="decimals">
+                         <number>3</number>
                         </property>
                         <property name="maximum">
                          <double>10.000000000000000</double>
@@ -2456,10 +2465,10 @@ border: 1px;}</string>
                          <string>num_std: </string>
                         </property>
                         <property name="decimals">
-                         <number>1</number>
+                         <number>2</number>
                         </property>
                         <property name="minimum">
-                         <double>0.100000000000000</double>
+                         <double>0.000000000000000</double>
                         </property>
                         <property name="maximum">
                          <double>10.000000000000000</double>
@@ -2603,6 +2612,19 @@ border: 1px;}</string>
                         </property>
                        </widget>
                       </item>
+                      <item row="19" column="1">
+                       <widget class="CheckBox" name="rebuild_y_check_box">
+                        <property name="toolTip">
+                         <string> bool, optional. Default False.
+ Rebuild y in at every iteration by formula: y = np.minimum(y, baseline)
+True makes result like using ModPoly-IModPoly
+False makes result like using Quantile regression</string>
+                        </property>
+                        <property name="text">
+                         <string>Rebuild y</string>
+                        </property>
+                       </widget>
+                      </item>
                      </layout>
                     </widget>
                     <widget class="QWidget" name="pp_trimming">
@@ -2610,8 +2632,8 @@ border: 1px;}</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>76</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -2769,8 +2791,8 @@ border: 1px;}</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>342</width>
-                       <height>376</height>
+                       <width>335</width>
+                       <height>160</height>
                       </rect>
                      </property>
                      <attribute name="label">
@@ -3280,8 +3302,8 @@ border: 1px;}</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>191</width>
+                        <height>271</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3454,8 +3476,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>250</width>
+                        <height>248</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3616,8 +3638,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>131</width>
+                        <height>89</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3697,8 +3719,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>156</width>
+                        <height>138</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3798,8 +3820,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>121</width>
+                        <height>38</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3873,8 +3895,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>122</width>
+                        <height>82</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3974,8 +3996,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>221</width>
+                        <height>207</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -4124,8 +4146,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>168</width>
+                        <height>126</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -4250,8 +4272,8 @@ The minimum number of samples required to split an internal node:
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>174</width>
+                        <height>162</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -4389,8 +4411,8 @@ The minimum number of samples required to split an internal node:
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>276</height>
+                        <width>222</width>
+                        <height>86</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -4490,7 +4512,7 @@ The minimum number of samples required to split an internal node:
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>331</width>
+                        <width>217</width>
                         <height>283</height>
                        </rect>
                       </property>
@@ -5494,7 +5516,7 @@ The minimum number of samples required to split an internal node:
                                  <widget class="QToolButton" name="guess_button">
                                   <property name="maximumSize">
                                    <size>
-                                    <width>60</width>
+                                    <width>70</width>
                                     <height>25</height>
                                    </size>
                                   </property>
@@ -5516,7 +5538,7 @@ The minimum number of samples required to split an internal node:
                                  <widget class="QPushButton" name="batch_button">
                                   <property name="maximumSize">
                                    <size>
-                                    <width>60</width>
+                                    <width>70</width>
                                     <height>25</height>
                                    </size>
                                   </property>

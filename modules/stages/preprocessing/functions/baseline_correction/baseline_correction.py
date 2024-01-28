@@ -1,22 +1,21 @@
 import numpy as np
-from numpy.linalg import norm
+from numpy.linalg import norm, lstsq
+from numpy.polynomial.polyutils import getdomain, mapdomain
+from numpy.polynomial.polynomial import polyvander
 from pybaselines import Baseline
 from scipy.sparse import csc_matrix, spdiags, diags, eye as sparse_eye
 from scipy.sparse.linalg import spsolve
 from scipy.signal import detrend
-from modules.mutual_functions.work_with_arrays import normalize_between_0_1, diff, extend_bool_false_mask
+from modules.mutual_functions.work_with_arrays import extend_bool_mask_two_sided
 from numba import njit
-from modules.stages.preprocessing.functions.baseline_correction.numba_polyfit import polyfit, polyval, fit_poly
 
 
-def baseline_poly(item: tuple[str, np.ndarray], params: int) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_poly(item: tuple[str, np.ndarray], poly_order: int = 5) -> tuple[str, np.ndarray, np.ndarray]:
     """Computes a polynomial that fits the baseline of the data. """
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    poly_order = params
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.poly(y_input, poly_order)[0]
@@ -24,7 +23,8 @@ def baseline_poly(item: tuple[str, np.ndarray], params: int) -> tuple[str, np.nd
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_modpoly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_modpoly(item: tuple[str, np.ndarray], poly_order: int = 5, tol: float = 1e-3, max_iter: int = 250) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     """Implementation of Modified polyfit method from paper: Automated Method for Subtraction of Fluorescence from
     Biological Raman Spectra, by Lieber & Mahadevan-Jansen (2003)
 
@@ -39,35 +39,14 @@ def baseline_modpoly(item: tuple[str, np.ndarray], params: list[int, float, int]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    degree = params[0]
-    gradient = params[1]
-    max_iter = params[2]
-
-    # # initial improvement criteria is set as positive infinity, to be replaced later on with actual value
-    # criteria = np.inf
-    # baseline_fitted = y_input
-    # y_old = y_input.copy()
-    # n_iter = 0
-    #
-    # while (criteria >= gradient) and (n_iter < max_iter):
-    #     poly_coef = polynomial.polyfit(x_input, y_old, degree)
-    #     baseline_fitted = polyval(x_input, poly_coef)
-    #     y_work = np.minimum(y_input, baseline_fitted)
-    #     criteria = sum(abs((y_work - y_old) / y_old))
-    #     y_old = y_work
-    #     n_iter += 1
-    # # end of fitting procedure
-    # y_new = y_input - baseline_fitted
-    # print(n_iter)
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.modpoly(y_input, degree, gradient, max_iter)[0]
+    baseline_fitted = baseline_fitter.modpoly(y_input, poly_order, tol, max_iter)[0]
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_imodpoly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[
-    str, np.ndarray, np.ndarray]:
+def baseline_imodpoly(item: tuple[str, np.ndarray], poly_order: int = 6, tol: float = 1e-3, max_iter: int = 250,
+                      num_std: float = 0.) -> tuple[str, np.ndarray, np.ndarray]:
     """IModPoly from paper: Automated Autofluorescence Background Subtraction Algorithm for Biomedical Raman
      Spectroscopy, by Zhao, Jianhua, Lui, Harvey, McLean, David I., Zeng, Haishan (2007)
 
@@ -82,106 +61,42 @@ def baseline_imodpoly(item: tuple[str, np.ndarray], params: list[int, float, int
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    degree = params[0]
-    gradient = params[1]
-    max_iter = params[2]
-    # y = y_input
-    # x = x_input
-    # n_iter = 0
-    # dev = 0
-    # while n_iter < max_iter:
-    #     n_iter += 1
-    #     previous_dev = dev
-    #     poly_coef = polynomial.polyfit(x, y, degree)
-    #     baseline_fitted = polyval(x, poly_coef)
-    #     di = y - baseline_fitted
-    #     dev = np.std(di)
-    #     if n_iter == 1:
-    #         y = y[y_input <= (baseline_fitted + dev)]
-    #         x = x[y_input <= (baseline_fitted + dev)]
-    #         baseline_fitted = baseline_fitted[y_input <= (baseline_fitted + dev)]
-    #     stop_criteria = np.abs((dev - previous_dev) / dev)
-    #     # print('imodpoly stop_criteria: ', stop_criteria, ' dev ', dev, ' n_iter ', n_iter)
-    #     if stop_criteria < gradient:
-    #         break
-    #     y = np.minimum(y, baseline_fitted + dev)
-    # poly_coef = polynomial.polyfit(x, y, degree)
-    # baseline_fitted = polyval(x_input, poly_coef)
-
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.imodpoly(y_input, degree, gradient, max_iter)[0]
+    baseline_fitted = baseline_fitter.imodpoly(y_input, poly_order, tol, max_iter, num_std=num_std)[0]
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-# def baseline_imodpoly_plus(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
-#     """IModPoly from paper: Automated Autofluorescence Background Subtraction Algorithm for Biomedical Raman
-#     Spectroscopy, by Zhao, Jianhua, Lui, Harvey, McLean, David I., Zeng, Haishan (2007)
-#
-#     degree: Polynomial degree, default is 2
-#
-#     max_iter: How many iterations to run. Default is 100
-#
-#     gradient: Gradient for polynomial loss, default is 0.001. It measures incremental gain over each iteration.
-#     If gain in any iteration is less than this, further improvement will stop
-#     """
-#
-#     key = item[0]
-#     input_array = item[1]
-#     x_input = input_array[:, 0]
-#     y_input = input_array[:, 1]
-#     # optional parameters
-#     degree = params[0]
-#     gradient = params[1]
-#     max_iter = params[2]
-#     y = y_input
-#     x = x_input
-#     n_iter = 0
-#     dev = 0
-#     while n_iter <= max_iter:
-#         n_iter += 1
-#         previous_dev = dev
-#         poly_coef = polynomial.polyfit(x, y, degree)
-#         baseline_fitted = polyval(x, poly_coef)
-#         di = y - baseline_fitted
-#         residual = di * np.power(np.std(di) / 1000, (1 - (abs(di) / di)))
-#         dev = np.std(residual)
-#         if n_iter == 1:
-#             y = y[y_input <= (baseline_fitted + dev)]
-#             x = x[y_input <= (baseline_fitted + dev)]
-#             baseline_fitted = baseline_fitted[y_input <= (baseline_fitted + dev)]
-#         stop_criteria = abs((dev - previous_dev) / dev)
-#         if stop_criteria < gradient or dev < 1e-06:
-#             break
-#         y = np.minimum(y, baseline_fitted + dev)
-#     poly_coef = polynomial.polyfit(x, y, degree)
-#     baseline_fitted = polyval(x_input, poly_coef)
-#     y_new = y_input - baseline_fitted
-#     print(n_iter)
-#     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
-
-# @njit(cache=True, fastmath=True)
-def ex_mod_poly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def ex_mod_poly(item: tuple[str, np.ndarray], poly_order: int = 5, tol: float = 1e-6, max_iter: int = 100,
+                quantile: float = 1e-5, w_scale_factor: float = .5, recalc_y: bool = False, num_std=3.,
+                window_size=3) -> tuple[str, np.ndarray, np.ndarray]:
     """
-    Ex-ModPoly is extension of ModPoly method from paper: 'Automated Method for Subtraction of Fluorescence from
-    Biological Raman Spectra, by Lieber & Mahadevan-Jansen (2003)'
+    Ex-ModPoly is extension of ModPoly method from paper [1] and Quantile regression using iteratively
+    reweighed least squares (IRLS) [2]
 
     Returns baseline and raman spectrum as 2D ndarray.
 
-    Main differences from ModPoly and I-ModPoly are:
-        1) Each iteration, the vector of weights is calculated for polyfit. Weights are inverted derivative of given y.
-            Weight value for lows is higher than for peaks.
-        2) At iteration = 0 removing strong raman peaks at intensity higher than fitted baseline.
-            Not higher than (baseline + DEV) like in I-ModPoly.
-        3) Residual deviation now calculating by formula:
-            r = y - baseline
-            coef = min(np.std(r) / 1000., .1)
-            dev = r * coef ^ (1 - np.abs(r) / r)
-            dev = np.std(dev)
-        4) Stop criteria now is tilt angle of line approximated to latest N (N = window_size) stop_criteria.
-            Pitch < than threshold (usually 1e-7) means that for latest N iteration dev wasn't significantly changed and
-            further iterations cannot significantly improve the fitting.
+    Main differences from ModPoly, I-ModPoly and Quantile regression are:
+        1) The presence of absorption lines in the spectrum is taken into account
+        2) The accuracy of polynomial approximation for a descending baseline as in the spectra of biomaterials has
+            been increased by scaling the IRLS weights defined as in the article [3] and rebuilding y signal at each
+            iteration.
+        3) Increased performance compared to other methods.
+
+    Metrics for 1000 synthesized Raman spectra.
+    EMSC normalized spectra
+                   MAPE, %       R^2      time, sec
+    I-ModPoly |  12.468    | 0.9997914 |  40
+    Quant_reg |   0.163    | 0.9999796 |   6
+    Ex-ModPoly|   0.132    | 0.9999883 |   4
+
+    SNV normalized spectra
+                   MAPE, %       R^2      time, sec
+    I-ModPoly |  14.187    | 0.9997348 |  40
+    Quant_reg |   4.231    | 0.9929289 |  70
+    Ex-ModPoly|   0.135    | 0.9999882 |   5
+
+    For results like using Quantile regression make w_scale_factor=0.5, recalc_y=False.
 
     Parameters
     ----------
@@ -189,16 +104,38 @@ def ex_mod_poly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> 
         key: str
             filename
         input_array: ndarray
-            2D array of smoothed spectrum
-    params : list[float, float, float]
-        degree: float
-            polynome degree as float (will be converted to int). Recommended value from 5 to 11.
-        threshold: float
-            pitch corresponding to angle of tilt for line of stop_criteria with some window_size. Default is 1e-7.
-             Recommended (1e-7 ; 1e-10)
-            Less values means more iterations.
-        max_iter: float
-            iterations limit (will be converted to int). Recommended value from 250 to 1000.
+            2D array of smoothed spectrum with baseline + raman signal
+    poly_order: float, optional
+        The polynomial order for fitting the baseline. Recommended value from 5 to 11.
+    tol: float, optional
+        The exit criteria. Default is 1e-6.
+    max_iter : int, optional
+        The maximum number of iterations. Default is 100.
+    quantile : float, optional
+        The quantile at which to fit the baseline. Default is 1e-4.
+    w_scale_factor: float, optional
+        Scales quantile regression weights by formula: q = q**w_scale_factor. Where q calculated like in quantile
+        regression [3]
+        Low values like 1e-10 makes weights like rectangular shape (0 for negative residual, 1 for positive).
+        0.5 is standard value makes result equal to quantile regression.
+        Values lower than 0.5 allows make baseline lower
+        For SNV normalization recommended range [0.01 - 0.1] with recalc_y = True
+        For EMSC normalization recommended range [0.01 - 0.5] with recalc_y = False
+    recalc_y: bool, optional
+        Rebuild y in at every iteration by formula: y = np.minimum(y, baseline)
+        True makes result like using ModPoly-IModPoly
+        False makes result like using Quantile regression. Default is False.
+    num_std : float, optional
+        For absorption removing. Consider signal lower than (baseline - num_std * np.std(detrended(y)))
+        as strong absorption.
+        Higher values for stronger absorption lines. Lower value for weak absorption lines.
+        If num_std = 0.0 absorption signal will not be removed.
+        Default is 3.
+    window_size : int, optional
+        For absorption removing.
+        How many points around found absorption signal will be considered as absorption too.
+        window_size = 2, makes mask of absorption indexes like [0, 0, 1, 0, 0] --> [0, 1, 1, 1, 0]
+        Higher values for wide absorption lines, lower values for narrow.
 
     Returns
     -------
@@ -209,203 +146,218 @@ def ex_mod_poly(item: tuple[str, np.ndarray], params: list[int, float, int]) -> 
             2D array of baseline fitted by polynome of some degree.
         y_raman: ndarray
             2D array of Raman spectrum = input_array - baseline.
+
+    Notes
+    ----
+        Modpoly algorithm originally developed in [1]_.
+
+        I-ModPoly algorithm originally developed in [2]_.
+
+        Performs quantile regression using iteratively reweighted least squares (IRLS)
+        as described in [3]_.
+
+     References
+    ----------
+    .. [1] Lieber, C., et al. Automated method for subtraction of fluorescence
+            from biological raman spectra. Applied Spectroscopy, 2003, 57(11),
+            1363-1367.
+    .. [2] Zhao, J., et al. Automated Autofluorescence Background Subtraction
+            Algorithm for Biomedical Raman Spectroscopy, Applied Spectroscopy,
+            2007, 61(11), 1225-1232.
+    .. [3] Schnabel, S., et al. Simultaneous estimation of quantile curves using
+            quantile sheets. AStA Advances in Statistical Analysis, 2013, 97, 77-87.
+
     """
     key, input_array = item
     x_input, y_input = input_array[:, 0], input_array[:, 1]
-    degree, threshold, max_iter = params
     x, y = x_input.copy(), y_input.copy()
-    stop_criteria = [0.]
-    dev = 0.
-    window_size = min(int(max_iter / 10), 100)
+    w = np.ones_like(y)
+    x_domain = getdomain(x)
+    mapped_x = mapdomain(x, x_domain, np.array([-1., 1.]))
+    vandermonde = polyvander(mapped_x, poly_order)
+    # 1st baseline fit without weights
+    coef = lstsq(vandermonde * w[:, None], y * w, None)[0]
+    baseline = vandermonde @ coef
+    # Find indexes of strong absorption lines to remove
+    indexes = absorption_indexes(y, baseline, num_std, window_size) if num_std != 0.0 else None
     for i in range(max_iter):
-        dev_prev = dev
-        poly_coef = fit_poly(x, y, degree, _weights(y))
-        baseline = polyval(x, poly_coef)
+        baseline_old = baseline
+        coef = lstsq(vandermonde * w[:, None], y * w, None)[0]
+        baseline = vandermonde @ coef
+        w = _quantile(y, baseline, quantile, None, w_scale_factor, indexes)
         if i == 0:
-            # Remove strong raman peaks.
-            indexes = np.argwhere(y <= baseline).T[0]
-            x, y, baseline = x[indexes], y[indexes], baseline[indexes]
-        elif i == 1:
-            # Remove strong absorption lines.
-            detrended = detrend(y)
-            sd = np.std(detrended)
-            cond = y > (baseline - 3. * sd)  # Remove 3. by new parameter later 'absorption coefficient'
-            cond = extend_bool_false_mask(cond.tolist())
-            indexes = np.argwhere(cond).T[0]
-            x, y, baseline = x[indexes], y[indexes], baseline[indexes]
-        dev = max(_residual_deviation(y - baseline), 1e-30)
-        y = np.minimum(y, baseline + dev)  # Reconstruct model input y data.
-        sc = np.abs((dev - dev_prev) / dev)
-        stop_criteria.append(sc)
-        # Check that further iterations cannot significantly improve the fitting.
-        if i != 0 and _pitch(i, stop_criteria, window_size) < threshold:
+            continue
+        if recalc_y:
+            y = np.minimum(y, baseline)
+        if relative_difference(baseline, baseline_old) < tol:
             break
-    poly_coef = fit_poly(x, y, degree, _weights(y))  # Final fitting.
-    baseline = polyval(x_input, poly_coef)  # Make baseline same shape like x_input.
-    y_raman = y_input - baseline  # Baseline corrected spectrum
+    y_raman = y_input - baseline  # Corrected spectrum.
     return key, np.vstack((x_input, baseline)).T, np.vstack((x_input, y_raman)).T
 
 
-@njit(cache=True, fastmath=True)
-def _pitch(i: int, stop_criteria: list, window_size: int) -> float:
+def absorption_indexes(y: np.ndarray, baseline: np.ndarray, sd_factor: float = 3., window_size=2) -> np.ndarray:
     """
-    Returns pitch of line.
-    Pitch close to 0 means no significant changes in deviation.
-    Pitch is 'b' in polynome of 1st degree y = a + bx.
+    Find indexes of strong absorption lines. Consider signal lower than (baseline - sd_factor * np.std(detrended(y)))
+        as strong absorption.
 
     Parameters
     ----------
-    i : int
-        current iteration.
-    stop_criteria : list
-        contains all deviations calculated.
-    window_size : int
-        size of window to approximate polynome.
+    y : numpy.ndarray
+       The values of the raw data.
+    baseline : numpy.ndarray
+       1st fitted baseline without weights.
+    sd_factor : float, optional
+        For absorption removing. Consider signal lower than (baseline - num_std * np.std(detrended(y)))
+        as strong absorption.
+        Higher values for stronger absorption lines. Lower value for weak absorption lines.
+        If num_std = 0.0 absorption signal will not be removed.
+        Default is 3.
+    window_size : int, optional
+        For absorption removing.
+        How many points around found absorption signal will be considered as absorption too.
+        window_size = 2, makes mask of absorption indexes like [0, 0, 1, 0, 0] --> [0, 1, 1, 1, 0]
+        Higher values for wide absorption lines, lower values for narrow.
 
     Returns
     -------
-    pitch : float
-        angle of tilt for line
+    numpy.ndarray
+        Indexes
     """
-    window = stop_criteria[-window_size: -1] if i >= window_size else stop_criteria[: i + 1]
-    x = np.linspace(0, i, len(window))
-    y = np.array(window)
-    pitch = polyfit(x, y, 1)[1]
-    return abs(pitch)
+    detrended = detrend(y)
+    sd = np.std(detrended)
+    cond = y < (baseline - sd_factor * sd)
+    cond = extend_bool_mask_two_sided(cond.tolist(), window_size)
+    idx = np.argwhere(cond).T[0]
+    return idx
 
 
 @njit(cache=True, fastmath=True)
-def _residual_deviation(r: np.ndarray) -> np.ndarray:
-    """
-    Returns deviation of residual by formula:
-    dev = r * coef ^ (1 - abs(r) / r)
-    dev = std(dev)
+def _quantile(y: np.ndarray, fit: np.ndarray, quantile: float = 1e-4, eps=None, w_scale_factor: float = .5,
+              absorption_idx=None) -> np.ndarray:
+    r"""
+    An approximation of quantile loss.
+
+    The loss is defined as :math:`\rho(r) / |r|`, where r is the residual, `y - fit`,
+    and the function :math:`\rho(r)` is `quantile` for `r` > 0 and 1 - `quantile`
+    for `r` < 0. Rather than using `|r|` as the denominator, which is non-differentiable
+    and causes issues when `r` = 0, the denominator is approximated as
+    :math:`\sqrt{r^2 + eps}` where `eps` is a small number.
 
     Parameters
     ----------
-    r : ndarray
-        Input array
+    y : numpy.ndarray
+        The values of the raw data.
+    fit : numpy.ndarray
+        The fit values.
+    quantile : float
+        The quantile value.
+    eps : float, optional
+        A small value added to the square of `residual` to prevent dividing by 0.
+        Default is None, which uses `(1e-6 * max(abs(fit)))**2`.
+    w_scale_factor : float
+        scaling coefficient
+    absorption_idx: numpy.ndarray
+        indexes of absorption lines to be zero.
 
     Returns
     -------
-    dev : ndarray
-        deviation
+    numpy.ndarray
+        The calculated loss, which can be used as weighting when performing iteratively
+        reweighted least squares (IRLS)
+
+    References
+    ----------
+    Schnabel, S., et al. Simultaneous estimation of quantile curves using quantile
+    sheets. AStA Advances in Statistical Analysis, 2013, 97, 77-87.
+
     """
-    coef = min(np.std(r) / 1000., .1)
-    m = 1 - np.sign(r)
-    r *= np.power(coef, m)
-    return np.std(r)
+    if eps is None:
+        # 1e-6 seems to work better than the 1e-4 in Schnabel, et al
+        eps = (np.abs(fit).max() * 1e-6) ** 2
+        eps = min(eps, 2.22e-16)
+    residual = y - fit
+    numerator = np.where(residual > 0, quantile, 1 - quantile)
+    # use max(eps, _MIN_FLOAT) to ensure that eps + 0 > 0
+    denominator = np.sqrt(residual ** 2 + eps)  # approximates abs(residual)
+    q = (numerator / denominator) ** w_scale_factor
+    if absorption_idx is not None:
+        q[absorption_idx] = 0.
+    return q
 
 
-# @njit(float64[:](float64[:]), fastmath=True)
 @njit(cache=True, fastmath=True)
-def _weights(y: np.ndarray) -> np.ndarray:
+def relative_difference(old: np.ndarray, new: np.ndarray, norm_order=None) -> float:
     """
-    Returns weights for polyfit.
-    Weights is inverted diff of given y.
+    Calculates the relative difference, ``(norm(new-old) / norm(old))``, of two values.
+
+    Used as an exit criteria in many baseline algorithms.
 
     Parameters
     ----------
-    y : ndarray
-        Input array
+    old : numpy.ndarray or float
+        The array or single value from the previous iteration.
+    new : numpy.ndarray or float
+        The array or single value from the current iteration.
+    norm_order : int, optional
+        The type of norm to calculate. Default is None, which is l2
+        norm for arrays, abs for scalars.
 
     Returns
     -------
-    w : ndarray
-        Weights
+    float
+        The relative difference between the old and new values.
 
-    Examples
-    --------
-    >>> x = np.array([1., 2., 4., 7., 0.])
-    >>> _weights(x)
-    array([1.        , 0.85714286, 0.71428571, 0.57142857, 0.        ])
     """
-    w = diff(y)
-    w = np.abs(w)
-    w = normalize_between_0_1(w)
-    return np.abs(w - 1.)
+    numerator = np.linalg.norm(new - old, None)
+    denominator = np.maximum(np.linalg.norm(old, norm_order), 1e-20)
+    return numerator / denominator
 
 
-def baseline_penalized_poly(item: tuple[str, np.ndarray], params: list[int, float, int, float, str]) \
+def baseline_penalized_poly(item: tuple[str, np.ndarray], poly_order: int = 6, tol: float = 1e-3, max_iter: int = 250,
+                            alpha_factor: float = 0.99999, cost_function: str = 'asymmetric_truncated_quadratic') \
         -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    degree = params[0]
-    gradient = params[1]
-    max_iter = params[2]
-    alpha_factor = params[3]
-    cost_function = params[4]
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.penalized_poly(y_input, degree, gradient, max_iter, cost_function=cost_function,
-                                                     alpha_factor=alpha_factor)[0]
+    baseline_fitted = baseline_fitter.penalized_poly(y_input, poly_order, tol, max_iter, cost_function=cost_function,
+                                                     alpha_factor=alpha_factor, threshold=0.001)[0]
     # end of fitting procedure
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_loess(item: tuple[str, np.ndarray], params: list[int, float, int, float, int]) \
+def baseline_quant_reg(item: tuple[str, np.ndarray], poly_order: int = 5, tol: float = 1e-6, max_iter: int = 100,
+                       quantile: float = 1e-5) -> tuple[str, np.ndarray, np.ndarray]:
+    key = item[0]
+    input_array = item[1]
+    x_input = input_array[:, 0]
+    y_input = input_array[:, 1]
+    baseline_fitter = Baseline(x_data=x_input)
+    baseline_fitted = baseline_fitter.quant_reg(y_input, poly_order, quantile, tol, max_iter)[0]
+    y_new = y_input - baseline_fitted
+    return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
+
+
+def baseline_goldindec(item: tuple[str, np.ndarray], poly_order: int = 5, tol: float = 1e-6, max_iter: int = 100,
+                       alpha_factor: float = 0.99999, cost_function: str = 'asymmetric_truncated_quadratic',
+                       peak_ratio: float = 0.5) \
         -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    degree = params[0]
-    gradient = params[1]
-    max_iter = params[2]
-    fraction = params[3]
-    scale = params[4]
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.loess(y_input, fraction, poly_order=degree, tol=gradient, max_iter=max_iter,
-                                            scale=scale)[0]
-    # end of fitting procedure
-    y_new = y_input - baseline_fitted
-    return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
-
-
-def baseline_quant_reg(item: tuple[str, np.ndarray], params: list[int, float, int, float]) -> tuple[
-    str, np.ndarray, np.ndarray]:
-    key = item[0]
-    input_array = item[1]
-    x_input = input_array[:, 0]
-    y_input = input_array[:, 1]
-    # optional parameters
-    degree = params[0]
-    gradient = params[1]
-    max_iter = params[2]
-    quantile = params[3]
-    baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.quant_reg(y_input, degree, quantile, gradient, max_iter)[0]
-    # end of fitting procedure
-    y_new = y_input - baseline_fitted
-    return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
-
-
-def baseline_goldindec(item: tuple[str, np.ndarray], params: list[int, float, int, str, float, float]) \
-        -> tuple[str, np.ndarray, np.ndarray]:
-    key = item[0]
-    input_array = item[1]
-    x_input = input_array[:, 0]
-    y_input = input_array[:, 1]
-    # optional parameters
-    degree = params[0]
-    gradient = params[1]
-    max_iter = params[2]
-    cost_func = params[3]
-    peak_ratio = params[4]
-    alpha_factor = params[5]
-    baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.goldindec(y_input, degree, gradient, max_iter, cost_function=cost_func,
+    baseline_fitted = baseline_fitter.goldindec(y_input, poly_order, tol, max_iter, cost_function=cost_function,
                                                 peak_ratio=peak_ratio, alpha_factor=alpha_factor)[0]
     # end of fitting procedure
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_asls(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_asls(item: tuple[str, np.ndarray], lam: int = 1e6, p: float = 1e-3, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     # Matlab code in Eilers et Boelens 2005
     # Python adaptation found on stackoverflow:
     # https://stackoverflow.com/questions/29156532/python-baseline-correction-library
@@ -414,16 +366,12 @@ def baseline_asls(item: tuple[str, np.ndarray], params: list[int, float, int]) -
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    p = params[1]
-    niter = params[2]
     z = np.zeros_like(y_input)
     # starting the algorithm
     y_shape = y_input.shape[0]
     d = csc_matrix(np.diff(np.eye(y_shape), 2))
     w = np.ones(y_shape)
-    for i in range(niter):
+    for i in range(max_iter):
         w_w = spdiags(w, 0, y_shape, y_shape)
         z_z = w_w + lam * d.dot(d.transpose())
         z = spsolve(z_z, w * y_input)
@@ -434,15 +382,12 @@ def baseline_asls(item: tuple[str, np.ndarray], params: list[int, float, int]) -
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_iasls(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_iasls(item: tuple[str, np.ndarray], lam: int = 1e6, p: float = 1e-3, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    p = params[1]
-    max_iter = params[2]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.iasls(y_input, lam, p, max_iter=max_iter, tol=1e-6)[0]
     # end of fitting procedure
@@ -450,18 +395,14 @@ def baseline_iasls(item: tuple[str, np.ndarray], params: list[int, float, int]) 
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_arpls(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_arpls(item: tuple[str, np.ndarray], lam: int = 1e5, p: float = 1e-6, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     # Adaptation of the Matlab code in Baek et al. 2015 DOI: 10.1039/c4an01061b
 
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    # optional parameters
-    lam = params[0]
-    ratio = params[1]
-    n_iter = params[2]
 
     n = y_input.shape[0]
     d_d = csc_matrix(np.diff(np.eye(n), 2))
@@ -479,9 +420,9 @@ def baseline_arpls(item: tuple[str, np.ndarray], params: list[int, float, int]) 
         s = np.std(dn)
         wt = 1.0 / (1 + np.exp(2 * (d - (2 * s - m)) / s))
         # check exit condition and backup
-        if norm(w - wt) / norm(w) < ratio:
+        if norm(w - wt) / norm(w) < p:
             break
-        if i >= n_iter:
+        if i >= max_iter:
             break
         w = wt
     baseline_fitted = z
@@ -513,7 +454,8 @@ def _whittaker_smooth(x, w, lambda_):
     return np.array(background)
 
 
-def baseline_airpls(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_airpls(item: tuple[str, np.ndarray], lam: int = 1e6, p: float = 1e-6, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     """
     Implementation of Zhang fit for Adaptive iteratively reweighted penalized the least squares for baseline fitting.
     Modified from Original implementation by Professor Zhimin Zhang at https://github.com/zmzhang/airPLS/
@@ -529,10 +471,6 @@ def baseline_airpls(item: tuple[str, np.ndarray], params: list[int, float, int])
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
 
-    # optional parameters
-    lam = params[0]
-    p = params[1]
-    max_iter = params[2]
     baseline_fitted = []
     y_len = y_input.shape[0]
     w = np.ones(y_len)
@@ -551,19 +489,17 @@ def baseline_airpls(item: tuple[str, np.ndarray], params: list[int, float, int])
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_drpls(item: tuple[str, np.ndarray], params: list[int, float, int, float]) -> tuple[
-    str, np.ndarray, np.ndarray]:
+def baseline_drpls(item: tuple[str, np.ndarray], lam: int = 1e5, p: float = 1e-6, max_iter: int = 50, eta: float = .5) \
+        -> tuple[
+            str, np.ndarray, np.ndarray]:
     # according to Applied Optics, 2019, 58, 3913-3920. https://doi.org/10.1364/AO.58.003913
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
     # optional parameters
-    lam = params[0]
-    ratio = params[1]
-    niter = params[2]
-    eta = params[3]
-    niter = 100 if niter > 100 else niter
+
+    niter = 100 if max_iter > 100 else max_iter
     # optional smoothing in the next line, currently commented out
     # y = np.around(savgol_filter(raw_data,19,2,deriv=0,axis=1),decimals=6)
 
@@ -586,7 +522,7 @@ def baseline_drpls(item: tuple[str, np.ndarray], params: list[int, float, int, f
         w_w.setdiag(w)
         z_prev = z_z
         z_z = spsolve(w_w + d_1 + lam * (i_n - eta * w_w) * d_d, w_w * y_input, permc_spec='NATURAL')
-        if np.linalg.norm(z_z - z_prev) > ratio:
+        if np.linalg.norm(z_z - z_prev) > p:
             d = y_input - z_z
             d_negative = d[d < 0]
             sigma_negative = np.std(d_negative)
@@ -602,47 +538,39 @@ def baseline_drpls(item: tuple[str, np.ndarray], params: list[int, float, int, f
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_iarpls(item: tuple[str, np.ndarray], params: list[int, int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_iarpls(item: tuple[str, np.ndarray], lam: int = 100, p: float = 1e-6, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    tol = params[1]
-    max_iter = params[2]
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.iarpls(y_input, lam, max_iter=max_iter, tol=tol)[0]
+    baseline_fitted = baseline_fitter.iarpls(y_input, lam, max_iter=max_iter, tol=p)[0]
     # end of fitting procedure
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_aspls(item: tuple[str, np.ndarray], params: list[int, int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_aspls(item: tuple[str, np.ndarray], lam: int = 1e5, p: float = 1e-6, max_iter: int = 100) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    tol = params[1]
-    max_iter = params[2]
+
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.aspls(y_input, lam, max_iter=max_iter, tol=tol)[0]
+    baseline_fitted = baseline_fitter.aspls(y_input, lam, max_iter=max_iter, tol=p)[0]
     # end of fitting procedure
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_psalsa(item: tuple[str, np.ndarray], params: list[int, int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_psalsa(item: tuple[str, np.ndarray], lam: int = 1e5, p: float = .5, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    p = params[1]
-    max_iter = params[2]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.psalsa(y_input, lam, p, max_iter=max_iter, tol=1e-6)[0]
     # end of fitting procedure
@@ -650,16 +578,12 @@ def baseline_psalsa(item: tuple[str, np.ndarray], params: list[int, int, float])
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_derpsalsa(item: tuple[str, np.ndarray], params: list[int, int, float]) -> tuple[
+def baseline_derpsalsa(item: tuple[str, np.ndarray], lam: int = 1e3, p: float = .01, max_iter: int = 50) -> tuple[
     str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    p = params[1]
-    max_iter = params[2]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.derpsalsa(y_input, lam, p, max_iter=max_iter, tol=1e-6)[0]
     # end of fitting procedure
@@ -667,15 +591,13 @@ def baseline_derpsalsa(item: tuple[str, np.ndarray], params: list[int, int, floa
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mpls(item: tuple[str, np.ndarray], params: tuple[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_mpls(item: tuple[str, np.ndarray], lam: int = 1e6, p: float = 0.0, max_iter: int = 50) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    lam = params[0]
-    p = params[1]
-    max_iter = params[2]
+
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.mpls(y_input, lam=lam, p=p, max_iter=max_iter, tol=1e-6)[0]
     # end of fitting procedure
@@ -683,7 +605,7 @@ def baseline_mpls(item: tuple[str, np.ndarray], params: tuple[int, float, int]) 
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mor(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_mor(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -696,14 +618,12 @@ def baseline_mor(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.n
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_imor(item: tuple[str, np.ndarray], params: list[int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_imor(item: tuple[str, np.ndarray], tol: float = 1e-3, max_iter: int = 200) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    max_iter = params[0]
-    tol = params[1]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.imor(y_input, max_iter=max_iter, tol=tol)[0]
     # end of fitting procedure
@@ -711,14 +631,12 @@ def baseline_imor(item: tuple[str, np.ndarray], params: list[int, float]) -> tup
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mormol(item: tuple[str, np.ndarray], params: list[int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_mormol(item: tuple[str, np.ndarray], tol: float = 1e-3, max_iter: int = 250) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    max_iter = params[0]
-    tol = params[1]
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.mormol(y_input, max_iter=max_iter, tol=tol)[0]
@@ -727,14 +645,12 @@ def baseline_mormol(item: tuple[str, np.ndarray], params: list[int, float]) -> t
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_amormol(item: tuple[str, np.ndarray], params: list[int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_amormol(item: tuple[str, np.ndarray], tol: float = 1e-3, max_iter: int = 250) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    # optional parameters
-    max_iter = params[0]
-    tol = params[1]
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.amormol(y_input, max_iter=max_iter, tol=tol)[0]
@@ -743,7 +659,7 @@ def baseline_amormol(item: tuple[str, np.ndarray], params: list[int, float]) -> 
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_rolling_ball(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_rolling_ball(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -756,7 +672,7 @@ def baseline_rolling_ball(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndar
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mwmv(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_mwmv(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -769,7 +685,7 @@ def baseline_mwmv(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_tophat(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_tophat(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -782,15 +698,12 @@ def baseline_tophat(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, n
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mpspline(item: tuple[str, np.ndarray], params: tuple[int, float, int]) -> tuple[
+def baseline_mpspline(item: tuple[str, np.ndarray], lam: int = 1e4, p: float = 0.0, spline_degree: int = 3) -> tuple[
     str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    lam = params[0]
-    p = params[1]
-    spline_degree = params[2]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.mpspline(y_input, lam=lam, p=p, spline_degree=spline_degree)[0]
     # end of fitting procedure
@@ -798,13 +711,12 @@ def baseline_mpspline(item: tuple[str, np.ndarray], params: tuple[int, float, in
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_jbcd(item: tuple[str, np.ndarray], params: list[int, float]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_jbcd(item: tuple[str, np.ndarray], tol: float = 1e-2, max_iter: int = 20) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    max_iter = params[0]
-    tol = params[1]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.jbcd(y_input, max_iter=max_iter, tol=tol)[0]
     # end of fitting procedure
@@ -812,17 +724,12 @@ def baseline_jbcd(item: tuple[str, np.ndarray], params: list[int, float]) -> tup
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_mixture_model(item: tuple[str, np.ndarray], params: list[int, float, int, int, float]) \
-        -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_mixture_model(item: tuple[str, np.ndarray], lam: int = 1e5, p: float = 1e-2, spline_degree: int = 3,
+                           tol: float = 1e-3, max_iter: int = 50) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    lam = params[0]
-    p = params[1]
-    spline_degree = params[2]
-    max_iter = params[3]
-    tol = params[4]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.mixture_model(y_input, lam, p, spline_degree=spline_degree, max_iter=max_iter,
                                                     tol=tol)[0]
@@ -831,16 +738,13 @@ def baseline_mixture_model(item: tuple[str, np.ndarray], params: list[int, float
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_irsqr(item: tuple[str, np.ndarray], params: list[int, float, int, int]) -> tuple[
+def baseline_irsqr(item: tuple[str, np.ndarray], lam: int = 100, quantile: float = .01, spline_degree: int = 3,
+                   max_iter: int = 100) -> tuple[
     str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-    lam = params[0]
-    quantile = params[1]
-    spline_degree = params[2]
-    max_iter = params[3]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.irsqr(y_input, lam, quantile, spline_degree=spline_degree, max_iter=max_iter)[0]
     # end of fitting procedure
@@ -848,13 +752,11 @@ def baseline_irsqr(item: tuple[str, np.ndarray], params: list[int, float, int, i
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_corner_cutting(item: tuple[str, np.ndarray], params: int) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_corner_cutting(item: tuple[str, np.ndarray], max_iter: int = 100) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    max_iter = params
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.corner_cutting(y_input, max_iter)[0]
@@ -862,19 +764,19 @@ def baseline_corner_cutting(item: tuple[str, np.ndarray], params: int) -> tuple[
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_noise_median(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_noise_median(item: tuple[str, np.ndarray], half_window: int) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
 
     baseline_fitter = Baseline(x_data=x_input)
-    baseline_fitted = baseline_fitter.noise_median(y_input)[0]
+    baseline_fitted = baseline_fitter.noise_median(y_input, half_window)[0]
     y_new = y_input - baseline_fitted
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_snip(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_snip(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -886,7 +788,7 @@ def baseline_snip(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_swima(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_swima(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -898,7 +800,7 @@ def baseline_swima(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_ipsa(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_ipsa(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
@@ -910,13 +812,11 @@ def baseline_ipsa(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_ria(item: tuple[str, np.ndarray], params: float) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_ria(item: tuple[str, np.ndarray], tol: float = 1e-6) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    tol = params
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.ria(y_input, tol=tol)[0]
@@ -924,19 +824,14 @@ def baseline_ria(item: tuple[str, np.ndarray], params: float) -> tuple[str, np.n
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_dietrich(item: tuple[str, np.ndarray], params: list[float, int, float, int, int, int]) \
+def baseline_dietrich(item: tuple[str, np.ndarray], num_std: float = 3., poly_order: int = 5, tol: float = 1e-3,
+                      max_iter: int = 50, interp_half_window: int = 5, min_length: int = 2) \
         -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
 
-    num_std = params[0]
-    poly_order = params[1]
-    tol = params[2]
-    max_iter = params[3]
-    interp_half_window = params[4]
-    min_length = params[5]
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.dietrich(y_input, num_std=num_std, poly_order=poly_order, tol=tol,
                                                max_iter=max_iter, interp_half_window=interp_half_window,
@@ -945,17 +840,12 @@ def baseline_dietrich(item: tuple[str, np.ndarray], params: list[float, int, flo
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_golotvin(item: tuple[str, np.ndarray], params: list[float, int, int, int]) -> tuple[
-    str, np.ndarray, np.ndarray]:
+def baseline_golotvin(item: tuple[str, np.ndarray], num_std: float = 3., interp_half_window: int = 5,
+                      min_length: int = 2, sections: int = 32) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    num_std = params[0]
-    interp_half_window = params[1]
-    min_length = params[2]
-    sections = params[3]
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.golotvin(y_input, num_std=num_std, interp_half_window=interp_half_window,
@@ -964,16 +854,12 @@ def baseline_golotvin(item: tuple[str, np.ndarray], params: list[float, int, int
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_std_distribution(item: tuple[str, np.ndarray], params: list[float, int, int]) -> tuple[
-    str, np.ndarray, np.ndarray]:
+def baseline_std_distribution(item: tuple[str, np.ndarray], num_std: float = 3., interp_half_window: int = 5,
+                              fill_half_window: int = 3) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    num_std = params[0]
-    interp_half_window = params[1]
-    fill_half_window = params[2]
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.std_distribution(y_input, num_std=num_std,
@@ -983,15 +869,12 @@ def baseline_std_distribution(item: tuple[str, np.ndarray], params: list[float, 
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_fastchrom(item: tuple[str, np.ndarray], params: list[int, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_fastchrom(item: tuple[str, np.ndarray], interp_half_window: int = 5, max_iter: int = 100,
+                       min_length: int = 2) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    interp_half_window = params[0]
-    max_iter = params[1]
-    min_length = params[2]
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.fastchrom(y_input, interp_half_window=interp_half_window,
@@ -1000,15 +883,12 @@ def baseline_fastchrom(item: tuple[str, np.ndarray], params: list[int, int]) -> 
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_fabc(item: tuple[str, np.ndarray], params: list[int, float, int]) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_fabc(item: tuple[str, np.ndarray], num_std: float = 3., lam: int = 1e6, min_length: int = 2) \
+        -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    lam = params[0]
-    num_std = params[1]
-    min_length = params[2]
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.fabc(y_input, lam, num_std=num_std, min_length=min_length)[0]
@@ -1016,13 +896,11 @@ def baseline_fabc(item: tuple[str, np.ndarray], params: list[int, float, int]) -
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_optimize_extended_range(item: tuple[str, np.ndarray], params: str) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_optimize_extended_range(item: tuple[str, np.ndarray], method: str) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    method = params
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.optimize_extended_range(y_input, method=method)[0]
@@ -1030,13 +908,11 @@ def baseline_optimize_extended_range(item: tuple[str, np.ndarray], params: str) 
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_adaptive_minmax(item: tuple[str, np.ndarray], params: str) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_adaptive_minmax(item: tuple[str, np.ndarray], method: str) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]
     y_input = input_array[:, 1]
-
-    method = params
 
     baseline_fitter = Baseline(x_data=x_input)
     baseline_fitted = baseline_fitter.adaptive_minmax(y_input, method=method)[0]
@@ -1044,7 +920,7 @@ def baseline_adaptive_minmax(item: tuple[str, np.ndarray], params: str) -> tuple
     return key, np.vstack((x_input, baseline_fitted)).T, np.vstack((x_input, y_new)).T
 
 
-def baseline_beads(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray, np.ndarray]:
+def baseline_beads(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray, np.ndarray]:
     key = item[0]
     input_array = item[1]
     x_input = input_array[:, 0]

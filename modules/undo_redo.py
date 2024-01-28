@@ -376,6 +376,7 @@ class CommandDeleteInputSpectrum(QUndoCommand):
         self.SmoothedDict_old = dict()
         self.BaselineDict_old = dict()
         self.BaselineCorrectedDict_old = dict()
+        self.BaselineCorrectedDict_not_trimmed_old = dict()
         self.report_result_old = dict()
         self.sigma3_old = dict()
         self.smoothed_df_old = rs.ui.smoothed_dataset_table_view.model().dataframe()
@@ -406,6 +407,9 @@ class CommandDeleteInputSpectrum(QUndoCommand):
                 self.BaselineDict_old[filename] = self.rs.preprocessing.baseline_dict[filename]
             if self.rs.preprocessing.baseline_corrected_dict and filename in self.rs.preprocessing.baseline_corrected_dict:
                 self.BaselineCorrectedDict_old[filename] = self.rs.preprocessing.baseline_corrected_dict[filename]
+            if self.rs.preprocessing.baseline_corrected_not_trimmed_dict \
+                    and filename in self.rs.preprocessing.baseline_corrected_not_trimmed_dict:
+                self.BaselineCorrectedDict_not_trimmed_old[filename] = self.rs.preprocessing.baseline_corrected_not_trimmed_dict[filename]
             if self.rs.fitting.report_result and filename in self.rs.fitting.report_result:
                 self.report_result_old[filename] = self.rs.fitting.report_result[filename]
             if self.rs.fitting.sigma3 and filename in self.rs.fitting.sigma3:
@@ -427,10 +431,13 @@ class CommandDeleteInputSpectrum(QUndoCommand):
             await self.rs.preprocessing.update_averaged()
             await self.rs.update_all_plots()
         self.rs.ui.smoothed_dataset_table_view.model().delete_rows_by_filenames(list(self.dict.keys()))
+        self.rs.ui.smoothed_dataset_table_view.model().reset_index()
         self.rs.ui.smoothed_dataset_table_view.model().sort_index()
         self.rs.ui.baselined_dataset_table_view.model().delete_rows_by_filenames(list(self.dict.keys()))
+        self.rs.ui.baselined_dataset_table_view.model().reset_index()
         self.rs.ui.baselined_dataset_table_view.model().sort_index()
         self.rs.ui.deconvoluted_dataset_table_view.model().delete_rows_by_filenames(list(self.dict.keys()))
+        self.rs.ui.deconvoluted_dataset_table_view.model().reset_index()
         self.rs.ui.deconvoluted_dataset_table_view.model().sort_index()
         create_task(self._stop_del())
 
@@ -455,10 +462,13 @@ class CommandDeleteInputSpectrum(QUndoCommand):
             await self.rs.preprocessing.update_averaged()
             await self.rs.update_all_plots()
         self.rs.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_df_old)
+        self.rs.ui.smoothed_dataset_table_view.model().reset_index()
         self.rs.ui.smoothed_dataset_table_view.model().sort_index()
         self.rs.ui.baselined_dataset_table_view.model().set_dataframe(self.baselined_df_old)
+        self.rs.ui.baselined_dataset_table_view.model().reset_index()
         self.rs.ui.baselined_dataset_table_view.model().sort_index()
         self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.deconvoluted_df_old)
+        self.rs.ui.deconvoluted_dataset_table_view.model().reset_index()
         self.rs.ui.deconvoluted_dataset_table_view.model().sort_index()
         create_task(self._stop_del())
 
@@ -490,6 +500,8 @@ class CommandDeleteInputSpectrum(QUndoCommand):
             del self.rs.preprocessing.baseline_dict[key]
         if key in self.rs.preprocessing.baseline_corrected_dict:
             del self.rs.preprocessing.baseline_corrected_dict[key]
+        if key in self.rs.preprocessing.baseline_corrected_not_trimmed_dict:
+            del self.rs.preprocessing.baseline_corrected_not_trimmed_dict[key]
         if key in self.rs.fitting.report_result:
             del self.rs.fitting.report_result[key]
         if key in self.rs.fitting.sigma3:
@@ -512,6 +524,8 @@ class CommandDeleteInputSpectrum(QUndoCommand):
             self.rs.preprocessing.baseline_dict[key] = self.BaselineDict_old[key]
         if key in self.BaselineCorrectedDict_old:
             self.rs.preprocessing.baseline_corrected_dict[key] = self.BaselineCorrectedDict_old[key]
+        if key in self.BaselineCorrectedDict_not_trimmed_old:
+            self.rs.preprocessing.baseline_corrected_not_trimmed_dict[key] = self.BaselineCorrectedDict_not_trimmed_old[key]
         if key in self.report_result_old:
             self.rs.fitting.report_result[key] = self.report_result_old[key]
         if key in self.sigma3_old:
@@ -1152,7 +1166,7 @@ class CommandSmooth(QUndoCommand):
 class CommandBaselineCorrection(QUndoCommand):
 
     def __init__(self, rs, baseline_corrected_list: list[tuple[str, np.ndarray, np.ndarray]],
-                 method: str, params: int | float | None, description: str) -> None:
+                 method: str, params: dict | None, description: str) -> None:
         super(CommandBaselineCorrection, self).__init__(description)
         self.rs = rs
         self.baseline_corrected_list = baseline_corrected_list  # 0 - name, 1 - baseline, 2 y_new corrected
@@ -1189,58 +1203,8 @@ class CommandBaselineCorrection(QUndoCommand):
 
     def generate_title_text(self) -> str:
         text = self.method + '. '
-        match self.method:
-            case 'Poly':
-                text += 'Polynome order: ' + str(self.params)
-            case 'ModPoly' | 'iModPoly' | 'ExModPoly':
-                text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1])
-            case 'Penalized poly':
-                text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1]) \
-                        + ', α-factor: ' + str(self.params[3]) + ', cost-function: ' + str(self.params[4])
-            case 'LOESS':
-                text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1]) \
-                        + ', fraction: ' + str(self.params[3]) + ', scale: ' + str(self.params[4])
-            case 'Quantile regression':
-                text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1]) \
-                        + ', quantile: ' + str(self.params[3])
-            case 'Goldindec':
-                text += 'Polynome order: ' + str(self.params[0]) + ', Δ: ' + str(self.params[1]) \
-                        + ', cost-function: ' + str(self.params[3]) + ', peak ratio: ' + str(self.params[4]) \
-                        + ', α-factor: ' + str(self.params[5])
-            case 'AsLS' | 'iAsLS' | 'psaLSA' | 'DerPSALSA' | 'MPLS' | 'arPLS' | 'airPLS' | 'iarPLS' | 'asPLS':
-                text += 'λ: ' + str(self.params[0]) + ', p: ' + str(self.params[1])
-            case 'drPLS':
-                text += 'λ: ' + str(self.params[0]) + ', ratio: ' + str(self.params[1]) + ', η: ' + str(self.params[3])
-            case 'iMor' | 'MorMol' | 'AMorMol' | 'JBCD':
-                text += 'tol: ' + str(self.params[1])
-            case 'MPSpline':
-                text += 'λ: ' + str(self.params[0]) + ', p: ' + str(self.params[1]) \
-                        + ', spline degree: ' + str(self.params[2])
-            case 'Mixture Model':
-                text += 'λ: ' + str(self.params[0]) + ', p: ' + str(self.params[1]) \
-                        + ', spline degree: ' + str(self.params[2]) + ', tol: ' + str(self.params[4])
-            case 'IRSQR':
-                text += 'λ: ' + str(self.params[0]) + ', quantile: ' + str(self.params[1]) \
-                        + ', spline degree: ' + str(self.params[2])
-            case 'RIA':
-                text += 'tol: ' + str(self.params)
-            case 'Dietrich':
-                text += 'num_std: ' + str(self.params[0]) + ', poly order: ' + str(self.params[1]) \
-                        + ', tol: ' + str(self.params[2]) + ', interp half-window: ' + str(self.params[4]) \
-                        + ', min_length: ' + str(self.params[5])
-            case 'Golotvin':
-                text += 'num_std: ' + str(self.params[0]) + ', interp half-window: ' + str(self.params[1]) \
-                        + ', min_length: ' + str(self.params[2]) + ', sections: ' + str(self.params[3])
-            case 'Std Distribution':
-                text += 'num_std: ' + str(self.params[0]) + ', interp half-window: ' + str(self.params[1]) \
-                        + ', fill half-window: ' + str(self.params[2])
-            case 'FastChrom':
-                text += 'interp half-window: ' + str(self.params[0]) + ', min_length: ' + str(self.params[2])
-            case 'FABC':
-                text += 'λ: ' + str(self.params[0]) + ', num_std: ' + str(self.params[1]) \
-                        + ', min_length: ' + str(self.params[2])
-            case 'OER' | 'Adaptive MinMax':
-                text += 'Optimized method: ' + self.params
+        for param_name, value in self.params.items():
+            text += param_name + ': ' + str(value) + '. '
         return text
 
     @asyncSlot()
@@ -2811,15 +2775,14 @@ class CommandAfterFittingStat(QUndoCommand):
         y_score_dec_func = result['y_score_dec_func']
         label_binarizer = LabelBinarizer().fit(result['y_train'])
         result['y_onehot_test'] = label_binarizer.transform(result['y_test'])
-        binary = False
-        if result['features_in_2d'] is None:
-            binary = True
-        else:
+        binary = True if len(result['model'].classes_) == 2 else False
+        if result['features_in_2d'] is not None:
             with parallel_backend('multiprocessing', n_jobs=-1):
                 classifier = OneVsRestClassifier(make_pipeline(StandardScaler(), result['model']))
                 classifier.fit(result['x_train'], result['y_train'])
                 y_score_dec_func = classifier.decision_function(result['x_test'])
-        metrics_result = model_metrics(result['y_test'], result['y_pred_test'], binary, result['target_names'])
+        metrics_result = model_metrics(result['y_test'], result['y_pred_test'], result['y_score'],
+                                       binary, result['target_names'])
         metrics_result['accuracy_score_train'] = result['accuracy_score_train']
         result['metrics_result'] = metrics_result
 
@@ -2844,7 +2807,8 @@ class CommandAfterFittingStat(QUndoCommand):
         y_test = self.result['y_test']
         result['y_train_plus_test'] = np.concatenate((self.result['y_train'], y_test))
         binary = True if len(self.result['model'].classes_) == 2 else False
-        metrics_result = model_metrics(y_test, self.result['y_pred_test'], binary, self.result['target_names'])
+        metrics_result = model_metrics(y_test, self.result['y_pred_test'], result['y_score'],
+                                       binary, self.result['target_names'])
         metrics_result['accuracy_score_train'] = self.result['accuracy_score_train']
         result['metrics_result'] = metrics_result
         with parallel_backend('multiprocessing', n_jobs=-1):
@@ -2875,7 +2839,7 @@ class CommandAfterFittingStat(QUndoCommand):
             model = model.best_estimator_
         result['y_train_plus_test'] = np.concatenate((result['y_train'], y_test))
         binary = True if len(model.classes_) == 2 else False
-        metrics_result = model_metrics(y_test, result['y_pred_test'], binary, result['target_names'])
+        metrics_result = model_metrics(y_test, result['y_pred_test'], result['y_score'], binary, result['target_names'])
         metrics_result['accuracy_score_train'] = result['accuracy_score_train']
         result['metrics_result'] = metrics_result
         with parallel_backend('multiprocessing', n_jobs=-1):

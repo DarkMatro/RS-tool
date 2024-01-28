@@ -11,7 +11,7 @@ from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, fbeta_score, \
     hamming_loss, jaccard_score, classification_report, make_scorer, auc, roc_curve, \
-    balanced_accuracy_score, brier_score_loss, log_loss
+    balanced_accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import GridSearchCV, HalvingGridSearchCV
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
@@ -26,15 +26,15 @@ from joblib import parallel_backend
 
 
 def scorer_metrics() -> dict:
-    return {'precision_score': make_scorer(precision_score),
-            'recall_score': make_scorer(recall_score),
-            'accuracy_score': make_scorer(accuracy_score),
-            'f1_score': make_scorer(f1_score),
-            'jaccard_score': make_scorer(jaccard_score),
-            'auc': make_scorer(auc),
-            'balanced_accuracy_score': make_scorer(balanced_accuracy_score),
-            'brier_score_loss': make_scorer(brier_score_loss),
-            'log_loss': make_scorer(log_loss),
+    return {'precision_score': make_scorer(precision_score, average='micro'),
+            'recall_score': make_scorer(recall_score, average='micro'),
+            'accuracy_score': make_scorer(accuracy_score, average='micro'),
+            'f1_score': make_scorer(f1_score, average='micro'),
+            'jaccard_score': make_scorer(jaccard_score, average='micro'),
+            'auc': make_scorer(roc_auc_score, needs_proba=True, multi_class="ovr"),
+            'balanced_accuracy_score': make_scorer(balanced_accuracy_score, average='micro'),
+            'brier_score_loss': make_scorer(brier_score_loss, average='micro'),
+            'log_loss': make_scorer(log_loss, average='micro'),
             }
 
 
@@ -120,9 +120,9 @@ def fit_lda_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, 
     model = LinearDiscriminantAnalysis()
     if params['use_GridSearchCV']:
         model = GridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3, scoring=scorer_metrics(),
-                             refit=params['refit'], cv=5)
+                             refit=params['refit'], cv=3)
     else:
-        model = HalvingGridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3, cv=5,
+        model = HalvingGridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3, cv=3,
                                     scoring=scorer_metric_for_halving_grid_search(params['refit']))
 
     with parallel_backend('multiprocessing', n_jobs=-1):
@@ -163,9 +163,9 @@ def fit_classificator(model, x_train, y_true_train, x_test, y_test, params):
     have_decision_function = 'decision_function' in model.__dir__()
     if params['use_GridSearchCV']:
         model = GridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3, scoring=scorer_metrics(),
-                             refit=params['refit'], cv=5)
+                             refit=params['refit'], cv=3)
     else:
-        model = HalvingGridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3, cv=5,
+        model = HalvingGridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3, cv=3,
                                     scoring=scorer_metric_for_halving_grid_search(params['refit']))
 
     with parallel_backend('multiprocessing', n_jobs=-1):
@@ -217,7 +217,7 @@ def fit_lr_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y
     y_test: array-like of shape (n_samples,)
     params: dict
     """
-    model = LogisticRegression(max_iter=10_000, n_jobs=-1, random_state=params['random_state'])
+    model = LogisticRegression(max_iter=10_000, n_jobs=-1, random_state=params['random_state'], class_weight='balanced')
     return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
 
 
@@ -237,7 +237,7 @@ def fit_svc_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, 
     y_test: array-like of shape (n_samples,)
     params: dict
     """
-    model = NuSVC(kernel='linear', probability=True, random_state=params['random_state'])
+    model = NuSVC(kernel='linear', probability=True, random_state=params['random_state'], class_weight='balanced')
     return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
 
 
@@ -295,7 +295,7 @@ def fit_dt_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y
     y_test: array-like of shape (n_samples,)
     params: dict
     """
-    model = DecisionTreeClassifier(random_state=params['random_state'])
+    model = DecisionTreeClassifier(random_state=params['random_state'], class_weight='balanced')
     return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
 
 
@@ -332,7 +332,7 @@ def fit_rf_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y
     y_test: array-like of shape (n_samples,)
     params: dict
     """
-    model = RandomForestClassifier(random_state=params['random_state'], n_jobs=-1)
+    model = RandomForestClassifier(random_state=params['random_state'], class_weight='balanced', n_jobs=-1)
     return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
 
 
@@ -509,7 +509,7 @@ def objective(space):
     return {'loss': -accuracy, 'status': STATUS_OK}
 
 
-def model_metrics(y_true: list[int], y_pred: list[int], binary: bool, target_names) -> dict:
+def model_metrics(y_true: list[int], y_pred: list[int], y_score: list[float], binary: bool, target_names) -> dict:
     average_func = 'binary' if binary else 'micro'
     if np.max(y_true) != np.max(y_pred) and np.min(y_true) != np.min(y_pred):
         y_true = np.array(y_true)
@@ -517,7 +517,10 @@ def model_metrics(y_true: list[int], y_pred: list[int], binary: bool, target_nam
     c_r = classification_report(y_true, y_pred, target_names=target_names) \
         if len(target_names) == len(np.unique(y_true)) else None
     pos_label = np.sort(np.unique(y_true))[0]
-    fpr, tpr, thresholds = roc_curve(y_true, y_pred, pos_label=pos_label)
+    try:
+        auc_score = roc_auc_score(y_true, y_score[:, 1] if binary else y_score, multi_class='ovr', average='micro')
+    except ValueError:
+        auc_score = -1.
     res = {'accuracy_score': np.round(accuracy_score(y_true, y_pred), 4) * 100,
            'precision_score': np.round(precision_score(y_true, y_pred, average=average_func,
                                                        pos_label=pos_label), 4) * 100,
@@ -529,7 +532,7 @@ def model_metrics(y_true: list[int], y_pred: list[int], binary: bool, target_nam
                                                pos_label=pos_label), 4) * 100,
            'hamming_loss': np.round(hamming_loss(y_true, y_pred), 4) * 100,
            'jaccard_score': np.round(jaccard_score(y_true, y_pred, average=average_func, pos_label=pos_label), 4) * 100,
-           'AUC': auc(fpr, tpr),
+           'AUC': auc_score,
            'classification_report': c_r}
     return res
 

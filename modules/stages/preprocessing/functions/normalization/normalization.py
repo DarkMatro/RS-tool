@@ -12,16 +12,15 @@ def get_emsc_average_spectrum(item: tuple[str, np.ndarray]) -> np.ndarray:
     return np_y_axis
 
 
-def normalize_emsc(item: tuple[str, np.ndarray], params: tuple[np.ndarray, int]) -> tuple[str, np.ndarray]:
+def normalize_emsc(item: tuple[str, np.ndarray], y_axis_mean: np.ndarray, n_pca: int = 8) -> tuple[str, np.ndarray]:
     key = item[0]
     arr = item[1]
-    np_y_axis, n_pca = params
-    y_axis_new = Kohler(arr[:, 0], arr[:, 1], np_y_axis, n_components=n_pca)
+    y_axis_new = Kohler(arr[:, 0], arr[:, 1], y_axis_mean, n_components=n_pca)
     return key, np.vstack((arr[:, 0], y_axis_new)).T
 
 
 @njit(fastmath=True, cache=True)
-def normalize_snv(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
+def normalize_snv(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -45,7 +44,7 @@ def normalize_snv(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
 
 
 @njit(fastmath=True, cache=True)
-def normalize_area(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
+def normalize_area(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -69,7 +68,7 @@ def normalize_area(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
 
 
 @njit(fastmath=True, cache=True)
-def normalize_trapz_area(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
+def normalize_trapz_area(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -79,7 +78,7 @@ def normalize_trapz_area(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarr
 
 
 @njit(fastmath=True, cache=True)
-def normalize_max(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
+def normalize_max(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -89,7 +88,7 @@ def normalize_max(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
 
 
 @njit(fastmath=True, cache=True)
-def normalize_minmax(item: tuple[str, np.ndarray], _) -> tuple[str, np.ndarray]:
+def normalize_minmax(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]

@@ -151,8 +151,16 @@ class PandasModel(QAbstractTableModel):
     def dataframe(self) -> DataFrame:
         return self._dataframe
 
+    @property
+    def first_index(self) -> int:
+        return self._dataframe.index[0]
+
     def sort_index(self, ascending: bool = True) -> None:
         self._dataframe = self._dataframe.sort_index(ascending=ascending)
+        self.modelReset.emit()
+
+    def reset_index(self) -> None:
+        self._dataframe = self._dataframe.reset_index(drop=True)
         self.modelReset.emit()
 
     def setData(self, index, value, role):
@@ -232,6 +240,9 @@ class PandasModelInputTable(PandasModel):
             else:
                 return str(value)
         return None
+
+    def filenames(self) -> set:
+        return set(self._dataframe.index)
 
     def append_row_input_table(self, name: str, min_nm: float, max_nm: float, despiked_nm: list[float] | str,
                                rayleigh_line: float | str, fwhm: float, fwhm_cm: float = 0, group: int = 0,
@@ -693,6 +704,20 @@ class PandasModelFitParamsTable(PandasModel):
         filenames = [i for i in filenames if i]
         return filenames
 
+    def batch_unfitted(self) -> bool:
+        """
+        Returns False if was fitted any spectrum except template.
+        True - no one was fitted
+        """
+        filenames = np.unique(self._dataframe.index.get_level_values(0))
+        return filenames.size == 1 and filenames[0] == ''
+
+    def fitted_filenames(self) -> set:
+        """
+        Returns filenames of fitted spectra
+        """
+        return set(np.unique(self._dataframe.index.get_level_values(0)))
+
     def append_row(self, line_index: int, param_name: str, param_value: float, min_v: float = None,
                    max_v: float = None, filename: str = '') -> None:
         # limits in self.parent.deconv_line_params_limits
@@ -1121,6 +1146,10 @@ class PandasModelIgnoreDataset(PandasModel):
         df_sort = self._dataframe.sort_values(by='Score', ascending=False)
         active_features = [k for k, v in self._checked.items() if v]
         return df_sort['Feature'][df_sort['Feature'].isin(active_features)]
+
+    @property
+    def n_features(self) -> int:
+        return len([k for k, v in self._checked.items() if v])
 
 
 class PandasModelDescribeDataset(PandasModel):

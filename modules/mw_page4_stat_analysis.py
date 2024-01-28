@@ -122,7 +122,8 @@ class StatAnalysisLogic:
             Y_bin = label_binarize(Y, classes=list(np.unique(Y)))
             _, _, _, y_test_bin = train_test_split(X, Y_bin, test_size=test_size)
 
-        x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rnd_state)
+        x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=rnd_state,
+                                                            stratify=Y)
 
         executor = ProcessPoolExecutor()
         func = self.classificator_funcs[cl_type]
@@ -546,7 +547,7 @@ class StatAnalysisLogic:
             return self.parent.ui.smoothed_dataset_table_view.model()
         elif ct == 'Baseline corrected':
             return self.parent.ui.baselined_dataset_table_view.model()
-        elif ct == 'Deconvoluted':
+        elif ct == 'Decomposed':
             return self.parent.ui.deconvoluted_dataset_table_view.model()
         else:
             return None
@@ -693,7 +694,11 @@ class StatAnalysisLogic:
             mrkr = markers[cls]
             if self.parent.ui.current_classificator_comboBox.currentText() == 'XGBoost':
                 cls = self.get_old_class_label(cls)
-            color = self.parent.ui.GroupsTable.model().cell_data_by_idx_col_name(cls, 'Style')['color'].name()
+            style = self.parent.ui.GroupsTable.model().cell_data_by_idx_col_name(cls, 'Style')
+            if style is None:
+                color = 'orange'
+            else:
+                color = style['color'].name()
             plot_widget.canvas.axes.scatter(x_tp[:, 0], x_tp[:, 1], marker=mrkr, color=color,
                                             edgecolor='black', s=60)
             plot_widget.canvas.axes.scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60, color=color, edgecolor='black')
@@ -875,7 +880,8 @@ class StatAnalysisLogic:
         for i, color in zip(range(n_classes), colors):
             display = PrecisionRecallDisplay(recall=recall[i], precision=precision[i],
                                              average_precision=average_precision[i], )
-            display.plot(ax=ax, name=f"Precision-recall for {target_names[i]}", color=color, linewidth=2)
+            target_name = target_names[i] if i < len(target_names) else 'NoName'
+            display.plot(ax=ax, name=f"Precision-recall for {target_name}", color=color, linewidth=2)
         # add the legend for the iso-f1 curves
         handles, labels = display.ax_.get_legend_handles_labels()
         handles.extend([l])
@@ -1105,15 +1111,15 @@ class StatAnalysisLogic:
         if classificator_type not in self.latest_stat_result:
             warning(classificator_type + ' not in self.latest_stat_result. def update_shap_force')
             return
-        model = self.get_current_dataset_type_cb()
-        if model is None:
+        table_model = self.get_current_dataset_type_cb()
+        if table_model is None:
             return
 
         current_instance = self.parent.ui.current_instance_combo_box.currentText()
         if current_instance == '':
-            sample_id = 0
+            sample_id = table_model.first_index
         else:
-            sample_id = model.idx_by_column_value('Filename', current_instance)
+            sample_id = table_model.idx_by_column_value('Filename', current_instance)
         result = self.latest_stat_result[classificator_type]
         if 'model' not in result:
             return
@@ -1152,7 +1158,8 @@ class StatAnalysisLogic:
             x_d = X_display.iloc[:, 2:].loc[sample_id]
         if isinstance(expected_value, np.ndarray):
             expected_value = expected_value[class_i]
-        if (not full and shap_v.shape[0] != len(x_d.values)) or (full and shap_v[0].shape[0] != len(x_d.loc[0].values)):
+        if (not full and shap_v.shape[0] != len(x_d.values)) \
+                or (full and shap_v[0].shape[0] != len(x_d.loc[table_model.first_index].values)):
             err = 'Force plot не смог обновиться. Количество shap_values features != количеству X features.' \
                   ' Возможно была изменена таблица с обучающими данными.' \
                   ' Нужно пересчитать %s' % classificator_type
@@ -1174,14 +1181,14 @@ class StatAnalysisLogic:
             return
         plot_widget = self.parent.ui.shap_decision
 
-        model = self.get_current_dataset_type_cb()
-        if model is None:
+        table_model = self.get_current_dataset_type_cb()
+        if table_model is None:
             return
         current_instance = self.parent.ui.current_instance_combo_box.currentText()
         if current_instance == '':
             sample_id = None
         else:
-            sample_id = model.idx_by_column_value('Filename', current_instance)
+            sample_id = table_model.idx_by_column_value('Filename', current_instance)
         result = self.latest_stat_result[classificator_type]
         if 'model' not in result:
             return
@@ -1236,7 +1243,7 @@ class StatAnalysisLogic:
         if isinstance(expected_value, np.ndarray):
             expected_value = expected_value[class_i]
         if (sample_id is not None and shap_v.shape[0] != len(x_d.values)) \
-                or (sample_id is None and shap_v[0].shape[0] != len(x_d.loc[0].values)):
+                or (sample_id is None and shap_v[0].shape[0] != len(x_d.loc[table_model.first_index].values)):
             err = 'Decision plot не смог обновиться. Количество shap_values features != количеству X features.' \
                   ' Возможно была изменена таблица с обучающими данными.' \
                   ' Нужно пересчитать %s' % classificator_type
@@ -1441,7 +1448,7 @@ class StatAnalysisLogic:
         elif cl_type == 'AdaBoost':
             self.update_plot_tree(model.best_estimator_.estimators_[0], model_results['feature_names'], target_names)
             self.update_features_plot_random_forest(model.best_estimator_, "AdaBoost Feature Importances (MDI)")
-        if cl_type == 'XGBoost' and self.parent.ui.dataset_type_cb.currentText() == 'Deconvoluted':
+        if cl_type == 'XGBoost' and self.parent.ui.dataset_type_cb.currentText() == 'Decomposed':
             self.update_features_plot_xgboost(model.best_estimator_)
         elif cl_type == 'XGBoost':
             self.update_features_plot_random_forest(model.best_estimator_, "XGBoost Feature Importances (MDI)")
@@ -1585,9 +1592,11 @@ class StatAnalysisLogic:
             decision_function_values_1d = np.array(decision_function_values_1d)
         else:
             decision_function_values_1d = decision_function_values
-
         palette = color_palette(self.parent.ui.GroupsTable.model().groups_colors)
-        c_n = [class_names[i - 1] for i in Y]
+        c_n = []
+        for i in Y:
+            class_name = class_names[i - 1] if i <= len(class_names) else 'NoName'
+            c_n.append(class_name)
         df = DataFrame({'Decision score value': decision_function_values_1d, 'label': c_n})
         histplot(data=df, x='Decision score value', hue='label', palette=palette, kde=True, ax=ax)
         try:
@@ -1603,7 +1612,7 @@ class StatAnalysisLogic:
         plot_widget = self.parent.ui.features_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
-        if self.parent.ui.dataset_type_cb.currentText() == 'Deconvoluted':
+        if self.parent.ui.dataset_type_cb.currentText() == 'Decomposed':
             mdi_importances = Series(model.feature_importances_, index=model.feature_names_in_).sort_values(
                 ascending=True)
             mdi_importances = mdi_importances[mdi_importances > 0]
@@ -1749,7 +1758,7 @@ class StatAnalysisLogic:
         plot_widget = self.parent.ui.plsda_vip_plot_widget
         ax = plot_widget.canvas.axes
         ax.cla()
-        if self.parent.ui.dataset_type_cb.currentText() == 'Deconvoluted':
+        if self.parent.ui.dataset_type_cb.currentText() == 'Decomposed':
             ser = Series(vips, index=features_names).sort_values(ascending=True)
             ax.barh(ser.index, ser, color=self.parent.theme_colors['primaryColor'])
             ax.set_xlabel('VIP', fontsize=self.parent.axis_label_font_size)
@@ -1813,7 +1822,7 @@ class StatAnalysisLogic:
         if current_dataset == 'Smoothed' and self.parent.ui.smoothed_dataset_table_view.model().rowCount() == 0 \
                 or current_dataset == 'Baseline corrected' \
                 and self.parent.ui.baselined_dataset_table_view.model().rowCount() == 0 \
-                or current_dataset == 'Deconvoluted' \
+                or current_dataset == 'Decomposed' \
                 and self.parent.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
             return
         X, Y, _, _, _ = self.dataset_for_ml()

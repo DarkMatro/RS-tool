@@ -96,7 +96,8 @@ def normalize_between_0_1(x: np.ndarray) -> np.ndarray:
     >>> normalize_between_0_1(ar)
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])
     """
-    return (x - np.min(x)) / (np.max(x) - np.min(x))
+    min_x = np.min(x)
+    return (x - min_x) / (np.max(x) - min_x)
 
 
 @njit(cache=True, fastmath=True)
@@ -128,9 +129,9 @@ def diff(x: np.ndarray) -> np.ndarray:
 
 
 @njit(cache=True, fastmath=True)
-def extend_bool_false_mask(x: list[bool], window_size: int = 2) -> list[bool]:
+def extend_bool_mask(x: list[bool], window_size: int = 2) -> list[bool]:
     """
-    Makes True value False if near this value +- window_size in the list False stored.
+    Makes False value with True if near this value +- window_size in the list True stored.
 
     Parameters
     ----------
@@ -145,15 +146,48 @@ def extend_bool_false_mask(x: list[bool], window_size: int = 2) -> list[bool]:
 
     Examples
     --------
-    >>> x = [True, True, True, False, False, False, True, True, True]
-    >>> extend_bool_false_mask(x)
-    [True, True, False, False, False, False, False, True, True]
+    >>> x = [False, False, False, True, True, True, False, False, False]
+    >>> extend_bool_mask(x)
+    [False, False, True, True, True, True, False, False, False]
+
+    >>> x = [False, True, False, False, False, True, False, False, False]
+    >>> extend_bool_mask(x)
+    [True, True, False, False, True, True, False, False, False]
     """
     out = []
-    out.extend(x[:window_size])
-    for i in range(window_size, len(x) - window_size):
-        wind = x[i - window_size:i + window_size + 1]
-        count_of_false = wind.count(False)
-        out.append(count_of_false == 0)
-    out.extend(x[-window_size:])
+    for i in range(len(x) - window_size + 1):
+        wind = x[i:i + window_size]
+        count_of_true = wind.count(True)
+        out.append(count_of_true > 0)
+    out.append(x[-1])
     return out
+
+
+@njit(cache=True, fastmath=True)
+def extend_bool_mask_two_sided(x: list[bool], window_size: int = 2) -> list[bool]:
+    """
+    Makes False value with True if near this value +- window_size in the list True stored for both sides.
+
+    Parameters
+    ----------
+    x : array_like of bool
+        Input array
+    window_size: int
+        distance from current cell to find False values
+
+    Returns
+    -------
+    out : list[bool]
+
+    Examples
+    --------
+    >>> x = [False, False, False, True, True, True, False, False, False]
+    >>> extend_bool_mask_two_sided(x)
+    [False, False, True, True, True, True, True, False, False]
+
+    >>> x = [False, True, False, False, False, True, False, False, False]
+    >>> extend_bool_mask_two_sided(x)
+    [True, True, True, False, True, True, True, False, False]
+    """
+    one_side = extend_bool_mask(x, window_size)
+    return extend_bool_mask(one_side[::-1], window_size)[::-1]

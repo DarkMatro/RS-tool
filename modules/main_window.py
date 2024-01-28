@@ -21,7 +21,7 @@ from pyqtgraph import setConfigOption, PlotDataItem, PlotCurveItem, SignalProxy,
     mkPen, mkBrush, FillBetweenItem, ArrowItem
 from qtpy.QtCore import Qt, QModelIndex, QTimer, QMarginsF, QPointF
 from qtpy.QtGui import QFont, QIcon, QCloseEvent, QColor, QPageLayout, QPageSize
-from qtpy.QtWidgets import QUndoStack, QMenu, QMainWindow, QColorDialog, QAction, QHeaderView,\
+from qtpy.QtWidgets import QUndoStack, QMenu, QMainWindow, QColorDialog, QAction, QHeaderView, \
     QAbstractItemView, QLabel, QFileDialog, \
     QLineEdit, QInputDialog, QTableView, QScrollArea
 from qtpy.QtWinExtras import QWinTaskbarButton
@@ -300,7 +300,8 @@ class MainWindow(QMainWindow):
         self.ui.smoothing_method_comboBox.setCurrentText(self.default_values['smoothing_method_comboBox'])
         self.ui.guess_method_cb.setCurrentText(self.default_values['guess_method_cb'])
         self.ui.average_method_cb.setCurrentText(self.default_values['average_function'])
-        self.ui.average_errorbar_method_combo_box.setCurrentText(self.default_values['average_errorbar_method_combo_box'])
+        self.ui.average_errorbar_method_combo_box.setCurrentText(
+            self.default_values['average_errorbar_method_combo_box'])
         self.ui.dataset_type_cb.setCurrentText(self.default_values['dataset_type_cb'])
         self.ui.classes_lineEdit.setText('')
         self.ui.test_data_ratio_spinBox.setValue(self.default_values['test_data_ratio_spinBox'])
@@ -330,6 +331,7 @@ class MainWindow(QMainWindow):
         self.ui.min_length_spinBox.setValue(self.default_values['min_length'])
         self.ui.fill_half_window_spinBox.setValue(self.default_values['fill_half_window'])
         self.ui.scale_doubleSpinBox.setValue(self.default_values['scale'])
+        self.ui.rebuild_y_check_box.setChecked(False)
         self.ui.fraction_doubleSpinBox.setValue(self.default_values['fraction'])
         self.ui.cost_func_comboBox.setCurrentText(self.default_values['cost_function'])
         self.ui.opt_method_oer_comboBox.setCurrentText(self.default_values['opt_method_oer'])
@@ -1154,7 +1156,8 @@ class MainWindow(QMainWindow):
 
     def _init_current_classificator_combo_box(self) -> None:
         self.ui.current_classificator_comboBox.addItems(classificators_names())
-        self.ui.current_classificator_comboBox.currentTextChanged.connect(self.stat_analysis_logic.update_stat_report_text)
+        self.ui.current_classificator_comboBox.currentTextChanged.connect(
+            self.stat_analysis_logic.update_stat_report_text)
 
     def _init_cost_func_combo_box(self) -> None:
         self.ui.cost_func_comboBox.addItems(['asymmetric_truncated_quadratic', 'symmetric_truncated_quadratic',
@@ -1247,6 +1250,7 @@ class MainWindow(QMainWindow):
         self.ui.quantile_doubleSpinBox.valueChanged.connect(self.set_modified)
         self.ui.sections_spinBox.valueChanged.connect(self.set_modified)
         self.ui.scale_doubleSpinBox.valueChanged.connect(self.set_modified)
+        self.ui.rebuild_y_check_box.stateChanged.connect(self.set_modified)
         self.ui.max_noise_level_dsb.valueChanged.connect(self.set_modified)
         self.ui.l_ratio_doubleSpinBox.valueChanged.connect(self.set_modified)
         self.ui.sigma_spinBox.valueChanged.connect(self.set_modified)
@@ -1331,7 +1335,7 @@ class MainWindow(QMainWindow):
             model = self.ui.smoothed_dataset_table_view.model()
         elif ct == 'Baseline corrected':
             model = self.ui.baselined_dataset_table_view.model()
-        elif ct == 'Deconvoluted':
+        elif ct == 'Decomposed':
             model = self.ui.deconvoluted_dataset_table_view.model()
         else:
             return
@@ -1340,7 +1344,7 @@ class MainWindow(QMainWindow):
             return
         q_res = model.dataframe()
         features_names = list(q_res.columns[2:])
-        n_features = len(features_names)
+        n_features = self.ui.ignore_dataset_table_view.model().n_features if ct == 'Decomposed' else len(features_names)
         self.ui.dataset_features_n.setText('%s features' % n_features)
         self.ui.current_feature_comboBox.clear()
         self.ui.current_dep_feature1_comboBox.clear()
@@ -2089,7 +2093,8 @@ class MainWindow(QMainWindow):
         self.ui.ignore_dataset_table_view.horizontalHeader().resizeSection(1, 200)
         self.ui.ignore_dataset_table_view.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.ui.ignore_dataset_table_view.horizontalHeader().resizeSection(2, 200)
-        self.ui.ignore_dataset_table_view.horizontalHeader().sectionClicked.connect(self._ignore_dataset_table_header_clicked)
+        self.ui.ignore_dataset_table_view.horizontalHeader().sectionClicked.connect(
+            self._ignore_dataset_table_header_clicked)
 
     def _reset_ignore_dataset_table(self) -> None:
         df = DataFrame(columns=['Feature', 'Score', 'P value'])
@@ -2102,6 +2107,7 @@ class MainWindow(QMainWindow):
         current_name = column_names[idx]
         self._ascending_ignore_table = not self._ascending_ignore_table
         self.ui.ignore_dataset_table_view.model().sort_values(current_name, self._ascending_ignore_table)
+
     # endregion
 
     # region describe dataset
@@ -2130,7 +2136,6 @@ class MainWindow(QMainWindow):
         self.ui.predict_table_view.verticalScrollBar().valueChanged.connect(self.move_side_scrollbar)
         self.ui.predict_table_view.verticalHeader().setVisible(False)
 
-
     def _reset_predict_dataset_table(self) -> None:
         df = DataFrame(columns=['Filename'])
         model = PandasModelPredictTable(self, df)
@@ -2146,6 +2151,7 @@ class MainWindow(QMainWindow):
         """right side frame with lines table, parameters table and report field"""
         self._initial_add_line_button()
         self._initial_guess_button()
+        # self._initial_batch_button()
         self.ui.fit_pushButton.clicked.connect(self.fit)
         self.ui.batch_button.clicked.connect(self.batch_fit)
         self.ui.data_checkBox.stateChanged.connect(self.data_cb_state_changed)
@@ -2168,7 +2174,16 @@ class MainWindow(QMainWindow):
             action = guess_menu.addAction(line_type)
             action.triggered.connect(lambda checked=None, line=line_type: self.guess(line_type=line))
         self.ui.guess_button.setMenu(guess_menu)
-        self.ui.guess_button.menu()  # some kind of magik
+        self.ui.guess_button.menu()
+
+    # def _initial_batch_button(self) -> None:
+    #     batch_menu = QMenu()
+    #     action = batch_menu.addAction('All')
+    #     action.triggered.connect(lambda: self.batch_fit('All'))
+    #     action = batch_menu.addAction('Unfitted')
+    #     action.triggered.connect(lambda: self.batch_fit('Unfitted'))
+    #     self.ui.batch_button.setMenu(batch_menu)
+    #     self.ui.batch_button.menu()
 
     def _initial_add_line_button(self) -> None:
         add_lines_menu = QMenu()
@@ -2177,7 +2192,7 @@ class MainWindow(QMainWindow):
             action = add_lines_menu.addAction(line_type)
             action.triggered.connect(lambda checked=None, line=line_type: self.add_deconv_line(line_type=line))
         self.ui.add_line_button.setMenu(add_lines_menu)
-        self.ui.add_line_button.menu()  # some kind of magik
+        self.ui.add_line_button.menu()
 
     def data_cb_state_changed(self, a0: int) -> None:
         """
@@ -3465,8 +3480,12 @@ class MainWindow(QMainWindow):
             -> None:
         """ You can change only group column"""
         if self.ui.input_table.selectionModel().currentIndex().column() == 2:
-            new_value = self.ui.input_table.model().cell_data_by_index(top_left)
-            if self.ui.GroupsTable.model().rowCount() >= int(new_value) >= 0:
+            try:
+                new_value = int(self.ui.input_table.model().cell_data_by_index(top_left))
+            except ValueError:
+                self.ui.input_table.model().setData(top_left, self.previous_group_of_item, Qt.EditRole)
+                return
+            if self.ui.GroupsTable.model().rowCount() >= new_value >= 0:
                 filename = self.ui.input_table.model().cell_data(top_left.row(), 0)
                 command = CommandChangeGroupCell(self, top_left, new_value,
                                                  "Change group number for (%s)" % str(filename))
@@ -3875,6 +3894,7 @@ class MainWindow(QMainWindow):
             db['min_length'] = self.ui.min_length_spinBox.value()
             db['fill_half_window'] = self.ui.fill_half_window_spinBox.value()
             db['scale'] = self.ui.scale_doubleSpinBox.value()
+            db['rebuild_y_check_box'] = self.ui.rebuild_y_check_box.isChecked()
             db['cost_function'] = self.ui.cost_func_comboBox.currentText()
             db['opt_method_oer'] = self.ui.opt_method_oer_comboBox.currentText()
             db['fraction'] = self.ui.fraction_doubleSpinBox.value()
@@ -4081,7 +4101,7 @@ class MainWindow(QMainWindow):
             msg.exec()
             return
         fd = QFileDialog(self)
-        file_path = fd.getSaveFileName(self, 'Save input nm data to csv table', self._latest_file_path , "CSV (*.csv")
+        file_path = fd.getSaveFileName(self, 'Save input nm data to csv table', self._latest_file_path, "CSV (*.csv")
         if not file_path[0]:
             return
         self._latest_file_path = str(Path(file_path[0]).parent)
@@ -4174,7 +4194,7 @@ class MainWindow(QMainWindow):
             msg.exec()
             return
         fd = QFileDialog(self)
-        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', self._latest_file_path )
+        folder_path = fd.getExistingDirectory(self, 'Choose folder to export files in cm-1', self._latest_file_path)
         if not folder_path:
             return
         self._latest_file_path = folder_path
@@ -4700,6 +4720,8 @@ class MainWindow(QMainWindow):
                 self.ui.sections_spinBox.setValue(db["sections"])
             if "scale" in db:
                 self.ui.scale_doubleSpinBox.setValue(db["scale"])
+            if "rebuild_y_check_box" in db:
+                self.ui.rebuild_y_check_box.setChecked(db["rebuild_y_check_box"])
             if "fraction" in db:
                 self.ui.fraction_doubleSpinBox.setValue(db["fraction"])
             if "cost_function" in db:
@@ -4905,16 +4927,31 @@ class MainWindow(QMainWindow):
         self.ui.quantile_doubleSpinBox.setVisible(False)
         self.ui.sections_spinBox.setVisible(False)
         self.ui.scale_doubleSpinBox.setVisible(False)
+        self.ui.rebuild_y_check_box.setVisible(False)
         self.ui.spline_degree_spinBox.setVisible(False)
         self.ui.peak_ratio_doubleSpinBox.setVisible(False)
 
         match value:
             case 'Poly':
                 self.ui.polynome_degree_spinBox.setVisible(True)
-            case 'ModPoly' | 'iModPoly' | 'ExModPoly':
+            case 'ModPoly':
                 self.ui.n_iterations_spinBox.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
                 self.ui.grad_doubleSpinBox.setVisible(True)
+            case 'iModPoly':
+                self.ui.n_iterations_spinBox.setVisible(True)
+                self.ui.polynome_degree_spinBox.setVisible(True)
+                self.ui.grad_doubleSpinBox.setVisible(True)
+                self.ui.num_std_doubleSpinBox.setVisible(True)
+            case 'ExModPoly':
+                self.ui.n_iterations_spinBox.setVisible(True)
+                self.ui.polynome_degree_spinBox.setVisible(True)
+                self.ui.grad_doubleSpinBox.setVisible(True)
+                self.ui.quantile_doubleSpinBox.setVisible(True)
+                self.ui.scale_doubleSpinBox.setVisible(True)
+                self.ui.rebuild_y_check_box.setVisible(True)
+                self.ui.num_std_doubleSpinBox.setVisible(True)
+                self.ui.fill_half_window_spinBox.setVisible(True)
             case 'Penalized poly':
                 self.ui.n_iterations_spinBox.setVisible(True)
                 self.ui.polynome_degree_spinBox.setVisible(True)
@@ -5346,7 +5383,6 @@ class MainWindow(QMainWindow):
         self.linearRegionBaseline.setBounds((min_cm, max_cm))
         self.linearRegionDeconv.setBounds((min_cm, max_cm))
 
-
     def lr_cm_region_changed(self) -> None:
         current_region = self.linearRegionCmConverted.getRegion()
         self.ui.cm_range_start.setValue(current_region[0])
@@ -5418,11 +5454,11 @@ class MainWindow(QMainWindow):
     # endregion
 
     @asyncSlot()
-    async def batch_fit(self):
+    async def batch_fit(self) -> None:
         """
         Check conditions when Fit button pressed, if all ok - go do_batch_fit
         For fitting must be more than 0 lines to fit
-        Должна быть хотя бы 1 линия и есть спектры
+
         """
         if self.ui.deconv_lines_table.model().rowCount() == 0:
             msg = MessageBox('Fitting failed.', 'Add some new lines before fitting', self, {'Ok'})
@@ -5437,7 +5473,7 @@ class MainWindow(QMainWindow):
             self.show_error(err)
 
     def set_deconvoluted_dataset(self) -> None:
-        if self.ui.input_table.model().rowCount() == 0:
+        if self.ui.input_table.model().rowCount() == 0 or self.ui.fit_params_table.model().batch_unfitted():
             return
         df = self.fitting.create_deconvoluted_dataset_new()
         self.ui.deconvoluted_dataset_table_view.model().set_dataframe(df)
@@ -5561,7 +5597,7 @@ class MainWindow(QMainWindow):
         if current_dataset == 'Smoothed' and self.ui.smoothed_dataset_table_view.model().rowCount() == 0 \
                 or current_dataset == 'Baseline corrected' \
                 and self.ui.baselined_dataset_table_view.model().rowCount() == 0 \
-                or current_dataset == 'Deconvoluted' \
+                or current_dataset == 'Decomposed' \
                 and self.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
             MessageBox('Classificator Fitting failed.', 'Нет данных для обучения классификатора', self, {'Ok'})
             return
@@ -5606,7 +5642,7 @@ class MainWindow(QMainWindow):
         """
         cl_type = self.ui.current_classificator_comboBox.currentText()
         if cl_type not in self.stat_analysis_logic.latest_stat_result \
-                or 'target_names' not in self.stat_analysis_logic.latest_stat_result[cl_type]\
+                or 'target_names' not in self.stat_analysis_logic.latest_stat_result[cl_type] \
                 or 'shap_values' not in self.stat_analysis_logic.latest_stat_result[cl_type]:
             msg = MessageBox('SHAP plots refresh error.', 'Selected classificator is not fitted.', self, {'Ok'})
             msg.setInformativeText('Try to turn on Use Shapley option before fit classificator.')

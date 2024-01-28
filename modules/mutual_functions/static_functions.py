@@ -23,6 +23,7 @@ from modules.stages.fitting.functions.fitting import fitting_model
 from .work_with_arrays import nearest_idx
 from modules.stages.preprocessing.functions.despike.fit_single_peak import ExpSpec, CalcPeak, fit_single_peak,\
     moving_average_molification
+from sklearn.metrics import mean_squared_log_error
 
 # region RS
 
@@ -632,3 +633,14 @@ def show_error_msg(exc_type, exc_value, exc_tb, parent=None):
     error(exc_tb)
     pyperclip_copy(exc_tb)
     msg.exec()
+
+
+def rmsle(y_true: np.ndarray, y_pred: np.ndarray) -> np.float64:
+    """
+    The Root Mean Squared Log Error (RMSLE) metric
+    Логаритмическая ошибка средней квадратичной ошибки
+    """
+    try:
+        return np.sqrt(mean_squared_log_error(y_true, y_pred))
+    except:
+        return None
