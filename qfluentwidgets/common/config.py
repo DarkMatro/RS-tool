@@ -396,8 +396,14 @@ class QConfig(QObject):
 qconfig = QConfig()
 
 
-def is_dark_theme():
-    """ whether the theme is dark mode """
+def is_dark_theme() -> bool:
+    """
+    whether the theme is dark mode
+
+    Returns
+    -------
+    out: bool
+    """
     try:
         return 'Dark' in os.environ['bckgrnd_theme']
     except KeyError:

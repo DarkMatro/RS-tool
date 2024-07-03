@@ -84,6 +84,12 @@
         <property name="currentIndex">
          <number>0</number>
         </property>
+        <property name="iconSize">
+         <size>
+          <width>1</width>
+          <height>1</height>
+         </size>
+        </property>
         <property name="elideMode">
          <enum>Qt::ElideNone</enum>
         </property>
@@ -300,6 +306,19 @@
                </property>
               </widget>
              </item>
+             <item row="1" column="1">
+              <widget class="SpinBox" name="undo_limit_spinBox">
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+               <property name="minimum">
+                <number>1</number>
+               </property>
+               <property name="value">
+                <number>20</number>
+               </property>
+              </widget>
+             </item>
              <item row="0" column="0">
               <widget class="QLabel" name="recent_limit_label">
                <property name="sizePolicy">
@@ -332,23 +351,25 @@
                </property>
               </widget>
              </item>
-             <item row="1" column="1">
-              <widget class="SpinBox" name="undo_limit_spinBox">
-               <property name="alignment">
-                <set>Qt::AlignCenter</set>
-               </property>
-               <property name="minimum">
-                <number>1</number>
-               </property>
-               <property name="value">
-                <number>20</number>
+             <item row="2" column="0">
+              <widget class="CaptionLabel" name="target_peak_parameter_label">
+               <property name="text">
+                <string>Target peak parameter</string>
                </property>
               </widget>
+             </item>
+             <item row="2" column="1">
+              <widget class="ComboBox" name="target_peak_parameter_combo_box"/>
              </item>
             </layout>
            </widget>
           </item>
          </layout>
+        </widget>
+        <widget class="QWidget" name="Page4hidden">
+         <attribute name="title">
+          <string/>
+         </attribute>
         </widget>
        </widget>
       </item>
@@ -361,6 +382,11 @@
   <customwidget>
    <class>ComboBox</class>
    <extends>QPushButton</extends>
+   <header>qfluentwidgets</header>
+  </customwidget>
+  <customwidget>
+   <class>CaptionLabel</class>
+   <extends>QLabel</extends>
    <header>qfluentwidgets</header>
   </customwidget>
   <customwidget>

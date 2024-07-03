@@ -1,0 +1,1969 @@
+import warnings
+from asyncio import create_task, gather, sleep
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from datetime import datetime
+from gc import collect
+from logging import info, debug
+
+import numpy as np
+from asyncqtpy import asyncSlot
+from joblib import parallel_backend
+from lmfit.model import ModelResult
+from pandas import DataFrame
+from pyqtgraph import mkPen, ROI
+from qtpy.QtCore import QModelIndex, Qt
+from qtpy.QtWidgets import QUndoCommand, QStyledItemDelegate
+from shap import Explainer, KernelExplainer
+from sklearn.model_selection import GridSearchCV, HalvingGridSearchCV
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import LabelBinarizer, StandardScaler
+
+import src.data.default_values
+from src.stages.fitting.functions.fitting import curve_idx_from_par_name
+from src.mutual_functions.static_functions import random_line_style, \
+    curve_pen_brush_by_style, set_roi_size_pos, \
+    calculate_vips
+from src.stages.stat_analysis.functions.fit_classificators import model_metrics
+
+warnings.filterwarnings('ignore')
+
+
+class CommandChangeGroupCell(QUndoCommand):
+    """ for changing group number of 1 row in input_table
+    Parameters
+    ______________________________
+    item: input_table.Item()
+    """
+
+    def __init__(self, rs, index: QModelIndex, new_value: str, description: str) -> None:
+        super(CommandChangeGroupCell, self).__init__(description)
+        self.setText(description)
+        self.rs = rs
+        self.index = index
+        self.previous_value = int(rs.previous_group_of_item)
+        self.new_value = int(new_value)
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+
+    def redo(self) -> None:
+        self.rs.ui.input_table.model().change_cell_data(self.index.row(), self.index.column(),
+                                                        self.new_value)
+        filename = self.rs.ui.input_table.model().index_by_row(self.index.row())
+        if self.rs.ui.smoothed_dataset_table_view.model().rowCount() > 0:
+            idx_sm = self.rs.ui.smoothed_dataset_table_view.model().idx_by_column_value('Filename',
+                                                                                        filename)
+            self.rs.ui.smoothed_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_sm,
+                                                                                         'Class',
+                                                                                         self.new_value)
+        if self.rs.ui.baselined_dataset_table_view.model().rowCount() > 0:
+            idx_bl = self.rs.ui.baselined_dataset_table_view.model().idx_by_column_value('Filename',
+                                                                                         filename)
+            self.rs.ui.baselined_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_bl,
+                                                                                          'Class',
+                                                                                          self.new_value)
+        if self.rs.ui.deconvoluted_dataset_table_view.model().rowCount() > 0:
+            idx_dc = self.rs.ui.deconvoluted_dataset_table_view.model().idx_by_column_value(
+                'Filename', filename)
+            self.rs.ui.deconvoluted_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_dc,
+                                                                                             'Class',
+                                                                                             self.new_value)
+        self.rs.preprocessing.update_averaged()
+        self.rs.context.preprocessing.update_plot_item(
+            self.rs.drag_widget.get_current_widget_name())
+        self.update_undo_redo_tooltips()
+
+    def undo(self) -> None:
+        self.rs.ui.input_table.model().setData(self.index.row(), self.index.column(),
+                                               self.previous_value)
+        filename = self.rs.ui.input_table.model().index_by_row(self.index.row())
+        idx_sm = self.rs.ui.smoothed_dataset_table_view.model().idx_by_column_value('Filename',
+                                                                                    filename)
+        self.rs.ui.smoothed_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_sm,
+                                                                                     'Class',
+                                                                                     self.previous_value)
+        idx_bl = self.rs.ui.baselined_dataset_table_view.model().idx_by_column_value('Filename',
+                                                                                     filename)
+        self.rs.ui.baselined_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_bl,
+                                                                                      'Class',
+                                                                                      self.previous_value)
+        idx_dc = self.rs.ui.deconvoluted_dataset_table_view.model().idx_by_column_value('Filename',
+                                                                                        filename)
+        self.rs.ui.deconvoluted_dataset_table_view.model().set_cell_data_by_idx_col_name(idx_dc,
+                                                                                         'Class',
+                                                                                         self.previous_value)
+        self.rs.preprocessing.update_averaged()
+        self.rs.context.preprocessing.update_plot_item(
+            self.rs.drag_widget.get_current_widget_name())
+        self.update_undo_redo_tooltips()
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.rs.context.set_modified()
+
+
+class CommandDeleteInputSpectrum(QUndoCommand):
+    """ for delete/undo_add rows in input_table, all dicts and input plot, rebuild plots"""
+
+    def __init__(self, rs, description: str) -> None:
+        super(CommandDeleteInputSpectrum, self).__init__(description)
+        self.setText(description)
+        self.input_table = rs.ui.input_table
+        self.selected_indexes = self.input_table.selectionModel().selectedIndexes()
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.dict = dict()
+        self.rs = rs
+        self.dictArray = dict()
+        self.BeforeDespikeArray = dict()
+        self.LaserPeakFWHM_old = dict()
+        self.ConvertedDict_old = dict()
+        self.CuttedFirstDict_old = dict()
+        self.NormalizedDict_old = dict()
+        self.SmoothedDict_old = dict()
+        self.BaselineDict_old = dict()
+        self.BaselineCorrectedDict_old = dict()
+        self.BaselineCorrectedDict_not_trimmed_old = dict()
+        self.report_result_old = dict()
+        self.sigma3_old = dict()
+        self.smoothed_df_old = rs.ui.smoothed_dataset_table_view.model().dataframe()
+        self.baselined_df_old = rs.ui.baselined_dataset_table_view.model().dataframe()
+        self.deconvoluted_df_old = rs.ui.deconvoluted_dataset_table_view.model().dataframe()
+        self.prepare()
+        self.df = rs.ui.fit_params_table.model().query_result_with_list('filename == @input_list',
+                                                                        list(self.dict.keys()))
+        self.loop = rs.loop
+
+    def prepare(self) -> None:
+        for i in self.selected_indexes:
+            row_data = self.input_table.model().row_data(i.row())
+            filename = row_data.name
+            self.dict[filename] = row_data
+            self.dictArray[filename] = self.rs.context.preprocessing.stages.input_data[filename]
+            if self.rs.preprocessing.BeforeDespike and filename in self.rs.preprocessing.BeforeDespike:
+                self.BeforeDespikeArray[filename] = self.rs.preprocessing.BeforeDespike[filename]
+            if self.rs.preprocessing.ConvertedDict and filename in self.rs.preprocessing.ConvertedDict:
+                self.ConvertedDict_old[filename] = self.rs.preprocessing.ConvertedDict[filename]
+            if self.rs.preprocessing.CuttedFirstDict and filename in self.rs.preprocessing.CuttedFirstDict:
+                self.CuttedFirstDict_old[filename] = self.rs.preprocessing.CuttedFirstDict[filename]
+            if self.rs.preprocessing.NormalizedDict and filename in self.rs.preprocessing.NormalizedDict:
+                self.NormalizedDict_old[filename] = self.rs.preprocessing.NormalizedDict[filename]
+            if self.rs.preprocessing.smoothed_spectra and filename in self.rs.preprocessing.smoothed_spectra:
+                self.SmoothedDict_old[filename] = self.rs.preprocessing.smoothed_spectra[filename]
+            if self.rs.preprocessing.baseline_dict and filename in self.rs.preprocessing.baseline_dict:
+                self.BaselineDict_old[filename] = self.rs.preprocessing.baseline_dict[filename]
+            if self.rs.preprocessing.baseline_corrected_dict and filename in self.rs.preprocessing.baseline_corrected_dict:
+                self.BaselineCorrectedDict_old[filename] = \
+                    self.rs.preprocessing.baseline_corrected_dict[filename]
+            if self.rs.preprocessing.baseline_corrected_not_trimmed_dict \
+                    and filename in self.rs.preprocessing.baseline_corrected_not_trimmed_dict:
+                self.BaselineCorrectedDict_not_trimmed_old[filename] = \
+                    self.rs.preprocessing.baseline_corrected_not_trimmed_dict[filename]
+            if self.rs.fitting.report_result and filename in self.rs.fitting.report_result:
+                self.report_result_old[filename] = self.rs.fitting.report_result[filename]
+            if self.rs.fitting.sigma3 and filename in self.rs.fitting.sigma3:
+                self.sigma3_old[filename] = self.rs.fitting.sigma3[filename]
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
+        self.rs.ui.statusBar.showMessage('Redo...' + self.text())
+        self.rs.disable_buttons(True)
+        self.input_table.model().delete_rows(self.dict.keys())
+        self.rs.ui.dec_table.model().delete_rows(self.dict.keys())
+        self.rs.ui.fit_params_table.model().delete_rows_by_filenames(list(self.dict.keys()))
+        if self.dict:
+            with ThreadPoolExecutor() as executor:
+                futures = [self.loop.run_in_executor(executor, self._del_row, i)
+                           for i in self.dict.keys()]
+                await gather(*futures)
+            await self.rs.preprocessing.update_averaged()
+            await self.rs.context.preprocessing.update_plot_item(self.rs.drag_widget.get_current_widget_name())
+        self.rs.ui.smoothed_dataset_table_view.model().delete_rows_by_filenames(
+            list(self.dict.keys()))
+        self.rs.ui.smoothed_dataset_table_view.model().reset_index()
+        self.rs.ui.smoothed_dataset_table_view.model().sort_index()
+        self.rs.ui.baselined_dataset_table_view.model().delete_rows_by_filenames(
+            list(self.dict.keys()))
+        self.rs.ui.baselined_dataset_table_view.model().reset_index()
+        self.rs.ui.baselined_dataset_table_view.model().sort_index()
+        self.rs.ui.deconvoluted_dataset_table_view.model().delete_rows_by_filenames(
+            list(self.dict.keys()))
+        self.rs.ui.deconvoluted_dataset_table_view.model().reset_index()
+        self.rs.ui.deconvoluted_dataset_table_view.model().sort_index()
+        create_task(self._stop_del())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
+        self.rs.ui.statusBar.showMessage('Undo...' + self.text())
+        self.rs.disable_buttons(True)
+        columns = list(zip(*self.dict.values()))
+        self.input_table.model().concat_df_input_table(name=self.dict.keys(), min_nm=columns[0],
+                                                       max_nm=columns[1],
+                                                       group=columns[2], despiked_nm=columns[3],
+                                                       rayleigh_line=columns[4], fwhm=columns[5])
+        self.rs.ui.dec_table.model().concat_deconv_table(self.dict.keys())
+        self.rs.ui.fit_params_table.model().concat_df(self.df)
+        if self.dict:
+            with ThreadPoolExecutor() as executor:
+                futures = [self.loop.run_in_executor(executor, self._add_row, i)
+                           for i in self.dict.keys()]
+                await gather(*futures)
+
+            self.rs.disable_buttons(False)
+            await self.rs.preprocessing.update_averaged()
+            await self.rs.context.preprocessing.update_plot_item(self.rs.drag_widget.get_current_widget_name())
+        self.rs.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_df_old)
+        self.rs.ui.smoothed_dataset_table_view.model().reset_index()
+        self.rs.ui.smoothed_dataset_table_view.model().sort_index()
+        self.rs.ui.baselined_dataset_table_view.model().set_dataframe(self.baselined_df_old)
+        self.rs.ui.baselined_dataset_table_view.model().reset_index()
+        self.rs.ui.baselined_dataset_table_view.model().sort_index()
+        self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.deconvoluted_df_old)
+        self.rs.ui.deconvoluted_dataset_table_view.model().reset_index()
+        self.rs.ui.deconvoluted_dataset_table_view.model().sort_index()
+        create_task(self._stop_del())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.rs.set_buttons_ability()
+
+    def _del_row(self, key: str) -> None:
+        if key in self.rs.context.preprocessing.stages.input_data:
+            del self.rs.context.preprocessing.stages.input_data[key]
+        if key in self.rs.preprocessing.BeforeDespike:
+            del self.rs.preprocessing.BeforeDespike[key]
+        if key in self.rs.preprocessing.ConvertedDict:
+            del self.rs.preprocessing.ConvertedDict[key]
+        if key in self.rs.preprocessing.NormalizedDict:
+            del self.rs.preprocessing.NormalizedDict[key]
+        if key in self.rs.preprocessing.smoothed_spectra:
+            del self.rs.preprocessing.smoothed_spectra[key]
+        if key in self.rs.preprocessing.CuttedFirstDict:
+            del self.rs.preprocessing.CuttedFirstDict[key]
+        if key in self.rs.preprocessing.baseline_dict:
+            del self.rs.preprocessing.baseline_dict[key]
+        if key in self.rs.preprocessing.baseline_corrected_dict:
+            del self.rs.preprocessing.baseline_corrected_dict[key]
+        if key in self.rs.preprocessing.baseline_corrected_not_trimmed_dict:
+            del self.rs.preprocessing.baseline_corrected_not_trimmed_dict[key]
+        if key in self.rs.fitting.report_result:
+            del self.rs.fitting.report_result[key]
+        if key in self.rs.fitting.sigma3:
+            del self.rs.fitting.sigma3[key]
+
+    def _add_row(self, key: str) -> None:
+        n_array = self.dictArray[key]
+        self.rs.context.preprocessing.stages.input_data[key] = n_array
+        if key in self.BeforeDespikeArray:
+            self.rs.preprocessing.BeforeDespike[key] = self.BeforeDespikeArray[key]
+        if key in self.ConvertedDict_old:
+            self.rs.preprocessing.ConvertedDict[key] = self.ConvertedDict_old[key]
+        if key in self.CuttedFirstDict_old:
+            self.rs.preprocessing.CuttedFirstDict[key] = self.CuttedFirstDict_old[key]
+        if key in self.NormalizedDict_old:
+            self.rs.preprocessing.NormalizedDict[key] = self.NormalizedDict_old[key]
+        if key in self.SmoothedDict_old:
+            self.rs.preprocessing.smoothed_spectra[key] = self.SmoothedDict_old[key]
+        if key in self.BaselineDict_old:
+            self.rs.preprocessing.baseline_dict[key] = self.BaselineDict_old[key]
+        if key in self.BaselineCorrectedDict_old:
+            self.rs.preprocessing.baseline_corrected_dict[key] = self.BaselineCorrectedDict_old[key]
+        if key in self.BaselineCorrectedDict_not_trimmed_old:
+            self.rs.preprocessing.baseline_corrected_not_trimmed_dict[key] = \
+                self.BaselineCorrectedDict_not_trimmed_old[key]
+        if key in self.report_result_old:
+            self.rs.fitting.report_result[key] = self.report_result_old[key]
+        if key in self.sigma3_old:
+            self.rs.fitting.sigma3[key] = self.sigma3_old[key]
+
+    async def _stop_del(self) -> None:
+        self.rs.disable_buttons(False)
+        self.rs.decide_vertical_scroll_bar_visible()
+        self.update_undo_redo_tooltips()
+        time_end = self.rs.time_start
+        if not self.rs.time_start:
+            time_end = datetime.now()
+        seconds = round((datetime.now() - time_end).total_seconds())
+        self.rs.time_start = None
+        self.rs.ui.statusBar.showMessage('Action completed for ' + str(seconds) + ' sec.', 25000)
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandAddDeconvLine(QUndoCommand):
+    """
+    add row to self.ui.deconv_lines_table
+    add curve to deconvolution_plotItem
+    """
+
+    def __init__(self, rs, idx: int, line_type: str, description: str) -> None:
+        super(CommandAddDeconvLine, self).__init__(description)
+        self.RS = rs
+        self.setText(description)
+        self._idx = idx
+        self._legend = 'Curve ' + str(idx + 1)
+        self._line_type = line_type
+        self._line_params = rs.fitting.initial_peak_parameters(line_type)
+        self._style = random_line_style()
+        self._line_param_names = self._line_params.keys()
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.loop = rs.loop
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        info('CommandAddDeconvLine redo, line index %s', self._idx)
+        self.RS.ui.deconv_lines_table.model().append_row(self._legend, self._line_type, self._style,
+                                                         self._idx)
+        for param_name in self._line_param_names:
+            if param_name != 'x_axis':
+                self.RS.ui.fit_params_table.model().append_row(self._idx, param_name,
+                                                               self._line_params[param_name])
+        self.RS.fitting.add_deconv_curve_to_plot(self._line_params, self._idx, self._style,
+                                                 self._line_type)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('CommandAddDeconvLine undo, line index %s', self._idx)
+        self.RS.ui.deconv_lines_table.model().delete_row(self._idx)
+        self.RS.fitting.delete_deconv_curve(self._idx)
+        self.RS.ui.fit_params_table.model().delete_rows(self._idx)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        self.RS.fitting.draw_sum_curve()
+        self.RS.fitting.draw_residual_curve()
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandDeleteDeconvLines(QUndoCommand):
+    """ delete row in deconv_lines_table, remove curve from deconvolution_plotItem, remove rows from parameters table"""
+
+    def __init__(self, rs, description: str) -> None:
+        super(CommandDeleteDeconvLines, self).__init__(description)
+        self.setText(description)
+        self.deconv_lines_table = rs.ui.deconv_lines_table
+        selected_row = self.deconv_lines_table.selectionModel().selectedIndexes()[0].row()
+        self._selected_row = int(self.deconv_lines_table.model().row_data(selected_row).name)
+        fit_lines_df = self.deconv_lines_table.model().query_result(
+            'index == %s' % self._selected_row)
+        self._legend = fit_lines_df['Legend'][self._selected_row]
+        self._line_type = fit_lines_df['Type'][self._selected_row]
+        self._style = fit_lines_df['Style'][self._selected_row]
+        self._line_params = rs.fitting.current_line_parameters(self._selected_row)
+        self._line_params['x_axis'] = rs.fitting.x_axis_for_line(self._line_params['x0'],
+                                                                 self._line_params['dx'])
+        self._df = rs.ui.fit_params_table.model().dataframe().query(
+            'line_index == %s' % self._selected_row)
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.RS = rs
+        self.loop = rs.loop
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.RS.ui.deconv_lines_table.model().delete_row(self._selected_row)
+        self.RS.fitting.delete_deconv_curve(self._selected_row)
+        self.RS.ui.fit_params_table.model().delete_rows(self._selected_row)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.RS.ui.deconv_lines_table.model().append_row(self._legend, self._line_type, self._style,
+                                                         self._selected_row)
+        self.RS.fitting.add_deconv_curve_to_plot(self._line_params, self._selected_row, self._style,
+                                                 self._line_type)
+        self.RS.ui.fit_params_table.model().concat_df(self._df)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        self.RS.fitting.draw_sum_curve()
+        self.RS.fitting.draw_residual_curve()
+        self.RS.fitting.deselect_selected_line()
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandDeleteDatasetRow(QUndoCommand):
+    """ delete row in deconvoluted_dataset_table_view"""
+
+    def __init__(self, rs, description: str) -> None:
+        super().__init__(description)
+        self.setText(description)
+        self.dataset_table = rs.ui.deconvoluted_dataset_table_view
+        self._df_backup = deepcopy(self.dataset_table.model().dataframe())
+        selected_rows = [x.row() for x in self.dataset_table.selectionModel().selectedRows()]
+        self._selected_filenames = self.dataset_table.model().column_data_by_indexes(selected_rows,
+                                                                                     'Filename')
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.RS = rs
+        self.loop = rs.loop
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.dataset_table.model().delete_rows_by_filenames(self._selected_filenames)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.dataset_table.model().set_dataframe(self._df_backup)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        await sleep(0)
+
+
+class CommandDeconvLineTypeChanged(QUndoCommand):
+    """
+    add row to self.ui.deconv_lines_table
+    add curve to deconvolution_plotItem
+    """
+
+    def __init__(self, rs, line_type_new: str, line_type_old: str, idx: int, description: str) \
+            -> None:
+        super(CommandDeconvLineTypeChanged, self).__init__(description)
+        self.RS = rs
+        self._idx = idx
+        self.line_type_new = line_type_new
+        self.line_type_old = line_type_old
+        self.setText(description)
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        info('CommandDeconvLineTypeChanged redo, line index %s', self._idx)
+        self.RS.ui.deconv_lines_table.model().set_cell_data_by_idx_col_name(self._idx, 'Type',
+                                                                            self.line_type_new)
+        self.update_params_table(self.line_type_new, self.line_type_old)
+        self.RS.fitting.redraw_curve(line_type=self.line_type_new, idx=self._idx)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('CommandDeconvLineTypeChanged undo, line index %s', self._idx)
+        self.RS.ui.deconv_lines_table.model().set_cell_data_by_idx_col_name(self._idx, 'Type',
+                                                                            self.line_type_old)
+        self.update_params_table(self.line_type_old, self.line_type_new)
+        self.RS.fitting.redraw_curve(line_type=self.line_type_old, idx=self._idx)
+        create_task(self._stop())
+
+    def update_params_table(self, line_type_new: str, line_type_old: str) -> None:
+        params_old = src.data.default_values.peak_shapes_params[line_type_old]['add_params'] \
+            if 'add_params' in src.data.default_values.peak_shapes_params[line_type_old] else None
+        params_new = src.data.default_values.peak_shapes_params[line_type_new]['add_params'] \
+            if 'add_params' in src.data.default_values.peak_shapes_params[line_type_new] else None
+        if params_old == params_new or (params_old is None and params_new is None):
+            return
+        params_to_add = []
+        params_to_dlt = []
+        if params_old is None:
+            params_to_add = params_new
+        elif params_new is not None:
+            for i in params_new:
+                if i not in params_old:
+                    params_to_add.append(i)
+        if params_new is None:
+            params_to_dlt = params_old
+        elif params_old is not None:
+            for i in params_old:
+                if i not in params_new:
+                    params_to_dlt.append(i)
+        line_params = self.RS.fitting.initial_peak_parameters(line_type_new)
+        for i in params_to_add:
+            self.RS.ui.fit_params_table.model().append_row(self._idx, i, line_params[i])
+        for i in params_to_dlt:
+            self.RS.ui.fit_params_table.model().delete_rows_multiindex(('', self._idx, i))
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        self.RS.fitting.draw_sum_curve()
+        self.RS.fitting.draw_residual_curve()
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandUpdateDeconvCurveStyle(QUndoCommand):
+
+    def __init__(self, main_window, idx: int, style: dict, old_style: dict,
+                 description: str) -> None:
+        super(CommandUpdateDeconvCurveStyle, self).__init__(description)
+        self.setText(description)
+        self._style = style
+        self._old_style = old_style
+        self._idx = idx
+        self.UndoAction = main_window.action_undo
+        self.RedoAction = main_window.action_redo
+        self.UndoStack = main_window.undoStack
+        self.mw = main_window
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.mw.fitting.update_curve_style(self._idx, self._style)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.mw.fitting.update_curve_style(self._idx, self._old_style)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+    async def _stop(self) -> None:
+        self.update_undo_redo_tooltips()
+        self.mw.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandUpdateDataCurveStyle(QUndoCommand):
+
+    def __init__(self, rs, style: dict, old_style: dict, curve_type: str, description: str) -> None:
+        super(CommandUpdateDataCurveStyle, self).__init__(description)
+        self.setText(description)
+        self._style = style
+        self._old_style = old_style
+        self._curve_type = curve_type
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.RS = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.set_pen(self._style)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.set_pen(self.old_style)
+        create_task(self._stop())
+
+    def set_pen(self, style) -> None:
+        color = style['color']
+        color.setAlphaF(1.0)
+        pen = mkPen(color=color, style=style['style'], width=style['width'])
+        if self._curve_type == 'data':
+            self.RS.fitting.data_curve.setPen(pen)
+            self.RS.data_style_button_style_sheet(color.name())
+            self.RS.fitting.data_style = style
+        elif self._curve_type == 'sum':
+            self.RS.fitting.sum_curve.setPen(pen)
+            self.RS.sum_style_button_style_sheet(color.name())
+            self.RS.fitting.sum_style = style
+        elif self._curve_type == 'residual':
+            self.RS.fitting.residual_curve.setPen(pen)
+            self.RS.residual_style_button_style_sheet(color.name())
+            self.RS.fitting.residual_style = style
+        elif self._curve_type == 'sigma3':
+            pen, brush = curve_pen_brush_by_style(style)
+            self.RS.fitting.sigma3_fill.setPen(pen)
+            self.RS.fitting.sigma3_fill.setBrush(brush)
+            self.RS.sigma3_style_button_style_sheet(color.name())
+            self.RS.fitting.sigma3_style = style
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+    async def _stop(self) -> None:
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandUpdateTableCell(QUndoCommand):
+    """Using in PandasModelGroupsTable and PandasModelDeconvLinesTable"""
+
+    def __init__(self, obj, undo_stack, index: QModelIndex, value: str,
+                 old_value: str, description: str) -> None:
+        super(CommandUpdateTableCell, self).__init__(description)
+        self.setText(description)
+        self._obj = obj
+        self._index = index
+        self._value = value
+        self._old_value = old_value
+        self.UndoStack = undo_stack
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self._obj.set_cell_data_by_index(self._index, self._value)
+        self._obj.dataChanged.emit(self._index, self._index)
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self._obj.set_cell_data_by_index(self._index, self._old_value)
+        self._obj.dataChanged.emit(self._index, self._index)
+
+
+
+class CommandDeconvLineDragged(QUndoCommand):
+    """ UNDO/REDO change position of line ROI"""
+
+    def __init__(self, rs, params: tuple[float, float, float],
+                 old_params: tuple[float, float, float], roi: ROI, description: str) -> None:
+        super(CommandDeconvLineDragged, self).__init__(description)
+        self.setText(description)
+        self._params = params
+        self._old_params = old_params
+        self._roi = roi
+        self.RS = rs
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        set_roi_size_pos(self._params, self._roi)
+        self.update_undo_redo_tooltips()
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        set_roi_size_pos(self._old_params, self._roi)
+        self.update_undo_redo_tooltips()
+
+    def update_undo_redo_tooltips(self) -> None:
+        self.RS.fitting.draw_sum_curve()
+        self.RS.fitting.draw_residual_curve()
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+
+class CommandDeconvLineParameterChanged(QUndoCommand):
+
+    def __init__(self, delegate: QStyledItemDelegate, rs, index: QModelIndex, new_value: float,
+                 old_value: float,
+                 model, line_index: int, param_name: str, description: str) -> None:
+        super(CommandDeconvLineParameterChanged, self).__init__(description)
+        self.setText(description)
+        self.delegate = delegate
+        self._index = index
+        self._new_value = new_value
+        self._old_value = old_value
+        self._model = model
+        self._line_index = line_index
+        self._param_name = param_name
+        self.RS = rs
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+
+    @asyncSlot()
+    async def redo(self) -> bool:
+        self._model.setData(self._index, self._new_value, Qt.EditRole)
+        self.delegate.sigLineParamChanged.emit(self._new_value, self._line_index, self._param_name)
+        self.update_undo_redo_tooltips()
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self._model.setData(self._index, self._old_value, Qt.EditRole)
+        self.delegate.sigLineParamChanged.emit(self._old_value, self._line_index, self._param_name)
+        self.update_undo_redo_tooltips()
+
+    def update_undo_redo_tooltips(self) -> None:
+        self.RS.fitting.draw_sum_curve()
+        self.RS.fitting.draw_residual_curve()
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+
+class CommandClearAllDeconvLines(QUndoCommand):
+    """ delete row in deconv_lines_table, remove curve from deconvolution_plotItem, remove rows from parameters table"""
+
+    def __init__(self, rs, description: str) -> None:
+        super(CommandClearAllDeconvLines, self).__init__(description)
+        self.setText(description)
+        self._deconv_lines_table_df = rs.ui.deconv_lines_table.model().dataframe()
+        self._checked = rs.ui.deconv_lines_table.model().checked()
+        self._deconv_params_table_df = rs.ui.fit_params_table.model().dataframe()
+        self.report_result_old = rs.fitting.report_result.copy()
+        self.sigma3_dict = deepcopy(rs.fitting.sigma3)
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.rs = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.rs.ui.deconv_lines_table.model().clear_dataframe()
+        self.rs.ui.fit_params_table.model().clear_dataframe()
+        self.rs.fitting.remove_all_lines_from_plot()
+        self.rs.fitting.report_result.clear()
+        self.rs.ui.report_text_edit.setText('')
+        self.rs.fitting.sigma3.clear()
+        self.rs.fitting.sigma3_top.setData(x=np.array([0]), y=np.array([0]))
+        self.rs.fitting.sigma3_bottom.setData(x=np.array([0]), y=np.array([0]))
+        self.rs.fitting.update_sigma3_curves('')
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.rs.ui.deconv_lines_table.model().append_dataframe(self._deconv_lines_table_df)
+        self.rs.ui.deconv_lines_table.model().set_checked(self._checked)
+        self.rs.ui.fit_params_table.model().append_dataframe(self._deconv_params_table_df)
+        self.rs.fitting.report_result = self.report_result_old
+        self.rs.fitting.show_current_report_result()
+        self.rs.fitting.sigma3 = self.sigma3_dict
+        filename = '' if self.rs.fitting.is_template else self.rs.fitting.current_spectrum_deconvolution_name
+        self.rs.fitting.update_sigma3_curves(filename)
+        await self.rs.fitting.draw_all_curves()
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        self.rs.fitting.draw_sum_curve()
+        self.rs.fitting.draw_residual_curve()
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.rs.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        self.rs.fitting.draw_sum_curve()
+        try:
+            self.rs.fitting.draw_residual_curve()
+        except:
+            pass
+        self.update_undo_redo_tooltips()
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandStartIntervalChanged(QUndoCommand):
+    """
+    undo / redo setValue of self.ui.interval_start_dsb
+    CommandStartIntervalChanged(RS, new_value: float, description: str)
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    new_value : float
+        New value of self.ui.interval_start_dsb
+    old_value : float
+        Old value from self.old_start_interval_value
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, new_value: float, old_value: float, description: str) -> None:
+        super(CommandStartIntervalChanged, self).__init__(description)
+        info(
+            'init CommandStartIntervalChanged {!s}, new - {!s}, old - {!s}'.format(str(description),
+                                                                                   str(new_value),
+                                                                                   str(old_value)))
+        self.setText(description)
+        self.new_value = new_value
+        self.old_value = old_value
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.RS = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        info('redo CommandStartIntervalChanged, value %s' % self.new_value)
+        self.set_value(self.new_value)
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('undo CommandStartIntervalChanged, value %s' % self.old_value)
+        self.set_value(self.old_value)
+
+    def set_value(self, value: float) -> None:
+        self.RS.old_start_interval_value = value
+        if self.RS.ui.interval_start_dsb.value() == value:
+            return
+        self.RS.CommandStartIntervalChanged_allowed = False
+        self.RS.ui.interval_start_dsb.setValue(value)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        info('stop CommandStartIntervalChanged')
+        self.RS.CommandStartIntervalChanged_allowed = True
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandEndIntervalChanged(QUndoCommand):
+    """
+    undo / redo setValue of self.ui.interval_end_dsb"
+    CommandEndIntervalChanged(RS, new_value: float, description: str)
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    new_value : float
+        New value of self.ui.interval_end_dsb
+    old_value : float
+        Old value from self.old_end_interval_value
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, new_value: float, old_value: float, description: str) -> None:
+        super(CommandEndIntervalChanged, self).__init__(description)
+        info('init CommandEndIntervalChanged {!s}, new - {!s}, old - {!s}'.format(str(description),
+                                                                                  str(new_value),
+                                                                                  str(old_value)))
+        self.setText(description)
+        self.new_value = new_value
+        self.old_value = old_value
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.RS = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        info('redo CommandEndIntervalChanged, value %s' % self.new_value)
+        self.set_value(self.new_value)
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('undo CommandEndIntervalChanged, value %s' % self.old_value)
+        self.set_value(self.old_value)
+
+    def set_value(self, value: float) -> None:
+        self.RS.old_end_interval_value = value
+        if self.RS.ui.interval_end_dsb.value() == value:
+            return
+        self.RS.CommandEndIntervalChanged_allowed = False
+        self.RS.ui.interval_end_dsb.setValue(value)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.RS.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        info('stop CommandEndIntervalChanged')
+        self.RS.CommandEndIntervalChanged_allowed = True
+        self.update_undo_redo_tooltips()
+        self.RS.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandAfterFitting(QUndoCommand):
+    """
+    1. Set parameters value
+    2. Update graph
+    3. Show report
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    results : list[ModelResult]
+    idx_type_param_count_legend_func : list[tuple[int, str, int, str, callable]]
+    filename : str
+        self.current_spectrum_deconvolution_name - current spectrum
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, results: list[ModelResult],
+                 idx_type_param_count_legend_func: list[tuple[int, str, int, str, callable]],
+                 filename: str,
+                 description: str) -> None:
+        super(CommandAfterFitting, self).__init__(description)
+        self.sigma3_top = np.array([])
+        self.sigma3_bottom = np.array([])
+        self.rs = rs
+        self.report_text = ''
+        self.results = results
+        self.idx_type_param_count_legend_func = idx_type_param_count_legend_func.copy()
+        self.filename = filename
+        self.df = rs.ui.fit_params_table.model().query_result('filename == %r' % filename)
+        self.sum_ar = rs.fitting.sum_array()
+        self.fit_report = ''
+        self.params_stderr_for_filename_new = defaultdict(dict)
+        self.params_stderr_for_filename_old = rs.fitting.params_stderr[filename]
+        self.report_result_old = rs.fitting.report_result[
+            filename] if filename in rs.fitting.report_result else ''
+        self.sigma3 = self.rs.fitting.sigma3[
+            self.filename] if self.filename in self.rs.fitting.sigma3 else None
+        self.setText(description)
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.loop = rs.loop
+        self.prepare_data()
+
+    def prepare_data(self) -> None:
+        av_text, self.sigma3_top, self.sigma3_bottom = fitting_metrics(self.results)
+        for fit_result in self.results:
+            self.fit_report += self.edited_fit_report(fit_result) + '\n' + '\n'
+            # Find stderr for all parameters.
+            if not fit_result.errorbars:
+                continue
+            for k, v in fit_result.params.items():
+                idx, param_name = curve_idx_from_par_name(k)
+                self.params_stderr_for_filename_new[idx][param_name] = v.stderr
+        x_axis, _ = self.sum_ar
+        if self.sigma3_top.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - self.sigma3_top.shape[0]
+            zer = np.zeros(d)
+            self.sigma3_top = np.concatenate((self.sigma3_top, zer))
+        if self.sigma3_bottom.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - self.sigma3_bottom.shape[0]
+            zer = np.zeros(d)
+            self.sigma3_bottom = np.concatenate((self.sigma3_bottom, zer))
+
+        if av_text:
+            self.report_text = av_text + self.fit_report + '\n' + '\n'
+        else:
+            self.report_text = self.fit_report
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
+        self.rs.ui.statusBar.showMessage('Redo...' + self.text())
+        info('redo CommandAfterFitting, filename %s' % self.filename)
+        if self.filename != '':
+            self.rs.ui.fit_params_table.model().delete_rows_by_filenames([self.filename])
+            self.rs.fitting.add_line_params_from_template(self.filename)
+        for fit_result in self.results:
+            self.rs.fitting.set_parameters_after_fit_for_spectrum(fit_result, self.filename)
+        x_axis, _ = self.sum_ar
+        self.rs.fitting.sigma3[self.filename] = x_axis, self.sigma3_top, self.sigma3_bottom
+        self.rs.fitting.update_sigma3_curves(self.filename)
+        self.rs.fitting.report_result[self.filename] = self.report_text
+        self.rs.ui.report_text_edit.setText(self.report_text)
+        self.rs.fitting.params_stderr[self.filename] = self.params_stderr_for_filename_new
+        create_task(self._stop())
+
+    def edited_fit_report(self, res: ModelResult) -> str:
+        fit_report = res.fit_report(show_correl=False)
+        param_legend = []
+        line_types = self.rs.ui.deconv_lines_table.model().get_visible_line_types()
+        for key in res.best_values.keys():
+            idx, param_name = curve_idx_from_par_name(key)
+            legend = line_types.loc[idx].Legend
+            param_legend.append((key, legend + ' ' + param_name))
+        for old, new in param_legend:
+            fit_report = fit_report.replace(old, new)
+        if '[[Fit Statistics]]' in fit_report:
+            idx = fit_report.find('[[Fit Statistics]]')
+            fit_report = fit_report[idx:]
+        return fit_report
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
+        self.rs.ui.statusBar.showMessage('Undo...' + self.text())
+        info('Undo CommandAfterFitting, filename %s' % self.filename)
+        self.rs.ui.fit_params_table.model().delete_rows_by_filenames([self.filename])
+        self.rs.ui.fit_params_table.model().concat_df(self.df)
+        self.rs.fitting.set_rows_visibility()
+        x_axis, y_axis = self.sum_ar
+        self.rs.fitting.sum_curve.setData(x=x_axis, y=y_axis)
+        self.rs.fitting.report_result[self.filename] = self.report_result_old
+        self.rs.fitting.show_current_report_result()
+        if self.sigma3 is not None:
+            self.rs.fitting.sigma3[self.filename] = self.sigma3[0], self.sigma3[1], self.sigma3[2]
+        else:
+            del self.rs.fitting.sigma3[self.filename]
+            self.rs.fitting.sigma3_fill.setVisible(False)
+        self.rs.fitting.update_sigma3_curves(self.filename)
+        self.rs.fitting.params_stderr[self.filename] = self.params_stderr_for_filename_old
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+    async def _stop(self) -> None:
+        self.rs.fitting.show_all_roi()
+        self.rs.ui.fit_params_table.model().sort_index()
+        self.rs.ui.fit_params_table.model().model_reset_emit()
+        self.rs.fitting.redraw_curves_for_filename()
+        self.rs.fitting.draw_sum_curve()
+        self.rs.fitting.draw_residual_curve()
+        self.rs.fitting.show_current_report_result()
+        self.rs.fitting.update_sigma3_curves()
+        self.rs.fitting.set_rows_visibility()
+        self.update_undo_redo_tooltips()
+        time_end = self.rs.time_start
+        if not self.rs.time_start:
+            time_end = datetime.now()
+        seconds = round((datetime.now() - time_end).total_seconds())
+        self.rs.time_start = None
+        self.rs.ui.statusBar.showMessage('Fitting completed for ' + str(seconds) + ' sec.', 25000)
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandAfterBatchFitting(QUndoCommand):
+    """
+    1. Set parameters value
+    2. Update graph
+    3. Update / Show report
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    results : list[str, ModelResult]: filename - model result
+    idx_type_param_count_legend_func : list[tuple[int, str, int, str, callable]]
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, results: list[tuple[str, ModelResult]],
+                 idx_type_param_count_legend_func: list[tuple[int, str, int, str, callable]],
+                 dely: list[tuple[str, np.ndarray]], description: str) -> None:
+        super(CommandAfterBatchFitting, self).__init__(description)
+        self.av_text = ''
+        self.dely = dely
+        self.rs = rs
+        self.results = results
+        self.idx_type_param_count_legend_func = deepcopy(idx_type_param_count_legend_func)
+        self.df_fit_params = deepcopy(rs.ui.fit_params_table.model().dataframe())
+        self.dataset_old = deepcopy(rs.ui.deconvoluted_dataset_table_view.model().dataframe())
+        self.dataset_new = None
+        self.sum_ar = rs.fitting.sum_array()
+        self.fit_report = ''
+        self.report_result_old = deepcopy(rs.fitting.report_result)
+        self.sigma3 = deepcopy(rs.fitting.sigma3)
+        self.setText(description)
+        self.fit_reports = {}
+        self.chisqr_av = {}
+        self.redchi_av = {}
+        self.aic_av = {}
+        self.bic_av = {}
+        self.rsquared_av = {}
+        self.keys = []
+        self.sigma3_conc_up = {}
+        self.sigma3_conc_bottom = {}
+        self.report_text = {}
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.params_stderr_for_filenames_new = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(float)))
+        self.params_stderr_for_filenames_old = rs.fitting.params_stderr
+        self.UndoStack = rs.undoStack
+        self.loop = rs.loop
+        self.prepare_data()
+
+    @asyncSlot()
+    async def prepare_data(self) -> None:
+        for key, _ in self.results:
+            if key not in self.keys:
+                self.keys.append(key)
+        for key in self.keys:
+            self.fit_reports[key] = ''
+            self.chisqr_av[key] = []
+            self.redchi_av[key] = []
+            self.aic_av[key] = []
+            self.bic_av[key] = []
+            self.rsquared_av[key] = []
+            self.sigma3_conc_up[key] = np.array([])
+            self.sigma3_conc_bottom[key] = np.array([])
+        line_types = self.rs.ui.deconv_lines_table.model().get_visible_line_types()
+        x_axis, _ = self.sum_ar
+        for key, fit_result in self.results:
+            if not fit_result:
+                continue
+            self.fit_reports[key] += self.edited_fit_report(fit_result, line_types) + '\n'
+            if fit_result.chisqr != 1e-250:
+                self.chisqr_av[key].append(fit_result.chisqr)
+            self.redchi_av[key].append(fit_result.redchi)
+            self.aic_av[key].append(fit_result.aic)
+            if fit_result.bic != -np.inf:
+                self.bic_av[key].append(fit_result.bic)
+            try:
+                self.rsquared_av[key].append(fit_result.rsquared)
+            except:
+                debug("fit_result.rsquared error")
+            # Find stderr for all parameters.
+            if not fit_result.errorbars:
+                continue
+            for k, v in fit_result.params.items():
+                idx, param_name = curve_idx_from_par_name(k)
+                self.params_stderr_for_filenames_new[key][idx][param_name] = v.stderr
+        for i, item in enumerate(self.results):
+            key, fit_result = item
+            if not self.dely[i] or not fit_result:
+                continue
+            self.sigma3_conc_up[key] = np.concatenate(
+                (self.sigma3_conc_up[key], fit_result.best_fit + self.dely[i][1]))
+            self.sigma3_conc_bottom[key] = np.concatenate((self.sigma3_conc_bottom[key],
+                                                           fit_result.best_fit - self.dely[i][1]))
+        # check that shape of sigma curves = shape of mutual x_axis
+        for key in self.keys:
+            if self.sigma3_conc_up[key].shape[0] < x_axis.shape[0]:
+                d = x_axis.shape[0] - self.sigma3_conc_up[key].shape[0]
+                zer = np.zeros(d)
+                self.sigma3_conc_up[key] = np.concatenate((self.sigma3_conc_up[key], zer))
+            if self.sigma3_conc_bottom[key].shape[0] < x_axis.shape[0]:
+                d = x_axis.shape[0] - self.sigma3_conc_bottom[key].shape[0]
+                zer = np.zeros(d)
+                self.sigma3_conc_bottom[key] = np.concatenate((self.sigma3_conc_bottom[key], zer))
+        ranges = int(len(self.results) / len(self.bic_av))
+        for key in self.keys:
+            if ranges > 1:
+                chisqr_av = np.round(np.mean(self.chisqr_av[key]), 6)
+                redchi_av = np.round(np.mean(self.redchi_av[key]), 6)
+                aic_av = np.round(np.mean(self.aic_av[key]), 6)
+                bic_av = np.round(np.mean(self.bic_av[key]), 6)
+                rsquared_av = np.round(np.mean(self.rsquared_av[key]), 8)
+                av_text = "[[Average For Spectrum Fit Statistics]]" + '\n' \
+                          + f"    chi-square         = {chisqr_av}" + '\n' \
+                          + f"    reduced chi-square = {redchi_av}" + '\n' \
+                          + f"    Akaike info crit   = {aic_av}" + '\n' \
+                          + f"    Bayesian info crit = {bic_av}" + '\n' \
+                          + f"    R-squared          = {rsquared_av}" + '\n' + '\n'
+                self.report_text[key] = av_text + self.fit_reports[key]
+            else:
+                self.report_text[key] = self.fit_reports[key]
+        l_chisqr_av = list(self.chisqr_av.values())
+        flat_list = [item for sublist in l_chisqr_av for item in sublist]
+        chisqr_av = np.round(np.mean(flat_list), 6)
+        l_redchi_av = list(self.redchi_av.values())
+        flat_list = [item for sublist in l_redchi_av for item in sublist]
+        redchi_av = np.round(np.mean(flat_list), 6)
+        l_aic_av = list(self.aic_av.values())
+        flat_list = [item for sublist in l_aic_av for item in sublist]
+        aic_av = np.round(np.mean(flat_list), 6)
+        l_bic_av = list(self.bic_av.values())
+        flat_list = [item for sublist in l_bic_av for item in sublist]
+        bic_av = np.round(np.mean(flat_list), 6)
+        l_rsquared_av = list(self.rsquared_av.values())
+        flat_list = [item for sublist in l_rsquared_av for item in sublist]
+        rsquared_av = np.round(np.mean(flat_list), 8)
+        self.av_text = "[[Усредненная статистика по всем спектрам]]" + '\n' \
+                       + f"    chi-square         = {chisqr_av}" + '\n' \
+                       + f"    reduced chi-square = {redchi_av}" + '\n' \
+                       + f"    Akaike info crit   = {aic_av}" + '\n' \
+                       + f"    Bayesian info crit = {bic_av}" + '\n' \
+                       + f"    R-squared          = {rsquared_av}" + '\n' + '\n'
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        if self.rs.time_start is None:
+            self.rs.time_start = datetime.now()
+        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
+        self.rs.ui.statusBar.showMessage('Redo...' + self.text())
+        info('redo CommandAfterBatchFitting')
+        self.rs.fitting.report_result.clear()
+        self.rs.ui.fit_params_table.model().delete_rows_by_filenames(self.keys)
+        self.rs.fitting.add_line_params_from_template_batch(self.keys)
+        for key, fit_result in self.results:
+            if key in self.rs.fitting.params_stderr:
+                del self.rs.fitting.params_stderr[key]
+            if not fit_result:
+                continue
+            self.rs.fitting.set_parameters_after_fit_for_spectrum(fit_result, key)
+        x_axis, _ = self.sum_ar
+        for key in self.keys:
+            self.rs.fitting.sigma3[key] = x_axis, self.sigma3_conc_up[key], self.sigma3_conc_bottom[
+                key]
+        for key in self.keys:
+            self.rs.fitting.report_result[key] = self.report_text[key]
+        self.dataset_new = deepcopy(self.rs.fitting.create_deconvoluted_dataset_new())
+        self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.dataset_new)
+        for i in self.rs.fitting.report_result:
+            self.rs.fitting.report_result[i] += '\n' + '\n' + self.av_text
+        for k, v in self.params_stderr_for_filenames_new.items():
+            self.rs.fitting.params_stderr[k] = v
+        create_task(self._stop())
+
+    @staticmethod
+    def edited_fit_report(fit_result: ModelResult, line_types: DataFrame) -> str:
+        fit_report = fit_result.fit_report(show_correl=False)
+        param_legend = []
+        for key in fit_result.best_values.keys():
+            idx, param_name = curve_idx_from_par_name(key)
+            legend = line_types.loc[idx].Legend
+            param_legend.append((key, legend + ' ' + param_name))
+        for old, new in param_legend:
+            fit_report = fit_report.replace(old, new)
+        if '[[Fit Statistics]]' in fit_report:
+            idx = fit_report.find('[[Fit Statistics]]')
+            fit_report = fit_report[idx:]
+        return fit_report
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        if self.rs.time_start is None:
+            self.rs.time_start = datetime.now()
+        self.rs.time_start = datetime.now() - (datetime.now() - self.rs.time_start)
+        self.rs.ui.statusBar.showMessage('Undo...' + self.text())
+        info('Undo CommandAfterFitting')
+        self.rs.ui.fit_params_table.model().set_dataframe(self.df_fit_params)
+        self.rs.fitting.report_result = deepcopy(self.report_result_old)
+        if self.sigma3 is not None:
+            self.rs.fitting.sigma3 = deepcopy(self.sigma3)
+        else:
+            self.rs.fitting.sigma3.clear()
+            self.rs.fitting.sigma3_fill.setVisible(False)
+        self.rs.ui.deconvoluted_dataset_table_view.model().set_dataframe(self.dataset_old)
+        self.rs.fitting.params_stderr = self.params_stderr_for_filenames_old
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+    async def _stop(self) -> None:
+        self.rs.fitting.redraw_curves_for_filename()
+        self.rs.fitting.draw_sum_curve()
+        self.rs.fitting.draw_residual_curve()
+        self.rs.fitting.show_current_report_result()
+        self.rs.fitting.update_sigma3_curves()
+        self.rs.fitting.set_rows_visibility()
+        self.rs.fitting.update_ignore_features_table()
+        self.rs.ui.fit_params_table.model().sort_index()
+        self.rs.ui.fit_params_table.model().model_reset_emit()
+        info('stop CommandAfterBatchFitting')
+        self.update_undo_redo_tooltips()
+        time_end = self.rs.time_start
+        if not self.rs.time_start:
+            time_end = datetime.now()
+        seconds = round((datetime.now() - time_end).total_seconds())
+        self.rs.time_start = None
+        self.rs.ui.statusBar.showMessage('Batch fitting completed for ' + str(seconds) + ' sec.',
+                                         55000)
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandAfterGuess(QUndoCommand):
+    """
+    1. deconv_lines_table clear and add new from guess result
+    2. fit_params_table clear and add params for ''
+    3. update fit_report
+    4. delete all lines from plot and create new
+    5. update sum, residual, sigma3 data
+
+    Parameters
+    ----------
+    mw : MainWindow
+        Main window class
+    result : list[ModelResult]
+    line_type : str
+        Gaussian, Lorentzian... etc.
+    n_params : list[str]
+        ['a', 'x0', 'dx'.... etc]
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, mw, result: list[ModelResult], line_type: str, n_params: int,
+                 description: str = "Auto guess") \
+            -> None:
+        super(CommandAfterGuess, self).__init__(description)
+        self._mw = mw
+        self._results = result
+        self._line_type = line_type
+        self._n_params = n_params
+        self._fit_report = ''
+        self._df_lines_old = mw.ui.deconv_lines_table.model().dataframe().copy()
+        self._df_params_old = mw.ui.fit_params_table.model().dataframe().copy()
+        self.report_result_old = mw.fitting.report_result[
+            ''] if '' in mw.fitting.report_result else ''
+        self.sigma3_old = self._mw.fitting.sigma3[''] if '' in self._mw.fitting.sigma3 else None
+        self.setText(description)
+        self.UndoAction = mw.action_undo
+        self.RedoAction = mw.action_redo
+        self.UndoStack = mw.undoStack
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        if self._mw.time_start is None:
+            self._mw.time_start = datetime.now()
+        self._mw.ui.statusBar.showMessage('Redo...' + self.text())
+        info('redo CommandAfterGuess')
+
+        self._mw.ui.deconv_lines_table.model().clear_dataframe()
+        self._mw.ui.fit_params_table.model().clear_dataframe()
+        self._mw.ui.report_text_edit.setText('')
+        self._mw.fitting.remove_all_lines_from_plot()
+        av_text, sigma3_top, sigma3_bottom = fitting_metrics(self._results)
+
+        for fit_result in self._results:
+            self.process_result(fit_result)
+            self._fit_report += self.edited_fit_report(fit_result.fit_report(show_correl=False))
+        if av_text:
+            report_text = av_text + self._fit_report
+        else:
+            report_text = self._fit_report
+        self._mw.fitting.report_result.clear()
+        self._mw.fitting.report_result[''] = report_text
+        self._mw.ui.report_text_edit.setText(report_text)
+        self._mw.fitting.draw_sum_curve()
+        self._mw.fitting.draw_residual_curve()
+        x_axis, _ = self._mw.fitting.sum_array()
+        if sigma3_top.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - sigma3_top.shape[0]
+            zer = np.zeros(d)
+            sigma3_top = np.concatenate((sigma3_top, zer))
+        if sigma3_bottom.shape[0] < x_axis.shape[0]:
+            d = x_axis.shape[0] - sigma3_bottom.shape[0]
+            zer = np.zeros(d)
+            sigma3_bottom = np.concatenate((sigma3_bottom, zer))
+        self._mw.fitting.sigma3[''] = x_axis, sigma3_top, sigma3_bottom
+        self._mw.fitting.update_sigma3_curves('')
+        create_task(self._stop())
+
+    @staticmethod
+    def edited_fit_report(fit_report: str) -> str:
+        if '[[Fit Statistics]]' in fit_report:
+            idx = fit_report.find('[[Fit Statistics]]')
+            fit_report = fit_report[idx:]
+        fit_report += '\n' + '\n'
+        fit_report = fit_report.replace('dot', '.')
+        return fit_report
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        self._mw.time_start = datetime.now() - (datetime.now() - self._mw.time_start)
+        self._mw.ui.statusBar.showMessage('Undo...' + self.text())
+        info('Undo CommandAfterFitting, filename %s' % '')
+        self._mw.ui.deconv_lines_table.model().set_dataframe(self._df_lines_old)
+        self._mw.ui.fit_params_table.model().set_dataframe(self._df_params_old)
+        self._mw.fitting.set_rows_visibility()
+        self._mw.fitting.remove_all_lines_from_plot()
+        self._mw.fitting.report_result[''] = self.report_result_old
+        self._mw.fitting.show_current_report_result()
+        if self.sigma3_old is not None:
+            self._mw.fitting.sigma3[''] = self.sigma3_old[0], self.sigma3_old[1], self.sigma3_old[2]
+        else:
+            del self._mw.fitting.sigma3['']
+            self._mw.fitting.sigma3_fill.setVisible(False)
+        self._mw.fitting.update_sigma3_curves('')
+        await self._mw.fitting.draw_all_curves()
+        create_task(self._stop())
+
+    def process_result(self, fit_result: ModelResult) -> None:
+        params = fit_result.params
+        idx = 0
+        line_params = {}
+        rnd_style = random_line_style()
+        # add fit lines and fit parameters table rows
+        for i, j in enumerate(fit_result.best_values.items()):
+            legend_param = j[0].replace('dot', '.').split('_', 1)
+            if i % self._n_params == 0:
+                line_params = {}
+                rnd_style = random_line_style()
+                idx = self._mw.ui.deconv_lines_table.model().append_row(legend_param[0],
+                                                                        self._line_type, rnd_style)
+            line_params[legend_param[1]] = j[1]
+            v = np.round(j[1], 5)
+            min_v = np.round(params[j[0]].min, 5)
+            max_v = np.round(params[j[0]].max, 5)
+            self._mw.ui.fit_params_table.model().append_row(idx, legend_param[1], v, min_v, max_v)
+            if i % self._n_params == self._n_params - 1:
+                self._mw.fitting.add_deconv_curve_to_plot(line_params, idx, rnd_style,
+                                                          self._line_type)
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+    async def _stop(self) -> None:
+        info('stop CommandAfterGuess')
+        self.update_undo_redo_tooltips()
+        self._mw.fitting.set_rows_visibility()
+        time_end = self._mw.time_start
+        if not self._mw.time_start:
+            time_end = datetime.now()
+        seconds = round((datetime.now() - time_end).total_seconds())
+        self._mw.time_start = None
+        self._mw.ui.statusBar.showMessage('Guess completed for ' + str(seconds) + ' sec.', 55000)
+        self._mw.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandFitIntervalAdded(QUndoCommand):
+    """
+    undo / redo add row to fit_borders_TableView
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, description: str) -> None:
+        super(CommandFitIntervalAdded, self).__init__(description)
+        info('init FitIntervalAdded {!s}:'.format(str(description)))
+        self.setText(description)
+        self.df = rs.ui.fit_borders_TableView.model().dataframe()
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.rs = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        debug('redo FitIntervalAdded')
+        self.rs.ui.fit_borders_TableView.model().append_row()
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('undo FitIntervalAdded')
+        self.rs.ui.fit_borders_TableView.model().set_dataframe(self.df)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.rs.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        info('stop FitIntervalAdded')
+        self.update_undo_redo_tooltips()
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandFitIntervalDeleted(QUndoCommand):
+    """
+    undo / redo delete row to fit_borders_TableView
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    interval_number: int
+        row index
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, interval_number: int, description: str) -> None:
+        super(CommandFitIntervalDeleted, self).__init__(description)
+        info('init FitIntervalDeleted {!s}:'.format(str(description)))
+        self.setText(description)
+        self.interval_number = interval_number
+        self.df = rs.ui.fit_borders_TableView.model().dataframe()
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.rs = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        debug('redo FitIntervalDeleted')
+        self.rs.ui.fit_borders_TableView.model().delete_row(self.interval_number)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('undo FitIntervalDeleted')
+        self.rs.ui.fit_borders_TableView.model().set_dataframe(self.df)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.rs.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        info('stop FitIntervalDeleted')
+        self.update_undo_redo_tooltips()
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandFitIntervalChanged(QUndoCommand):
+    """
+    undo / redo change value of fit_borders_TableView row
+
+    Parameters
+    ----------
+    rs
+        Main window class
+    index: QModelIndex
+        index in table
+    new_value: float
+        value to write by index
+    model: PandasModelFitParamsTable
+        pandas model
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, rs, index: QModelIndex, new_value: float, model,
+                 description: str) -> None:
+        super(CommandFitIntervalChanged, self).__init__(description)
+        info('init FitIntervalChanged {!s}:'.format(str(description)))
+        self.setText(description)
+        self.index = index
+        self.new_value = new_value
+        self.model = model
+        self.df = rs.ui.fit_borders_TableView.model().dataframe().copy()
+        self.UndoAction = rs.action_undo
+        self.RedoAction = rs.action_redo
+        self.UndoStack = rs.undoStack
+        self.rs = rs
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        debug('redo FitIntervalChanged to {!s}'.format(self.new_value))
+        self.model.setData(self.index, self.new_value, Qt.EditRole)
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('undo FitIntervalChanged {!s}'.format(self.df))
+        self.rs.ui.fit_borders_TableView.model().set_dataframe(self.df)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+        self.rs.set_buttons_ability()
+
+    async def _stop(self) -> None:
+        info('stop FitIntervalChanged')
+        self.update_undo_redo_tooltips()
+        self.model.sort_by_border()
+        self.rs.context.set_modified()
+        collect(2)
+        await sleep(0)
+
+
+class CommandAfterFittingStat(QUndoCommand):
+    """
+    undo / redo fit classificator model
+
+    Parameters
+    ----------
+    main_window
+        Main window class
+    result: of fitting model
+    cl_type: type of classificator
+        value to write by index
+    description : str
+        Description to set in tooltip
+    """
+
+    def __init__(self, main_window, result: dict, cl_type: str, description: str) -> None:
+        super(CommandAfterFittingStat, self).__init__(description)
+
+        self.stat_result_new = None
+        info('init FitIntervalChanged {!s}:'.format(str(description)))
+        self.setText(description)
+        self.result = result
+        self.cl_type = cl_type
+        if cl_type not in main_window.stat_analysis_logic.latest_stat_result:
+            self.stat_result_old = None
+        else:
+            self.stat_result_old = deepcopy(
+                main_window.stat_analysis_logic.latest_stat_result[cl_type])
+        self.UndoAction = main_window.action_undo
+        self.RedoAction = main_window.action_redo
+        self.UndoStack = main_window.undoStack
+        self.mw = main_window
+        self.stat_result_new = self.create_stat_result()
+
+    def create_stat_result(self) -> dict:
+        if self.cl_type == 'LDA':
+            stat_result_new = self.create_stat_result_lda()
+        elif self.cl_type in ['Logistic regression', 'NuSVC']:
+            stat_result_new = self.create_stat_result_lr_svc(self.cl_type)
+        elif self.cl_type == 'PCA':
+            stat_result_new = self.create_stat_result_pca()
+        elif self.cl_type == 'PLS-DA':
+            stat_result_new = self.create_stat_result_plsda()
+        else:
+            stat_result_new = self.create_stat_result_rest(self.cl_type)
+        if self.mw.ui.dataset_type_cb.currentText() == 'Smoothed':
+            X_display = self.mw.ui.smoothed_dataset_table_view.model().dataframe()
+        elif self.mw.ui.dataset_type_cb.currentText() == 'Baseline corrected':
+            X_display = self.mw.ui.baselined_dataset_table_view.model().dataframe()
+        else:
+            X_display = self.mw.ui.deconvoluted_dataset_table_view.model().dataframe()
+            ignored_features = self.mw.ui.ignore_dataset_table_view.model().ignored_features
+            X_display = X_display.drop(ignored_features, axis=1)
+        stat_result_new['X_display'] = X_display
+        return stat_result_new
+
+    def create_stat_result_lda(self) -> dict:
+        result = deepcopy(self.result)
+        if 'y_pred_2d' in result:
+            y_pred_2d = result['y_pred_2d']
+        else:
+            y_pred_2d = None
+        result['y_pred_2d'] = y_pred_2d
+        X = result['X']
+        y_score_dec_func = result['y_score_dec_func']
+        label_binarizer = LabelBinarizer().fit(result['y_train'])
+        result['y_onehot_test'] = label_binarizer.transform(result['y_test'])
+        binary = True if len(result['model'].classes_) == 2 else False
+        if result['features_in_2d'] is not None:
+            with parallel_backend('multiprocessing', n_jobs=-1):
+                classifier = OneVsRestClassifier(make_pipeline(StandardScaler(), result['model']))
+                classifier.fit(result['x_train'], result['y_train'])
+                y_score_dec_func = classifier.decision_function(result['x_test'])
+        metrics_result = model_metrics(result['y_test'], result['y_pred_test'], result['y_score'],
+                                       binary, result['target_names'])
+        metrics_result['accuracy_score_train'] = result['accuracy_score_train']
+        result['metrics_result'] = metrics_result
+
+        result['y_score_dec_func'] = y_score_dec_func
+        if not self.mw.ui.use_shapley_cb.isChecked():
+            return result
+
+        model = result['model']
+        model = model.best_estimator_ if isinstance(model, GridSearchCV) or isinstance(model,
+                                                                                       HalvingGridSearchCV) \
+            else model
+        explainer = Explainer(model, X)
+        shap_values = explainer(X)
+        shap_values_legacy = explainer.shap_values(X)
+        result['explainer'] = explainer
+        result['shap_values'] = shap_values
+        result['shap_values_legacy'] = shap_values_legacy
+
+        return result
+
+    def create_stat_result_lr_svc(self, cl_type: str) -> dict:
+        result = deepcopy(self.result)
+        y_test = self.result['y_test']
+        result['y_train_plus_test'] = np.concatenate((self.result['y_train'], y_test))
+        binary = True if len(self.result['model'].classes_) == 2 else False
+        metrics_result = model_metrics(y_test, self.result['y_pred_test'], result['y_score'],
+                                       binary, self.result['target_names'])
+        metrics_result['accuracy_score_train'] = self.result['accuracy_score_train']
+        result['metrics_result'] = metrics_result
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            label_binarizer = LabelBinarizer().fit(self.result['y_train'])
+        result['y_onehot_test'] = label_binarizer.transform(y_test)
+        if not self.mw.ui.use_shapley_cb.isChecked():
+            return result
+        if cl_type == 'Logistic regression':
+            explainer = Explainer(self.result['model'].best_estimator_, self.result['X'])
+            result['shap_values'] = explainer(self.result['X'])
+            result['explainer'] = explainer
+            result['shap_values_legacy'] = explainer.shap_values(self.result['X'])
+        else:
+            kernel_explainer = KernelExplainer(self.result['model'].best_estimator_.predict_proba,
+                                               self.result['X'])
+            explainer = Explainer(self.result['model'].best_estimator_, self.result['X'],
+                                  max_evals=2 * len(self.result['feature_names']) + 1)
+            result['shap_values'] = explainer(self.result['X'])
+            result['explainer'] = kernel_explainer
+            result['shap_values_legacy'] = kernel_explainer.shap_values(self.result['X'])
+        return result
+
+    def create_stat_result_rest(self, cl_type: str) -> dict:
+        result = deepcopy(self.result)
+        y_test = result['y_test']
+        x_train = result['x_train']
+        model = result['model']
+        if isinstance(model, GridSearchCV):
+            model = model.best_estimator_
+        result['y_train_plus_test'] = np.concatenate((result['y_train'], y_test))
+        binary = True if len(model.classes_) == 2 else False
+        metrics_result = model_metrics(y_test, result['y_pred_test'], result['y_score'], binary,
+                                       result['target_names'])
+        metrics_result['accuracy_score_train'] = result['accuracy_score_train']
+        result['metrics_result'] = metrics_result
+        with parallel_backend('multiprocessing', n_jobs=-1):
+            label_binarizer = LabelBinarizer().fit(result['y_train'])
+        result['y_onehot_test'] = label_binarizer.transform(y_test)
+        if not self.mw.ui.use_shapley_cb.isChecked():
+            return result
+        func = lambda x: model.predict_proba(x)[:, 1]
+        med = x_train.median().values.reshape((1, x_train.shape[1]))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            explainer = Explainer(func, med, feature_names=result['feature_names'])
+            kernel_explainer = KernelExplainer(func, med, feature_names=result['feature_names'])
+            result['shap_values'] = explainer(result['X'])
+            result['expected_value'] = kernel_explainer.expected_value
+            result['shap_values_legacy'] = kernel_explainer.shap_values(result['X'])
+        return result
+
+    def create_stat_result_pca(self) -> dict:
+        result = deepcopy(self.result)
+        result['y_train_plus_test'] = np.concatenate(
+            (self.result['y_train'], self.result['y_test']))
+        result['loadings'] = DataFrame(result['model'].components_.T, columns=['PC1', 'PC2'],
+                                       index=result['feature_names'])
+        return result
+
+    def create_stat_result_plsda(self) -> dict:
+        result = deepcopy(self.result)
+        result['y_train_plus_test'] = np.concatenate(
+            (self.result['y_train'], self.result['y_test']))
+        result['vips'] = calculate_vips(result['model'])
+        return result
+
+    @asyncSlot()
+    async def redo(self) -> None:
+        debug('redo CommandAfterFittingStat')
+        if self.stat_result_new is not None:
+            self.mw.stat_analysis_logic.latest_stat_result[self.cl_type] = self.stat_result_new
+        create_task(self._stop())
+
+    @asyncSlot()
+    async def undo(self) -> None:
+        info('undo CommandAfterFittingStat')
+        self.mw.stat_analysis_logic.latest_stat_result[self.cl_type] = self.stat_result_old
+        if self.stat_result_old is None:
+            self.mw.clear_selected_step(self.cl_type)
+        create_task(self._stop())
+
+    def update_undo_redo_tooltips(self) -> None:
+        if self.UndoStack.canUndo():
+            self.UndoAction.setToolTip(self.text())
+        else:
+            self.UndoAction.setToolTip('')
+        if self.UndoStack.canRedo():
+            self.RedoAction.setToolTip(self.text())
+        else:
+            self.RedoAction.setToolTip('')
+
+    async def _stop(self) -> None:
+        if self.cl_type == 'PCA' and self.mw.stat_analysis_logic.latest_stat_result[
+            'PCA'] is not None:
+            self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_pca_plots)
+        elif self.cl_type == 'PLS-DA' and self.mw.stat_analysis_logic.latest_stat_result[
+            'PLS-DA'] is not None:
+            self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plsda_plots)
+        elif self.cl_type != 'PCA' and self.cl_type != 'PLS-DA' \
+                and self.mw.stat_analysis_logic.latest_stat_result[self.cl_type] is not None:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                warnings.filterwarnings('once')
+                self.mw.loop.run_in_executor(None, self.mw.stat_analysis_logic.update_plots,
+                                             self.cl_type)
+        self.mw.stat_analysis_logic.update_force_single_plots(self.cl_type)
+        self.mw.stat_analysis_logic.update_force_full_plots(self.cl_type)
+        self.mw.stat_analysis_logic.update_stat_report_text(self.cl_type)
+        info('stop CommandAfterFittingStat')
+        self.update_undo_redo_tooltips()
+        self.mw.context.set_modified()
+
+        time_end = self.mw.time_start
+        if not self.mw.time_start:
+            time_end = datetime.now()
+        seconds = round((datetime.now() - time_end).total_seconds())
+        self.mw.time_start = None
+        self.mw.ui.statusBar.showMessage('Model fitting completed for ' + str(seconds) + ' sec.',
+                                         550000)
+        collect(2)
+        await sleep(0)
+
+
+def fitting_metrics(fit_results: list[ModelResult]) \
+        -> tuple[str, np.ndarray, np.ndarray]:
+    ranges = 0
+    chisqr_av = []
+    redchi_av = []
+    aic_av = []
+    bic_av = []
+    rsquared_av = []
+    sigma3_top = np.array([])
+    sigma3_bottom = np.array([])
+    av_text = ''
+    for fit_result in fit_results:
+        if not fit_result:
+            continue
+        ranges += 1
+        chisqr_av.append(fit_result.chisqr)
+        redchi_av.append(fit_result.redchi)
+        aic_av.append(fit_result.aic)
+        bic_av.append(fit_result.bic)
+        try:
+            rsquared_av.append(fit_result.rsquared)
+        except:
+            debug("fit_result.rsquared error")
+        dely = fit_result.eval_uncertainty(sigma=3)
+        sigma3_top = np.concatenate((sigma3_top, fit_result.best_fit + dely))
+        sigma3_bottom = np.concatenate((sigma3_bottom, fit_result.best_fit - dely))
+    if ranges != 0:
+        chisqr_av = np.round(np.mean(chisqr_av), 6)
+        redchi_av = np.round(np.mean(redchi_av), 6)
+        aic_av = np.round(np.mean(aic_av), 6)
+        bic_av = np.round(np.mean(bic_av), 6)
+        rsquared_av = np.round(np.mean(rsquared_av), 8)
+        av_text = "[[Average Fit Statistics]]" + '\n' \
+                  + f"    chi-square         = {chisqr_av}" + '\n' \
+                  + f"    reduced chi-square = {redchi_av}" + '\n' \
+                  + f"    Akaike info crit   = {aic_av}" + '\n' \
+                  + f"    Bayesian info crit = {bic_av}" + '\n' \
+                  + f"    R-squared          = {rsquared_av}" + '\n' + '\n'
+    return av_text, sigma3_top, sigma3_bottom

@@ -1,4 +1,4 @@
-# coding:utf-8
+
 import os
 from enum import Enum
 from string import Template
@@ -10,7 +10,6 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QWidget
 
 from .config import qconfig, Theme, is_dark_theme
-from modules.work_with_files.preferences_file import get_theme
 
 
 class StyleSheetManager(QObject):
@@ -376,7 +375,7 @@ def setTheme(theme: Theme, save=False):
     qconfig.themeChangedFinished.emit()
 
 
-def toggleTheme(save=False):
+def toggle_theme(save=False):
     """ toggle the theme of application
 
     Parameters
@@ -403,12 +402,8 @@ class ThemeColor(Enum):
         return self.color().name()
 
     def color(self):
-        # color = qconfig.get(qconfig.themeColor)  # type:QColor
         try:
-            theme_bckgrnd = os.environ['bckgrnd_theme']
-            theme_color = os.environ['theme']
-            theme_colors = get_theme((theme_bckgrnd, theme_color, None))
-            color = theme_colors['secondaryColor']
+            color = os.environ['secondaryColor']
             color = QColor(color)
         except KeyError:
             color = QColor('#d1f7ff')
