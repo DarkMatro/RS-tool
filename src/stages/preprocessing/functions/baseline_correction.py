@@ -3,7 +3,6 @@ This module provides various functions for performing baseline correction on spe
 different polynomial fitting techniques. The primary goal is to accurately remove the baseline from
 the Raman spectra, enhancing the quality of the resulting data for further analysis.
 
-
 Each function returns the corrected baseline and the baseline-corrected spectrum.
 """
 
@@ -28,6 +27,8 @@ def baseline_correct(item: tuple[str, np.ndarray], **kwargs) -> tuple[str, np.nd
     ----------
     item : tuple[str, np.ndarray]
         A tuple containing the key (filename) and the input array of the spectrum.
+    kwargs : dict
+        Additional parameters for baseline correction.
 
     Returns
     -------
@@ -209,7 +210,7 @@ def absorption_indexes(y: np.ndarray, baseline: np.ndarray, sd_factor: float = 3
     Returns
     -------
     numpy.ndarray
-        Indexes
+        Indices of strong absorption lines.
     """
     detrended = detrend(y)
     sd = np.std(detrended)
@@ -482,7 +483,19 @@ def baseline_airpls(item: tuple[str, np.ndarray], lam: int = 1e6, p: float = 1e-
 
 def baseline_drpls(item: tuple[str, np.ndarray], **kwargs) \
         -> tuple[str, np.ndarray, np.ndarray]:
-    # according to Applied Optics, 2019, 58, 3913-3920. https://doi.org/10.1364/AO.58.003913
+    """
+    According to Applied Optics, 2019, 58, 3913-3920. https://doi.org/10.1364/AO.58.003913
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+      A tuple containing the key (filename) and the input array of the spectrum.
+
+    Returns
+    -------
+    tuple[str, np.ndarray, np.ndarray]
+      The key, the fitted baseline, and the baseline-corrected spectrum.
+    """
     y_input = item[1][:, 1]
 
     d_d = diags([1, -2, 1], [0, -1, -2], shape=(y_input.shape[0], y_input.shape[0] - 2),

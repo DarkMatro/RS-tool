@@ -30,12 +30,17 @@ from src.files.preferences_file import read_preferences
 from src.pages.main_window import MainWindow
 from src.ui.style import apply_stylesheet, get_theme_colors
 from src.widgets import SplashScreen
+import dill, multiprocessing
 
 
 def start_program() -> None:
     """
     Setup environ and many others, create app and main window widget.
     """
+    # dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
+    # multiprocessing.reduction.ForkingPickler = dill.Pickler
+    # multiprocessing.reduction.dump = dill.dump
+    # multiprocessing.queues._ForkingPickler = dill.Pickler
     cfg = get_config()
     cfg_env = cfg["environ"]
     read_preferences()
@@ -77,7 +82,7 @@ def start_program() -> None:
         and len(frame.project.recent_list) == 0
         and MessageBox("Open demo project?", "", frame, {"Yes", "Cancel"}).exec() == 1
     ):
-        frame.open_demo_project()
+        frame.project.open_demo_project()
         action_help()
     with loop:
         loop.run_forever()

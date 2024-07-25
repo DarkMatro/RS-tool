@@ -2050,3 +2050,7 @@ QSizeGrip {
 #scrollAreaDragWidgetContents{
     background-color: {{borderColor}};
 }
+
+#intervals_gb{
+    border-color: transparent;
+}

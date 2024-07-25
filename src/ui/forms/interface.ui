@@ -93,13 +93,13 @@
         <widget class="QFrame" name="menuBtnFrame">
          <property name="minimumSize">
           <size>
-           <width>295</width>
+           <width>205</width>
            <height>0</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
-           <width>295</width>
+           <width>205</width>
            <height>16777215</height>
           </size>
          </property>
@@ -171,26 +171,14 @@
           </item>
           <item>
            <widget class="QPushButton" name="stat_analysis_btn">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>120</width>
-              <height>0</height>
-             </size>
-            </property>
             <property name="maximumSize">
              <size>
-              <width>120</width>
+              <width>60</width>
               <height>16777215</height>
              </size>
             </property>
             <property name="text">
-             <string>Stat analysis</string>
+             <string>Fit</string>
             </property>
             <property name="flat">
              <bool>true</bool>
@@ -961,13 +949,6 @@ border: 1px;}</string>
                    <number>2</number>
                   </property>
                   <item>
-                   <widget class="PrimaryPushButton" name="edit_template_btn">
-                    <property name="text">
-                     <string>Edit template</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
                    <widget class="ComboBox" name="template_combo_box"/>
                   </item>
                  </layout>
@@ -1076,7 +1057,7 @@ border: 1px;}</string>
                  </sizepolicy>
                 </property>
                 <property name="currentIndex">
-                 <number>0</number>
+                 <number>2</number>
                 </property>
                 <widget class="QWidget" name="left_page_1">
                  <property name="sizePolicy">
@@ -1314,6 +1295,13 @@ border: 1px;}</string>
                        <item row="2" column="1">
                         <widget class="ComboBox" name="guess_method_cb"/>
                        </item>
+                       <item row="3" column="0">
+                        <widget class="CaptionLabel" name="max_dx_label">
+                         <property name="text">
+                          <string>Max HWHM:</string>
+                         </property>
+                        </widget>
+                       </item>
                        <item row="3" column="1">
                         <widget class="CompactDoubleSpinBox" name="max_dx_dsb">
                          <property name="alignment">
@@ -1336,10 +1324,10 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="3" column="0">
-                        <widget class="CaptionLabel" name="max_dx_label">
+                       <item row="4" column="0">
+                        <widget class="CaptionLabel" name="max_noise_level_label">
                          <property name="text">
-                          <string>Max HWHM:</string>
+                          <string>Max noise level:</string>
                          </property>
                         </widget>
                        </item>
@@ -1365,10 +1353,10 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="4" column="0">
-                        <widget class="CaptionLabel" name="max_noise_level_label">
+                       <item row="5" column="0">
+                        <widget class="CaptionLabel" name="lorenz_ratio_label">
                          <property name="text">
-                          <string>Max noise level:</string>
+                          <string>Lorenz_ratio limit:</string>
                          </property>
                         </widget>
                        </item>
@@ -1385,10 +1373,10 @@ border: 1px;}</string>
                          </property>
                         </widget>
                        </item>
-                       <item row="5" column="0">
-                        <widget class="CaptionLabel" name="lorenz_ratio_label">
+                       <item row="6" column="1">
+                        <widget class="CheckBox" name="use_area_check_box">
                          <property name="text">
-                          <string>Lorenz_ratio limit:</string>
+                          <string>Use Area</string>
                          </property>
                         </widget>
                        </item>
@@ -1537,8 +1525,8 @@ border: 1px;}</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>191</width>
-                        <height>271</height>
+                        <width>348</width>
+                        <height>289</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -1595,9 +1583,12 @@ border: 1px;}</string>
                             </sizepolicy>
                            </property>
                            <property name="text">
-                            <string>Current classificator</string>
+                            <string>Algorithm:</string>
                            </property>
                           </widget>
+                         </item>
+                         <item row="0" column="1">
+                          <widget class="ComboBox" name="current_classificator_comboBox"/>
                          </item>
                          <item row="1" column="0">
                           <widget class="QLabel" name="classes_label">
@@ -1608,35 +1599,6 @@ border: 1px;}</string>
                             <string>Classes to fit:</string>
                            </property>
                           </widget>
-                         </item>
-                         <item row="2" column="0">
-                          <widget class="QLabel" name="test_data_ratio_label">
-                           <property name="text">
-                            <string>Test data ratio, %:</string>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="4" column="0">
-                          <widget class="QLabel" name="score_metric_label">
-                           <property name="sizePolicy">
-                            <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
-                             <horstretch>0</horstretch>
-                             <verstretch>0</verstretch>
-                            </sizepolicy>
-                           </property>
-                           <property name="font">
-                            <font>
-                             <family>Ableton Sans Light</family>
-                             <pointsize>9</pointsize>
-                            </font>
-                           </property>
-                           <property name="text">
-                            <string>Score metric</string>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="ComboBox" name="current_classificator_comboBox"/>
                          </item>
                          <item row="1" column="1">
                           <widget class="LineEdit" name="classes_lineEdit"/>
@@ -1649,14 +1611,17 @@ border: 1px;}</string>
                            <property name="alignment">
                             <set>Qt::AlignCenter</set>
                            </property>
+                           <property name="prefix">
+                            <string>Test data ratio, %: </string>
+                           </property>
                            <property name="minimum">
                             <number>10</number>
                            </property>
                            <property name="maximum">
-                            <number>50</number>
+                            <number>40</number>
                            </property>
                            <property name="value">
-                            <number>20</number>
+                            <number>10</number>
                            </property>
                           </widget>
                          </item>
@@ -1665,40 +1630,21 @@ border: 1px;}</string>
                            <property name="alignment">
                             <set>Qt::AlignCenter</set>
                            </property>
+                           <property name="prefix">
+                            <string>Random state: </string>
+                           </property>
                            <property name="maximum">
                             <number>1000</number>
                            </property>
                           </widget>
                          </item>
-                         <item row="3" column="0">
-                          <widget class="CheckBox" name="random_state_cb">
-                           <property name="text">
-                            <string>Random
-state</string>
-                           </property>
-                          </widget>
-                         </item>
                          <item row="4" column="1">
-                          <widget class="ComboBox" name="refit_score"/>
-                         </item>
-                         <item row="5" column="0">
-                          <widget class="CheckBox" name="use_shapley_cb">
+                          <widget class="CheckBox" name="baseline_cb">
                            <property name="text">
-                            <string>use SHAP</string>
+                            <string>Baseline model</string>
                            </property>
-                          </widget>
-                         </item>
-                         <item row="5" column="1">
-                          <widget class="CheckBox" name="use_pca_checkBox">
-                           <property name="text">
-                            <string>PCA dim. reduction</string>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="6" column="1">
-                          <widget class="CheckBox" name="use_grid_search_checkBox">
-                           <property name="text">
-                            <string>Use HalvingGridSearchCV</string>
+                           <property name="checked">
+                            <bool>true</bool>
                            </property>
                           </widget>
                          </item>
@@ -1711,8 +1657,8 @@ state</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>250</width>
-                        <height>248</height>
+                        <width>348</width>
+                        <height>289</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -1868,1096 +1814,6 @@ state</string>
                        </item>
                       </layout>
                      </widget>
-                     <widget class="QWidget" name="page_lda_hp">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>131</width>
-                        <height>89</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>LDA HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_102">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_lda_hp_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>20</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>20</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>3</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>3</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>3</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="lda_solver_check_box">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;{'svd', 'lsqr', 'eigen'}, default='svd'&lt;/p&gt;&lt;p&gt;Solver to use, possible values:&lt;/p&gt;&lt;p&gt;- 'svd': Singular value decomposition (default).&lt;/p&gt;&lt;p&gt;Does not compute the covariance matrix, therefore this solver is&lt;/p&gt;&lt;p&gt;recommended for data with a large number of features.&lt;/p&gt;&lt;p&gt;- 'lsqr': Least squares solution.&lt;/p&gt;&lt;p&gt;Can be combined with shrinkage or custom covariance estimator.&lt;/p&gt;&lt;p&gt;- 'eigen': Eigenvalue decomposition.&lt;/p&gt;&lt;p&gt;Can be combined with shrinkage or custom covariance estimator.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>Solver:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="ComboBox" name="comboBox_lda_solver"/>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="lda_shrinkage_check_box">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Shrinkage parameter, possible values:&lt;/p&gt;&lt;p&gt;- None: no shrinkage (default). &lt;/p&gt;&lt;p&gt;- 'auto': automatic shrinkage using the Ledoit-Wolf lemma.&lt;/p&gt;&lt;p&gt;- float between 0 and 1: fixed shrinkage parameter.&lt;/p&gt;&lt;p&gt;Note that shrinkage works only with 'lsqr' and 'eigen' solvers.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>Shrinkage</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="LineEdit" name="lineEdit_lda_shrinkage"/>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_lr_hp">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>156</width>
-                        <height>138</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>Logistic regression HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_55">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_lr_hp_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>10</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>15</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>3</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>3</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="lr_penalty_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;{'l1', 'l2', 'elasticnet', None}, default='l2'&lt;/p&gt;&lt;p&gt;Specify the norm of the penalty:&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;- `None`: no penalty is added;&lt;/p&gt;&lt;p&gt;- `'l2'`: add a L2 penalty term and it is the default choice;&lt;/p&gt;&lt;p&gt;- `'l1'`: add a L1 penalty term;&lt;/p&gt;&lt;p&gt;- `'elasticnet'`: both L1 and L2 penalty terms are added.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;.. warning::&lt;/p&gt;&lt;p&gt;Some penalties may not work with some solvers. See the parameter&lt;/p&gt;&lt;p&gt;`solver` below, to know the compatibility between the penalty and&lt;/p&gt;&lt;p&gt;solver.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>Penalty</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="ComboBox" name="lr_penalty_comboBox"/>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="lr_solver_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;{'lbfgs', 'liblinear', 'newton-cg', 'newton-cholesky', 'sag', 'saga'}, \&lt;/p&gt;&lt;p&gt;default='lbfgs'&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Algorithm to use in the optimization problem. Default is 'lbfgs'.&lt;/p&gt;&lt;p&gt;To choose a solver, you might want to consider the following aspects:&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;- For small datasets, 'liblinear' is a good choice, whereas 'sag'&lt;/p&gt;&lt;p&gt;and 'saga' are faster for large ones;&lt;/p&gt;&lt;p&gt;- For multiclass problems, only 'newton-cg', 'sag', 'saga' and&lt;/p&gt;&lt;p&gt;'lbfgs' handle multinomial loss;&lt;/p&gt;&lt;p&gt;- 'liblinear' is limited to one-versus-rest schemes.&lt;/p&gt;&lt;p&gt;- 'newton-cholesky' is a good choice for `n_samples` &amp;gt;&amp;gt; `n_features`,&lt;/p&gt;&lt;p&gt;especially with one-hot encoded categorical features with rare&lt;/p&gt;&lt;p&gt;categories. Note that it is limited to binary classification and the&lt;/p&gt;&lt;p&gt;one-versus-rest reduction for multiclass classification. Be aware that&lt;/p&gt;&lt;p&gt;the memory usage of this solver has a quadratic dependency on&lt;/p&gt;&lt;p&gt;`n_features` because it explicitly computes the Hessian matrix.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;.. warning::&lt;/p&gt;&lt;p&gt;The choice of the algorithm depends on the penalty chosen.&lt;/p&gt;&lt;p&gt;Supported penalties by solver:&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;- 'lbfgs' - ['l2', None]&lt;/p&gt;&lt;p&gt;- 'liblinear' - ['l1', 'l2']&lt;/p&gt;&lt;p&gt;- 'newton-cg' - ['l2', None]&lt;/p&gt;&lt;p&gt;- 'newton-cholesky' - ['l2', None]&lt;/p&gt;&lt;p&gt;- 'sag' - ['l2', None]&lt;/p&gt;&lt;p&gt;- 'saga' - ['elasticnet', 'l1', 'l2', None]&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>Solver</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="ComboBox" name="lr_solver_comboBox"/>
-                         </item>
-                         <item row="2" column="0">
-                          <widget class="CheckBox" name="lr_c_checkBox">
-                           <property name="text">
-                            <string>C</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="1">
-                          <widget class="CompactDoubleSpinBox" name="lr_c_doubleSpinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <double>0.010000000000000</double>
-                           </property>
-                           <property name="maximum">
-                            <double>100000.000000000000000</double>
-                           </property>
-                           <property name="value">
-                            <double>1.000000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_nusvc_hp">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>121</width>
-                        <height>38</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>Linear NuSVC HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_38">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_nusvc_hp_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>13</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>10</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>4</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="svc_nu_check_box">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;float, default=0.5&lt;/p&gt;&lt;p&gt;An upper bound on the fraction of margin errors and a lower bound of the fraction of support vectors.&lt;/p&gt;&lt;p&gt;Should be in the interval (0, 1].&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>Nu:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="CompactDoubleSpinBox" name="svc_nu_doubleSpinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="maximum">
-                            <double>1.000000000000000</double>
-                           </property>
-                           <property name="value">
-                            <double>0.500000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_nn_fit">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>122</width>
-                        <height>82</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>Nearest Neighbors HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_39">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_nn_fit_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>9</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>12</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>4</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="n_neighbors_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;n_neighbors : int, default=5&lt;/p&gt;&lt;p&gt;Number of neighbors to use by default for :meth:`kneighbors` queries.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>n_neighbors</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="CompactSpinBox" name="n_neighbors_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>2</number>
-                           </property>
-                           <property name="maximum">
-                            <number>10</number>
-                           </property>
-                           <property name="value">
-                            <number>5</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="nn_weights_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;weights : {'uniform', 'distance'}, callable or None, default='uniform'&lt;/p&gt;&lt;p&gt;Weight function used in prediction. Possible values:&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;- 'uniform' : uniform weights. All points in each neighborhood&lt;/p&gt;&lt;p&gt;are weighted equally.&lt;/p&gt;&lt;p&gt;- 'distance' : weight points by the inverse of their distance.&lt;/p&gt;&lt;p&gt;in this case, closer neighbors of a query point will have a&lt;/p&gt;&lt;p&gt;greater influence than neighbors which are further away.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>weights</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="ComboBox" name="nn_weights_comboBox">
-                           <property name="contextMenuPolicy">
-                            <enum>Qt::ActionsContextMenu</enum>
-                           </property>
-                           <property name="acceptDrops">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_mlp_hp">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>221</width>
-                        <height>207</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>MLP HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_103">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_mlp_hp_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>10</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>10</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>3</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>3</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>3</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="activation_checkBox">
-                           <property name="text">
-                            <string>Activation:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="ComboBox" name="activation_comboBox"/>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="mlp_solve_checkBox">
-                           <property name="text">
-                            <string>Solver:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="ComboBox" name="solver_mlp_combo_box"/>
-                         </item>
-                         <item row="2" column="0">
-                          <widget class="CheckBox" name="mlp_layer_size_checkBox">
-                           <property name="text">
-                            <string>1 Hidden layer size:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="1">
-                          <widget class="SpinBox" name="mlp_layer_size_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="maximum">
-                            <number>100000</number>
-                           </property>
-                           <property name="value">
-                            <number>100</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="0">
-                          <widget class="CheckBox" name="learning_rate_checkBox">
-                           <property name="text">
-                            <string>Learning rate init:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="1">
-                          <widget class="CompactDoubleSpinBox" name="learning_rate_doubleSpinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="decimals">
-                            <number>6</number>
-                           </property>
-                           <property name="maximum">
-                            <double>1.000000000000000</double>
-                           </property>
-                           <property name="singleStep">
-                            <double>0.010000000000000</double>
-                           </property>
-                           <property name="value">
-                            <double>0.010000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="4" column="0">
-                          <widget class="QLabel" name="max_epoch_label">
-                           <property name="text">
-                            <string>Max epoch:</string>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="4" column="1">
-                          <widget class="CompactSpinBox" name="max_epoch_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>1</number>
-                           </property>
-                           <property name="maximum">
-                            <number>1000</number>
-                           </property>
-                           <property name="value">
-                            <number>10</number>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_dt_hp">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>168</width>
-                        <height>126</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>Decision Tree HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_40">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_dt_hp_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>11</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>9</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="bottomMargin">
-                          <number>6</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="criterion_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;criterion : {&amp;quot;gini&amp;quot;, &amp;quot;entropy&amp;quot;, &amp;quot;log_loss&amp;quot;}, default=&amp;quot;gini&amp;quot;&lt;/p&gt;&lt;p&gt;The function to measure the quality of a split. Supported criteria are&lt;/p&gt;&lt;p&gt;&amp;quot;gini&amp;quot; for the Gini impurity and &amp;quot;log_loss&amp;quot; and &amp;quot;entropy&amp;quot; both for the&lt;/p&gt;&lt;p&gt;Shannon information gain, see :ref:`tree_mathematical_formulation`.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>criterion:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="ComboBox" name="criterion_comboBox"/>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="dt_max_depth_check_box">
-                           <property name="toolTip">
-                            <string>max_depth : int, default= 0 (None)
-The maximum depth of the tree. If None, then nodes are expanded until
-all leaves are pure or until all leaves contain less than
-min_samples_split samples.</string>
-                           </property>
-                           <property name="text">
-                            <string>max_depth</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="0">
-                          <widget class="CheckBox" name="dt_min_samples_split_check_box">
-                           <property name="toolTip">
-                            <string>min_samples_split : int, default=2
-The minimum number of samples required to split an internal node:
-- Consider `min_samples_split` as the minimum number.
-</string>
-                           </property>
-                           <property name="text">
-                            <string>min_samples_split</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="SpinBox" name="dt_max_depth_spin_box">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>0</number>
-                           </property>
-                           <property name="maximum">
-                            <number>10</number>
-                           </property>
-                           <property name="value">
-                            <number>0</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="1">
-                          <widget class="SpinBox" name="dt_min_samples_split_spin_box">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>2</number>
-                           </property>
-                           <property name="maximum">
-                            <number>10</number>
-                           </property>
-                           <property name="value">
-                            <number>2</number>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_rf_fit">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>174</width>
-                        <height>162</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>Random forest HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_42">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_rf_fit_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>8</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>8</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>3</number>
-                         </property>
-                         <property name="bottomMargin">
-                          <number>4</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="rf_criterion_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;criterion : {&amp;quot;gini&amp;quot;, &amp;quot;entropy&amp;quot;, &amp;quot;log_loss&amp;quot;}, default=&amp;quot;gini&amp;quot;&lt;/p&gt;&lt;p&gt;The function to measure the quality of a split. Supported criteria are&lt;/p&gt;&lt;p&gt;&amp;quot;gini&amp;quot; for the Gini impurity and &amp;quot;log_loss&amp;quot; and &amp;quot;entropy&amp;quot; both for the&lt;/p&gt;&lt;p&gt;Shannon information gain, see :ref:`tree_mathematical_formulation`.&lt;/p&gt;&lt;p&gt;Note: This parameter is tree-specific.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>criterion</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="ComboBox" name="rf_criterion_comboBox"/>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="rf_min_samples_split_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;min_samples_split : int or float, default=2&lt;/p&gt;&lt;p&gt;The minimum number of samples required to split an internal node:&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;- If int, then consider `min_samples_split` as the minimum number.&lt;/p&gt;&lt;p&gt;- If float, then `min_samples_split` is a fraction and&lt;/p&gt;&lt;p&gt;`ceil(min_samples_split * n_samples)` are the minimum&lt;/p&gt;&lt;p&gt;number of samples for each split.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>min_samples_split</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="SpinBox" name="rf_min_samples_split_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>2</number>
-                           </property>
-                           <property name="maximum">
-                            <number>10</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="0">
-                          <widget class="CheckBox" name="rf_n_estimators_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;n_estimators : int, default=100&lt;/p&gt;&lt;p&gt;The number of trees in the forest.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>n_estimators</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="1">
-                          <widget class="SpinBox" name="rf_n_estimators_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>1</number>
-                           </property>
-                           <property name="maximum">
-                            <number>1000</number>
-                           </property>
-                           <property name="value">
-                            <number>100</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="0">
-                          <widget class="CheckBox" name="rf_max_features_checkBox">
-                           <property name="toolTip">
-                            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;max_features : {&amp;quot;sqrt&amp;quot;, &amp;quot;log2&amp;quot;, None}, default=&amp;quot;sqrt&amp;quot;&lt;/p&gt;&lt;p&gt;The number of features to consider when looking for the best split:&lt;/p&gt;&lt;p&gt;- If &amp;quot;sqrt&amp;quot;, then `max_features=sqrt(n_features)`.&lt;/p&gt;&lt;p&gt;- If &amp;quot;log2&amp;quot;, then `max_features=log2(n_features)`.&lt;/p&gt;&lt;p&gt;- If None, then `max_features=n_features`.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-                           </property>
-                           <property name="text">
-                            <string>max_features</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="1">
-                          <widget class="ComboBox" name="rf_max_features_comboBox"/>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_ab_fit">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>222</width>
-                        <height>86</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>AdaBoost HyperParameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_43">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="formLayout_3">
-                         <property name="horizontalSpacing">
-                          <number>11</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>11</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>4</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>5</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>5</number>
-                         </property>
-                         <property name="bottomMargin">
-                          <number>4</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="ab_n_estimators_checkBox">
-                           <property name="text">
-                            <string>n_estimators</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="SpinBox" name="ab_n_estimators_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>1</number>
-                           </property>
-                           <property name="maximum">
-                            <number>1000</number>
-                           </property>
-                           <property name="value">
-                            <number>50</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="ab_learning_rate_checkBox">
-                           <property name="text">
-                            <string>learning_rate</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="DoubleSpinBox" name="ab_learning_rate_doubleSpinBox">
-                           <property name="decimals">
-                            <number>3</number>
-                           </property>
-                           <property name="minimum">
-                            <double>0.001000000000000</double>
-                           </property>
-                           <property name="maximum">
-                            <double>100000.000000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_xgb_fit">
-                      <property name="geometry">
-                       <rect>
-                        <x>0</x>
-                        <y>0</y>
-                        <width>217</width>
-                        <height>283</height>
-                       </rect>
-                      </property>
-                      <attribute name="label">
-                       <string>XGBoost Hyperparameters</string>
-                      </attribute>
-                      <layout class="QVBoxLayout" name="verticalLayout_44">
-                       <property name="spacing">
-                        <number>0</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>0</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>0</number>
-                       </property>
-                       <item>
-                        <layout class="QFormLayout" name="page_xgb_fit_formLayout">
-                         <property name="horizontalSpacing">
-                          <number>8</number>
-                         </property>
-                         <property name="verticalSpacing">
-                          <number>7</number>
-                         </property>
-                         <property name="leftMargin">
-                          <number>5</number>
-                         </property>
-                         <property name="topMargin">
-                          <number>5</number>
-                         </property>
-                         <property name="rightMargin">
-                          <number>5</number>
-                         </property>
-                         <property name="bottomMargin">
-                          <number>5</number>
-                         </property>
-                         <item row="0" column="0">
-                          <widget class="CheckBox" name="xgb_eta_checkBox">
-                           <property name="text">
-                            <string>eta:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                           <property name="autoRepeat">
-                            <bool>false</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="0">
-                          <widget class="CheckBox" name="xgb_gamma_checkBox">
-                           <property name="text">
-                            <string>gamma:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="0">
-                          <widget class="CheckBox" name="xgb_max_depth_checkBox">
-                           <property name="text">
-                            <string>max_depth:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="0">
-                          <widget class="CheckBox" name="xgb_min_child_weight_checkBox">
-                           <property name="text">
-                            <string>min_child_weight</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="4" column="0">
-                          <widget class="CheckBox" name="xgb_colsample_bytree_checkBox">
-                           <property name="text">
-                            <string>colsample_bytree:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="5" column="0">
-                          <widget class="CheckBox" name="xgb_lambda_checkBox">
-                           <property name="text">
-                            <string>lambda:</string>
-                           </property>
-                           <property name="checked">
-                            <bool>true</bool>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="6" column="0">
-                          <widget class="QLabel" name="xgb_n_estimators_label">
-                           <property name="text">
-                            <string>n_estimators</string>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="0" column="1">
-                          <widget class="CompactDoubleSpinBox" name="xgb_eta_doubleSpinBox">
-                           <property name="decimals">
-                            <number>3</number>
-                           </property>
-                           <property name="minimum">
-                            <double>0.001000000000000</double>
-                           </property>
-                           <property name="maximum">
-                            <double>1.000000000000000</double>
-                           </property>
-                           <property name="value">
-                            <double>0.300000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="1" column="1">
-                          <widget class="SpinBox" name="xgb_gamma_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="2" column="1">
-                          <widget class="SpinBox" name="xgb_max_depth_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="maximum">
-                            <number>20</number>
-                           </property>
-                           <property name="value">
-                            <number>6</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="3" column="1">
-                          <widget class="SpinBox" name="xgb_min_child_weight_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="value">
-                            <number>1</number>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="4" column="1">
-                          <widget class="DoubleSpinBox" name="xgb_colsample_bytree_doubleSpinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <double>0.010000000000000</double>
-                           </property>
-                           <property name="maximum">
-                            <double>1.000000000000000</double>
-                           </property>
-                           <property name="value">
-                            <double>1.000000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="5" column="1">
-                          <widget class="DoubleSpinBox" name="xgb_lambda_doubleSpinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="decimals">
-                            <number>1</number>
-                           </property>
-                           <property name="minimum">
-                            <double>0.100000000000000</double>
-                           </property>
-                           <property name="value">
-                            <double>1.000000000000000</double>
-                           </property>
-                          </widget>
-                         </item>
-                         <item row="6" column="1">
-                          <widget class="SpinBox" name="xgb_n_estimators_spinBox">
-                           <property name="alignment">
-                            <set>Qt::AlignCenter</set>
-                           </property>
-                           <property name="minimum">
-                            <number>10</number>
-                           </property>
-                           <property name="maximum">
-                            <number>1000</number>
-                           </property>
-                           <property name="value">
-                            <number>100</number>
-                           </property>
-                          </widget>
-                         </item>
-                        </layout>
-                       </item>
-                      </layout>
-                     </widget>
                     </widget>
                     <widget class="QFrame" name="frame_report_text_edit">
                      <property name="sizePolicy">
@@ -2993,7 +1849,7 @@ The minimum number of samples required to split an internal node:
                         <property name="minimumSize">
                          <size>
                           <width>0</width>
-                          <height>200</height>
+                          <height>450</height>
                          </size>
                         </property>
                         <property name="maximumSize">
@@ -3158,7 +2014,7 @@ The minimum number of samples required to split an internal node:
               <item>
                <widget class="QStackedWidget" name="stackedWidget_mainpages">
                 <property name="currentIndex">
-                 <number>0</number>
+                 <number>3</number>
                 </property>
                 <widget class="QWidget" name="page1">
                  <layout class="QVBoxLayout" name="verticalLayout_18">
@@ -3742,6 +2598,9 @@ The minimum number of samples required to split an internal node:
                                      <property name="text">
                                       <string>Sum</string>
                                      </property>
+                                     <property name="checked">
+                                      <bool>true</bool>
+                                     </property>
                                     </widget>
                                    </item>
                                    <item>
@@ -3798,6 +2657,9 @@ The minimum number of samples required to split an internal node:
                                      <property name="text">
                                       <string>Residual</string>
                                      </property>
+                                     <property name="checked">
+                                      <bool>true</bool>
+                                     </property>
                                     </widget>
                                    </item>
                                    <item>
@@ -3853,6 +2715,9 @@ The minimum number of samples required to split an internal node:
                                     <widget class="CheckBox" name="sigma3_checkBox">
                                      <property name="text">
                                       <string>3σ:</string>
+                                     </property>
+                                     <property name="checked">
+                                      <bool>true</bool>
                                      </property>
                                     </widget>
                                    </item>
@@ -4168,6 +3033,13 @@ The minimum number of samples required to split an internal node:
                         </property>
                         <layout class="QHBoxLayout" name="horizontalLayout_29">
                          <item>
+                          <widget class="PrimaryPushButton" name="stat_test_btn">
+                           <property name="text">
+                            <string>Stat test</string>
+                           </property>
+                          </widget>
+                         </item>
+                         <item>
                           <widget class="SpinBox" name="describe_1_SpinBox">
                            <property name="minimumSize">
                             <size>
@@ -4185,7 +3057,7 @@ The minimum number of samples required to split an internal node:
                             <set>Qt::AlignCenter</set>
                            </property>
                            <property name="prefix">
-                            <string>group_id for top table: </string>
+                            <string>group_id 1: </string>
                            </property>
                            <property name="minimum">
                             <number>1</number>
@@ -4204,7 +3076,7 @@ The minimum number of samples required to split an internal node:
                             <set>Qt::AlignCenter</set>
                            </property>
                            <property name="prefix">
-                            <string>group_id for bottom table: </string>
+                            <string>group_id 2: </string>
                            </property>
                            <property name="minimum">
                             <number>2</number>
@@ -4319,6 +3191,71 @@ The minimum number of samples required to split an internal node:
                           </sizepolicy>
                          </property>
                         </widget>
+                       </widget>
+                      </item>
+                     </layout>
+                    </widget>
+                    <widget class="QWidget" name="tab_stat_test">
+                     <attribute name="title">
+                      <string>Stat test</string>
+                     </attribute>
+                     <layout class="QVBoxLayout" name="verticalLayout_9">
+                      <property name="spacing">
+                       <number>0</number>
+                      </property>
+                      <property name="leftMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="topMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="rightMargin">
+                       <number>0</number>
+                      </property>
+                      <property name="bottomMargin">
+                       <number>0</number>
+                      </property>
+                      <item>
+                       <widget class="QFrame" name="stat_test_frame">
+                        <property name="frameShape">
+                         <enum>QFrame::StyledPanel</enum>
+                        </property>
+                        <property name="frameShadow">
+                         <enum>QFrame::Raised</enum>
+                        </property>
+                        <layout class="QVBoxLayout" name="verticalLayout_49">
+                         <property name="spacing">
+                          <number>0</number>
+                         </property>
+                         <property name="leftMargin">
+                          <number>0</number>
+                         </property>
+                         <property name="topMargin">
+                          <number>0</number>
+                         </property>
+                         <property name="rightMargin">
+                          <number>0</number>
+                         </property>
+                         <property name="bottomMargin">
+                          <number>0</number>
+                         </property>
+                         <item>
+                          <widget class="QSplitter" name="splitter_6">
+                           <property name="orientation">
+                            <enum>Qt::Vertical</enum>
+                           </property>
+                           <widget class="MplWidget" name="bootstrap_plot_widget" native="true">
+                            <property name="sizePolicy">
+                             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                              <horstretch>0</horstretch>
+                              <verstretch>0</verstretch>
+                             </sizepolicy>
+                            </property>
+                           </widget>
+                           <widget class="QTextEdit" name="stat_test_text_edit"/>
+                          </widget>
+                         </item>
+                        </layout>
                        </widget>
                       </item>
                      </layout>
@@ -4500,127 +3437,6 @@ The minimum number of samples required to split an internal node:
                       </item>
                      </layout>
                     </widget>
-                    <widget class="QWidget" name="tab_plsda">
-                     <attribute name="title">
-                      <string>PLS-DA</string>
-                     </attribute>
-                     <layout class="QVBoxLayout" name="verticalLayout_88">
-                      <property name="spacing">
-                       <number>0</number>
-                      </property>
-                      <property name="leftMargin">
-                       <number>0</number>
-                      </property>
-                      <property name="topMargin">
-                       <number>0</number>
-                      </property>
-                      <property name="rightMargin">
-                       <number>0</number>
-                      </property>
-                      <property name="bottomMargin">
-                       <number>0</number>
-                      </property>
-                      <item>
-                       <widget class="QFrame" name="frame_plsda">
-                        <property name="frameShape">
-                         <enum>QFrame::StyledPanel</enum>
-                        </property>
-                        <property name="frameShadow">
-                         <enum>QFrame::Raised</enum>
-                        </property>
-                        <layout class="QVBoxLayout" name="verticalLayout_89">
-                         <item>
-                          <widget class="QSplitter" name="splitter_90">
-                           <property name="orientation">
-                            <enum>Qt::Vertical</enum>
-                           </property>
-                           <widget class="QFrame" name="frame_plsda_plots">
-                            <property name="frameShape">
-                             <enum>QFrame::StyledPanel</enum>
-                            </property>
-                            <property name="frameShadow">
-                             <enum>QFrame::Raised</enum>
-                            </property>
-                            <layout class="QHBoxLayout" name="horizontalLayout_87">
-                             <property name="spacing">
-                              <number>0</number>
-                             </property>
-                             <property name="leftMargin">
-                              <number>0</number>
-                             </property>
-                             <property name="topMargin">
-                              <number>0</number>
-                             </property>
-                             <property name="rightMargin">
-                              <number>0</number>
-                             </property>
-                             <property name="bottomMargin">
-                              <number>0</number>
-                             </property>
-                             <item>
-                              <widget class="QSplitter" name="splitter_91">
-                               <property name="orientation">
-                                <enum>Qt::Horizontal</enum>
-                               </property>
-                               <widget class="MplWidget" name="plsda_scores_plot_widget" native="true">
-                                <property name="sizePolicy">
-                                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                                  <horstretch>0</horstretch>
-                                  <verstretch>0</verstretch>
-                                 </sizepolicy>
-                                </property>
-                               </widget>
-                               <widget class="MplWidget" name="plsda_vip_plot_widget" native="true">
-                                <property name="sizePolicy">
-                                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                                  <horstretch>0</horstretch>
-                                  <verstretch>0</verstretch>
-                                 </sizepolicy>
-                                </property>
-                               </widget>
-                              </widget>
-                             </item>
-                            </layout>
-                           </widget>
-                           <widget class="QFrame" name="frame_plsda_table">
-                            <property name="frameShape">
-                             <enum>QFrame::StyledPanel</enum>
-                            </property>
-                            <property name="frameShadow">
-                             <enum>QFrame::Raised</enum>
-                            </property>
-                            <layout class="QVBoxLayout" name="verticalLayout_90">
-                             <property name="spacing">
-                              <number>0</number>
-                             </property>
-                             <property name="leftMargin">
-                              <number>0</number>
-                             </property>
-                             <property name="topMargin">
-                              <number>0</number>
-                             </property>
-                             <property name="rightMargin">
-                              <number>0</number>
-                             </property>
-                             <property name="bottomMargin">
-                              <number>0</number>
-                             </property>
-                             <item>
-                              <widget class="QTableView" name="plsda_vip_table_view">
-                               <property name="verticalScrollBarPolicy">
-                                <enum>Qt::ScrollBarAsNeeded</enum>
-                               </property>
-                              </widget>
-                             </item>
-                            </layout>
-                           </widget>
-                          </widget>
-                         </item>
-                        </layout>
-                       </widget>
-                      </item>
-                     </layout>
-                    </widget>
                     <widget class="QWidget" name="tab_fit">
                      <attribute name="title">
                       <string>Fit results</string>
@@ -4644,15 +3460,15 @@ The minimum number of samples required to split an internal node:
                       <item>
                        <widget class="QToolBox" name="tab_fit_toolBox">
                         <property name="currentIndex">
-                         <number>0</number>
+                         <number>2</number>
                         </property>
                         <widget class="QWidget" name="page_tab_fit_1">
                          <property name="geometry">
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>83</width>
-                           <height>16</height>
+                           <width>1159</width>
+                           <height>742</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -5012,8 +3828,8 @@ The minimum number of samples required to split an internal node:
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>100</width>
-                           <height>30</height>
+                           <width>1159</width>
+                           <height>742</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -5167,8 +3983,8 @@ The minimum number of samples required to split an internal node:
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>83</width>
-                           <height>19</height>
+                           <width>1159</width>
+                           <height>742</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -5575,45 +4391,6 @@ The minimum number of samples required to split an internal node:
                           </item>
                          </layout>
                         </widget>
-                       </widget>
-                      </item>
-                     </layout>
-                    </widget>
-                    <widget class="QWidget" name="tab_compare">
-                     <attribute name="title">
-                      <string>Compare models</string>
-                     </attribute>
-                     <layout class="QVBoxLayout" name="verticalLayout_13">
-                      <item>
-                       <widget class="PrimaryPushButton" name="compare_roc_push_button">
-                        <property name="sizePolicy">
-                         <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-                          <horstretch>0</horstretch>
-                          <verstretch>0</verstretch>
-                         </sizepolicy>
-                        </property>
-                        <property name="maximumSize">
-                         <size>
-                          <width>200</width>
-                          <height>16777215</height>
-                         </size>
-                        </property>
-                        <property name="text">
-                         <string>Compare ROC</string>
-                        </property>
-                        <property name="hasIcon" stdset="0">
-                         <bool>false</bool>
-                        </property>
-                       </widget>
-                      </item>
-                      <item>
-                       <widget class="MplWidget" name="roc_comparsion_plot_widget" native="true">
-                        <property name="sizePolicy">
-                         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                          <horstretch>0</horstretch>
-                          <verstretch>0</verstretch>
-                         </sizepolicy>
-                        </property>
                        </widget>
                       </item>
                      </layout>
@@ -6389,11 +5166,6 @@ The minimum number of samples required to split an internal node:
   <customwidget>
    <class>SpinBox</class>
    <extends>QSpinBox</extends>
-   <header>qfluentwidgets</header>
-  </customwidget>
-  <customwidget>
-   <class>DoubleSpinBox</class>
-   <extends>QDoubleSpinBox</extends>
    <header>qfluentwidgets</header>
   </customwidget>
   <customwidget>

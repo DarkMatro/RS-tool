@@ -1,9 +1,51 @@
+"""
+This module provides several normalization functions for spectral data, including methods such as
+Standard Normal Variate (SNV), Area normalization, Trapezoidal Area normalization, Max
+normalization, Min-Max normalization, and Extended Multiplicative Scatter Correction (EMSC).
+
+Functions
+---------
+get_emsc_average_spectrum(item)
+    Computes the average spectrum for EMSC normalization.
+
+normalize_emsc(item, y_axis_mean, n_pca=8)
+    Applies Extended Multiplicative Scatter Correction (EMSC) normalization to the input spectrum.
+
+normalize_snv(item)
+    Applies Standard Normal Variate (SNV) normalization to the input spectrum.
+
+normalize_area(item)
+    Applies Area normalization to the input spectrum.
+
+normalize_trapz_area(item)
+    Applies Trapezoidal Area normalization to the input spectrum.
+
+normalize_max(item)
+    Applies Max normalization to the input spectrum.
+
+normalize_minmax(item)
+    Applies Min-Max normalization to the input spectrum.
+"""
+
 import numpy as np
 from numba import njit
-from src.stages.preprocessing.functions.normalization.EMSC import Kohler
+from src.stages.preprocessing.functions.normalization.emsc import kohler
 
 
 def get_emsc_average_spectrum(item: tuple[str, np.ndarray]) -> np.ndarray:
+    """
+    Computes the average spectrum for EMSC normalization.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the list of spectra.
+
+    Returns
+    -------
+    np.ndarray
+        The average spectrum.
+    """
     y_axes = []
     for arr in item:
         y_axes.append(arr[:, 1])
@@ -12,15 +54,46 @@ def get_emsc_average_spectrum(item: tuple[str, np.ndarray]) -> np.ndarray:
     return np_y_axis
 
 
-def normalize_emsc(item: tuple[str, np.ndarray], y_axis_mean: np.ndarray, n_pca: int = 8) -> tuple[str, np.ndarray]:
+def normalize_emsc(item: tuple[str, np.ndarray], y_axis_mean: np.ndarray, n_pca: int = 8) \
+        -> tuple[str, np.ndarray]:
+    """
+    Applies Extended Multiplicative Scatter Correction (EMSC) normalization to the input spectrum.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the input spectrum array.
+    y_axis_mean : np.ndarray
+        The mean spectrum to be used for EMSC normalization.
+    n_pca : int, optional
+        Number of principal components to use. Default is 8.
+
+    Returns
+    -------
+    tuple[str, np.ndarray]
+        The key and the normalized spectrum.
+    """
     key = item[0]
     arr = item[1]
-    y_axis_new = Kohler(arr[:, 0], arr[:, 1], y_axis_mean, n_components=n_pca)
+    y_axis_new = kohler(arr[:, 0], arr[:, 1], y_axis_mean, n_components=n_pca)
     return key, np.vstack((arr[:, 0], y_axis_new)).T
 
 
 @njit(fastmath=True, cache=True)
 def normalize_snv(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
+    """
+    Applies Standard Normal Variate (SNV) normalization to the input spectrum.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the input spectrum array.
+
+    Returns
+    -------
+    tuple[str, np.ndarray]
+        The key and the normalized spectrum.
+    """
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -33,6 +106,19 @@ def normalize_snv(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
 
 @njit(fastmath=True, cache=True)
 def normalize_area(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
+    """
+    Applies Area normalization to the input spectrum.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the input spectrum array.
+
+    Returns
+    -------
+    tuple[str, np.ndarray]
+        The key and the normalized spectrum.
+    """
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -45,6 +131,19 @@ def normalize_area(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
 
 @njit(fastmath=True, cache=True)
 def normalize_trapz_area(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
+    """
+    Applies Trapezoidal Area normalization to the input spectrum.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the input spectrum array.
+
+    Returns
+    -------
+    tuple[str, np.ndarray]
+        The key and the normalized spectrum.
+    """
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -55,6 +154,19 @@ def normalize_trapz_area(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]
 
 @njit(fastmath=True, cache=True)
 def normalize_max(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
+    """
+    Applies Max normalization to the input spectrum.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the input spectrum array.
+
+    Returns
+    -------
+    tuple[str, np.ndarray]
+        The key and the normalized spectrum.
+    """
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]
@@ -65,6 +177,19 @@ def normalize_max(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
 
 @njit(fastmath=True, cache=True)
 def normalize_minmax(item: tuple[str, np.ndarray]) -> tuple[str, np.ndarray]:
+    """
+    Applies Min-Max normalization to the input spectrum.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple containing the key (filename) and the input spectrum array.
+
+    Returns
+    -------
+    tuple[str, np.ndarray]
+        The key and the normalized spectrum.
+    """
     key = item[0]
     arr = item[1]
     y_axis = arr[:, 1]

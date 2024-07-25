@@ -47,24 +47,33 @@ class CutData(PreprocessingStage):
         """change range for trim stage"""
         if not data:
             return
-        next_stage = self.parent.stages.trim_data
+        mw = get_parent(self.parent, "MainWindow")
+        context = get_parent(self.parent, "Context")
+        if self.name == 'CutData':
+            range_start_spin_box = self.parent.stages.trim_data.ui.cm_range_start
+            range_end_spin_box = self.parent.stages.trim_data.ui.cm_range_end
+            lr = self.parent.stages.trim_data.linear_region
+        else:
+            range_start_spin_box = mw.ui.interval_start_dsb
+            range_end_spin_box = mw.ui.interval_end_dsb
+            lr = context.decomposition.plotting.linear_region
         min_cm = next(iter(data.values()))[:, 0][0]
         max_cm = next(iter(data.values()))[:, 0][-1]
         for v in data.values():
             min_cm = max(min_cm, v[:, 0][0])
             max_cm = min(max_cm, v[:, 0][-1])
-        next_stage.ui.cm_range_start.setMinimum(min_cm)
-        next_stage.ui.cm_range_start.setMaximum(max_cm)
-        next_stage.ui.cm_range_end.setMinimum(min_cm)
-        next_stage.ui.cm_range_end.setMaximum(max_cm)
+        range_start_spin_box.setMinimum(min_cm)
+        range_start_spin_box.setMaximum(max_cm)
+        range_end_spin_box.setMinimum(min_cm)
+        range_end_spin_box.setMaximum(max_cm)
 
-        current_value_start = next_stage.ui.cm_range_start.value()
-        current_value_end = next_stage.ui.cm_range_end.value()
+        current_value_start = range_start_spin_box.value()
+        current_value_end = range_end_spin_box.value()
         if current_value_start < min_cm or current_value_start > max_cm:
-            next_stage.ui.cm_range_start.setValue(min_cm)
+            range_start_spin_box.setValue(min_cm)
         if current_value_end < min_cm or current_value_end > max_cm:
-            next_stage.ui.cm_range_start.setValue(max_cm)
-        next_stage.linear_region.setBounds((min_cm, max_cm))
+            range_start_spin_box.setValue(max_cm)
+        lr.setBounds((min_cm, max_cm))
 
     def set_ui(self, ui: Ui_CutForm) -> None:
         """

@@ -19,8 +19,8 @@ from traceback import format_exc
 import yaml
 from jinja2 import FileSystemLoader, Environment
 from qtpy.QtCore import QDir
-from qtpy.QtGui import QFontDatabase
-from qtpy.QtWidgets import QApplication
+from qtpy.QtGui import QFontDatabase, QColor
+from qtpy.QtWidgets import QApplication, QColorDialog
 
 from qfluentwidgets import toggle_theme
 from src.mutual_functions.static_functions import show_error_msg
@@ -285,3 +285,24 @@ def _density(value: int | str, density_scale: int, border: int = 0, scale: int =
     density = max(0, density)
 
     return density
+
+def color_dialog(initial: QColor) -> QColorDialog:
+    """
+    Create and configure a QColorDialog.
+
+    Parameters
+    ----------
+    initial : QColor
+        The initial color for the dialog.
+
+    Returns
+    -------
+    QColorDialog
+        The configured color dialog.
+    """
+    dialog = QColorDialog(initial)
+    for i, color_name in zip(range(6), ['primaryColor', 'primaryDarker', 'primaryDarkColor',
+                                        'secondaryColor', 'secondaryLightColor',
+                                        'secondaryDarkColor']):
+        dialog.setCustomColor(i, QColor(environ[color_name]))
+    return dialog

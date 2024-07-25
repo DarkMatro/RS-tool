@@ -1,0 +1,130 @@
+import:
+  status_bar_open_msg: 'Importing...'
+  state_tooltip_open_msg: 'Importing files...'
+  status_bar_cancel_msg: 'Import canceled...No one new file was selected.'
+  no_result_msg: 'Import canceled...No one file with Raman data was read.'
+
+interpolate:
+  status_bar_open_msg: 'Interpolating...'
+  state_tooltip_open_msg: 'Interpolating...'
+  status_bar_cancel_msg: 'Interpolate canceled.'
+  no_result_msg: 'No results for interpolating...'
+
+despike:
+  status_bar_open_msg: 'Despiking...'
+  state_tooltip_open_msg: 'Despiking...'
+  status_bar_cancel_msg: 'Despike canceled.'
+  no_result_msg: 'No results for Despike...'
+
+convert:
+  status_bar_open_msg: 'Converting...'
+  state_tooltip_open_msg: 'Converting files...'
+  status_bar_cancel_msg: 'Converting canceled...'
+  no_result_msg: 'No results for converting'
+
+cut:
+  status_bar_open_msg: 'Cut in progress...'
+  state_tooltip_open_msg: 'Cut in progress...'
+  status_bar_cancel_msg: 'Cut canceled...'
+  no_result_msg: 'No results for Cut'
+
+normalization:
+  status_bar_open_msg: 'Normalization...'
+  state_tooltip_open_msg: 'Normalization...'
+  status_bar_cancel_msg: 'Normalization canceled...'
+  no_result_msg: 'No results for Normalization'
+
+smooth:
+  status_bar_open_msg: 'Smoothing...'
+  state_tooltip_open_msg: 'Smoothing...'
+  status_bar_cancel_msg: 'Smoothing canceled...'
+  no_result_msg: 'No results for Smoothing'
+
+baseline:
+  status_bar_open_msg: 'Baseline correction...'
+  state_tooltip_open_msg: 'Baseline correction...'
+  status_bar_cancel_msg: 'Baseline correction canceled...'
+  no_result_msg: 'No results for Baseline correction'
+
+average:
+  status_bar_open_msg: 'Average plots refresh in progress...'
+  state_tooltip_open_msg: 'Average plots refresh in progress...'
+  status_bar_cancel_msg: 'Averaging canceled...'
+
+fit:
+  status_bar_open_msg: 'Fitting...'
+  state_tooltip_open_msg: 'Fitting...'
+  status_bar_cancel_msg: 'Fitting canceled...'
+  no_result_msg: 'No results for Fitting'
+
+guess:
+  status_bar_open_msg: 'Fitting each spectrum...'
+  state_tooltip_open_msg: 'Guessing peaks...'
+  status_bar_cancel_msg: 'Guessing peaks canceled...'
+  no_result_msg: 'No results for Guessing peaks'
+
+guess_fit:
+  status_bar_open_msg: 'Creating mutual model...'
+  state_tooltip_open_msg: 'Fitting...'
+  status_bar_cancel_msg: 'Fitting canceled...'
+  no_result_msg: 'No results for Fitting'
+
+batch_fit:
+  status_bar_open_msg: 'Batch fitting...'
+  state_tooltip_open_msg: 'Batch fitting...'
+  status_bar_cancel_msg: 'Batch fitting canceled...'
+  no_result_msg: 'No results for Batch fitting'
+
+uncertain:
+  status_bar_open_msg: 'Calculating uncertainties...'
+  state_tooltip_open_msg: 'Updating uncertainties'
+  status_bar_cancel_msg: 'Calculating uncertainties canceled...'
+  no_result_msg: 'No results for Calculating uncertainties'
+
+guess_undo:
+  status_bar_open_msg: 'Updating model...'
+  state_tooltip_open_msg: 'Updating...'
+  status_bar_cancel_msg: 'Updating canceled...'
+  no_result_msg: 'No results for Updating'
+
+batch_fit_undo:
+  status_bar_open_msg: 'Updating data...'
+  state_tooltip_open_msg: 'Updating...'
+  status_bar_cancel_msg: 'Updating canceled...'
+  no_result_msg: 'No results for Updating'
+
+update_range:
+  status_bar_open_msg: 'Updating range...'
+  state_tooltip_open_msg: 'Updating range...'
+  status_bar_cancel_msg: 'Updating range canceled...'
+  no_result_msg: 'No results for range'
+
+save_project:
+  status_bar_open_msg: 'Saving...'
+  state_tooltip_open_msg: 'Saving project...'
+  status_bar_cancel_msg: 'Saving canceled...'
+  no_result_msg: 'Saving canceled...'
+
+load_params:
+  status_bar_open_msg: 'Reading data file...'
+  state_tooltip_open_msg: 'Opening project...'
+  status_bar_cancel_msg: 'Reading data file canceled...'
+  no_result_msg: 'Reading data file canceled...'
+
+export_spectrum:
+  status_bar_open_msg: 'Exporting files...'
+  state_tooltip_open_msg: 'Saving files...'
+  status_bar_cancel_msg: 'Export canceled...'
+  no_result_msg: 'Export error...'
+
+fit_model:
+  status_bar_open_msg: 'Fitting model...'
+  state_tooltip_open_msg: 'Fitting...'
+  status_bar_cancel_msg: 'Fitting canceled...'
+  no_result_msg: 'Fitting error...'
+
+optuna:
+  status_bar_open_msg: 'Optuna hyperparameters search...'
+  state_tooltip_open_msg: 'Optuna optimize...'
+  status_bar_cancel_msg: 'Optuna canceled...'
+  no_result_msg: 'Optuna error...'

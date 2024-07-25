@@ -21,7 +21,7 @@ from asyncqtpy import asyncSlot
 from pyqtgraph import mkPen
 from qtpy.QtCore import QObject, QModelIndex, Qt
 from qtpy.QtGui import QColor
-from qtpy.QtWidgets import QHeaderView, QAbstractItemView, QColorDialog
+from qtpy.QtWidgets import QHeaderView, QAbstractItemView
 
 from src.backend.undo_stack import UndoCommand
 from ..data.get_data import get_parent
@@ -29,6 +29,7 @@ from ..pandas_tables import GroupsTableModel
 from ..ui.MultiLine import MultiLine
 from ..widgets.curve_properties_window import CurvePropertiesWindow
 from ..data.plotting import random_rgb
+from src.ui.style import color_dialog
 
 
 class GroupTable(QObject):
@@ -87,7 +88,7 @@ class GroupTable(QObject):
         Reset the table by initializing an empty dataframe model.
         """
         df = pd.DataFrame(columns=["Group name", "Style"])
-        model = GroupsTableModel(df, self.parent.undo_stack)
+        model = GroupsTableModel(df, self.parent)
         self.table_widget.setModel(model)
 
     def read(self) -> pd.DataFrame:
@@ -246,34 +247,12 @@ class GroupTable(QObject):
             return
         this_row = self.table_widget.model().rowCount()
         init_color = QColor(environ["secondaryColor"])
-        color_dialog = self._color_dialog(init_color)
-        color = color_dialog.getColor(init_color)
+        dialog = color_dialog(init_color)
+        color = dialog.getColor(init_color)
         if not color.isValid():
             return
         command = CommandAddGroup((this_row, color), self.parent, f"Add group {this_row + 1}")
         self.parent.undo_stack.push(command)
-
-    @staticmethod
-    def _color_dialog(initial: QColor) -> QColorDialog:
-        """
-        Create and configure a QColorDialog.
-
-        Parameters
-        ----------
-        initial : QColor
-            The initial color for the dialog.
-
-        Returns
-        -------
-        QColorDialog
-            The configured color dialog.
-        """
-        color_dialog = QColorDialog(initial)
-        for i, color_name in zip(range(6), ['primaryColor', 'primaryDarker', 'primaryDarkColor',
-                                            'secondaryColor', 'secondaryLightColor',
-                                            'secondaryDarkColor']):
-            color_dialog.setCustomColor(i, QColor(environ[color_name]))
-        return color_dialog
 
     def dlt_selected_group(self) -> None:
         """
@@ -415,7 +394,6 @@ class CommandChangeGroupCellsBatch(UndoCommand):
         """
         Update cell and plot colors for this group.
         """
-        print('redo_special')
         for i in self.data.items():
             self._do(i)
 

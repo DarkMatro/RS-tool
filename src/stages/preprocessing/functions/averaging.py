@@ -1,9 +1,24 @@
+"""
+This module provides functionality to compute the average spectrum from a list of Raman spectra
+using either the mean or median method.
+
+Functions
+---------
+get_average_spectrum(spectra, method='Mean')
+    Computes and returns the average spectrum from a list of spectra based on the specified method.
+
+Dependencies
+------------
+- numpy : Provides support for array operations and mathematical functions.
+"""
+
 import numpy as np
 
 
 def get_average_spectrum(spectra: list[np.ndarray], method: str = 'Mean') -> np.ndarray:
     """
     Returns mean / median spectrum for all spectra
+
     Parameters
     ----------
     spectra: list[np.ndarray]
@@ -15,6 +30,15 @@ def get_average_spectrum(spectra: list[np.ndarray], method: str = 'Mean') -> np.
     -------
     np.ndarray
        averaged spectrum 2D (x, y)
+
+    Usage Example
+    -------------
+    >>> import numpy as np
+    >>> spectra = [np.array([[100, 1.1], [200, 2.2]]), np.array([[100, 1.2], [200, 2.3]])]
+    >>> average_spectrum = get_average_spectrum(spectra, method='Mean')
+    >>> print(average_spectrum)
+    [[100.     1.15]
+     [200.     2.25]]
     """
     assert spectra
     assert method in ['Mean', 'Median']

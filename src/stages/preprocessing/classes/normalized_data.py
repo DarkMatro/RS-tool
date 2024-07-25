@@ -1,3 +1,19 @@
+"""
+Module for normalizing spectral data in the preprocessing workflow.
+
+This module defines the `NormalizedData` class, which manages the normalization of
+spectral data using various methods such as EMSC. It includes functionality to set
+up the user interface, reset data, load and save data, and handle normalization
+processes asynchronously.
+
+Classes
+-------
+NormalizedData
+    Manages the normalization stage of the preprocessing workflow.
+CommandNormalize
+    Handles undo and redo operations for the normalization process.
+"""
+
 from copy import deepcopy, copy
 
 import numpy as np
@@ -19,20 +35,38 @@ from src.data.default_values import normalize_methods
 
 class NormalizedData(PreprocessingStage):
     """
-    Normalize spectrum from previous stage
+    Manages the normalization stage of the preprocessing workflow.
 
     Parameters
-    -------
-    parent: Preprocessing
-        class Preprocessing
+    ----------
+    parent : Preprocessing
+        The parent preprocessing object.
 
     Attributes
-    -------
-    ui: object
-        user interface form
+    ----------
+    ui : Ui_NormalizeForm
+        The user interface form.
+    normalize_methods : dict
+        Dictionary of available normalization methods.
+    current_method : str
+        The current normalization method being used.
+    name : str
+        The name of the stage.
     """
 
     def __init__(self, parent, *args, **kwargs):
+        """
+        Initialize the NormalizedData object.
+
+        Parameters
+        ----------
+        parent : Preprocessing
+            The parent preprocessing object.
+        *args
+            Variable length argument list.
+        **kwargs
+            Arbitrary keyword arguments.
+        """
         super().__init__(parent, *args, **kwargs)
         self.ui = None
         self.normalize_methods = normalize_methods()
@@ -41,12 +75,12 @@ class NormalizedData(PreprocessingStage):
 
     def set_ui(self, ui: Ui_NormalizeForm) -> None:
         """
-        Set user interface object
+        Set the user interface object.
 
         Parameters
-        -------
-        ui: Ui_NormalizeForm
-            widget
+        ----------
+        ui : Ui_NormalizeForm
+            The user interface form.
         """
         context = get_parent(self.parent, "Context")
         defaults = get_config('defaults')
@@ -65,7 +99,7 @@ class NormalizedData(PreprocessingStage):
 
     def reset(self) -> None:
         """
-        Reset class data.
+        Reset class data to default values.
         """
         self.data.clear()
         defaults = get_config('defaults')
@@ -79,12 +113,12 @@ class NormalizedData(PreprocessingStage):
 
     def read(self) -> dict:
         """
-        Read attributes data.
+        Read and return the attributes' data.
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            Dictionary containing all class attributes data.
         """
         dt = {"data": self.data.get_data(),
               'emsc_pca_n_spinBox': self.ui.emsc_pca_n_spinBox.value(),
@@ -95,12 +129,12 @@ class NormalizedData(PreprocessingStage):
 
     def load(self, db: dict) -> None:
         """
-        Load attributes data from file.
+        Load attributes data from a dictionary.
 
         Parameters
-        -------
-        db: dict
-            all class attributes data
+        ----------
+        db : dict
+            Dictionary containing all class attributes data.
         """
         self.data.update(db['data'])
         self.ui.emsc_pca_n_spinBox.setValue(db['emsc_pca_n_spinBox'])
@@ -111,14 +145,14 @@ class NormalizedData(PreprocessingStage):
 
     def reset_field(self, event: QMouseEvent, field_id: str) -> None:
         """
-        Change field value to default on double click by MiddleButton.
+        Reset a field value to its default on a double-click event.
 
         Parameters
-        -------
-        event: QMouseEvent
-
-        field_id: str
-            name of field
+        ----------
+        event : QMouseEvent
+            The mouse event object.
+        field_id : str
+            The ID of the field to reset.
         """
         if event.buttons() != Qt.MouseButton.MiddleButton:
             return
@@ -131,20 +165,39 @@ class NormalizedData(PreprocessingStage):
 
     def plot_items(self) -> ItemsView:
         """
-        Returns data for plotting
+        Get the data for plotting.
+
+        Returns
+        -------
+        ItemsView
+            View of the data items.
         """
         return self.data.items()
 
     def _init_normalizing_method_combo_box(self) -> None:
+        """
+        Initialize the combo box with available normalization methods.
+        """
         self.ui.normalizing_method_comboBox.addItems(self.normalize_methods.keys())
 
     def method_changed(self, current_text: str):
+        """
+        Handle the event when the normalization method is changed.
+
+        Parameters
+        ----------
+        current_text : str
+            The current text of the combo box.
+        """
         context = get_parent(self.parent, "Context")
         context.set_modified()
         self.ui.emsc_pca_n_spinBox.setVisible(current_text == 'EMSC')
 
     @asyncSlot()
     async def _normalize_clicked(self) -> None:
+        """
+        Handle the event when the normalize button is clicked.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
@@ -156,6 +209,16 @@ class NormalizedData(PreprocessingStage):
 
     @asyncSlot()
     async def _normalize(self, mw: QMainWindow, data: ObservableDict) -> None:
+        """
+        Perform the normalization process asynchronously.
+
+        Parameters
+        ----------
+        mw : QMainWindow
+            The main window object.
+        data : ObservableDict
+            The data to be normalized.
+        """
         n_files = len(data)
         cfg = get_config("texty")["normalization"]
 
@@ -187,23 +250,47 @@ class NormalizedData(PreprocessingStage):
 
 class CommandNormalize(UndoCommand):
     """
-    Change data for normalization stage.
+    Handles undo and redo operations for the normalization process.
 
     Parameters
-    -------
-    data: list[tuple[str, ndarray]]
-        filename: str
-            as input
-        array: np.ndarray
-            processed 2D array with normalized wavelengths and intensities
-    parent: Context
-        Backend context class
-    text: str
-        description
+    ----------
+    data : list of tuple
+        List of tuples containing filenames and processed 2D arrays with normalized data.
+    parent : Context
+        The backend context object.
+    text : str
+        Description of the command.
+
+    Attributes
+    ----------
+    data : list of tuple
+        The new data to be applied.
+    old_data : dict
+        The previous data before normalization.
+    method : str
+        The current normalization method.
+    method_old : str
+        The previous normalization method.
     """
 
     def __init__(self, data: list[tuple[str, np.ndarray]],
                  parent, text: str, *args, **kwargs) -> None:
+        """
+        Initialize the CommandNormalize object.
+
+        Parameters
+        ----------
+        data : list of tuple
+            List of tuples containing filenames and processed 2D arrays with normalized data.
+        parent : Context
+            The backend context object.
+        text : str
+            Description of the command.
+        *args
+            Variable length argument list.
+        **kwargs
+            Arbitrary keyword arguments.
+        """
         self.stage = kwargs.pop('stage')
         self.method = kwargs.pop('method')
         super().__init__(data, parent, text, *args, **kwargs)
@@ -213,7 +300,7 @@ class CommandNormalize(UndoCommand):
 
     def redo_special(self):
         """
-        Update data
+        Apply the normalization data.
         """
         self.stage.data.clear()
         new_data = dict(self.data)
@@ -222,7 +309,7 @@ class CommandNormalize(UndoCommand):
 
     def undo_special(self):
         """
-        Undo data
+        Revert to the previous normalization data.
         """
         self.stage.data.clear()
         self.stage.data.update(self.old_data)
@@ -230,6 +317,6 @@ class CommandNormalize(UndoCommand):
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements after stopping the command.
         """
         self.parent.preprocessing.update_plot_item("NormalizedData")

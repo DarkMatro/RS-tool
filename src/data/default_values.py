@@ -5,6 +5,7 @@ from src.stages.fitting.functions.peak_shapes import gaussian, split_gaussian, s
     voigt, split_voigt, skewed_voigt, pseudovoigt, split_pseudovoigt, pearson4, split_pearson4, \
     pearson7, \
     split_pearson7
+from src.stages.ml.functions.hyperopt import objective_lda
 from src.stages.preprocessing.functions.baseline_correction import baseline_correct, ex_mod_poly, \
     baseline_asls, baseline_arpls, \
     baseline_airpls, baseline_drpls
@@ -14,80 +15,12 @@ from src.stages.preprocessing.functions.normalization.normalization import norma
 from src.stages.preprocessing.functions.smoothing.functions_smoothing import smooth_mlesg, \
     smooth_ceemdan, smooth_eemd, smooth_emd, smooth_savgol, whittaker, \
     smooth_flat, smooth_window, smooth_window_kaiser, smooth_med_filt, smooth_wiener
-from src.stages.stat_analysis.functions.fit_classificators import fit_lda_clf, fit_lr_clf, \
-    fit_svc_clf, fit_nn_clf, fit_gpc_clf, fit_nb_clf, \
-    fit_mlp_clf, fit_dt_clf, fit_rf_clf, fit_ab_clf, fit_xgboost_clf, fit_voting_clf, \
-    fit_stacking_clf, fit_pca, \
-    fit_plsda
+from src.stages.ml.functions.fit_classificators import (fit_lda_clf, fit_lr_clf, \
+                                                        fit_svc_clf, fit_nn_clf, fit_nb_clf,
+                                                        fit_dt_clf, fit_rf_clf, fit_xgboost_clf,
+                                                        fit_pca, fit_lda)
 
-
-def default_values() -> dict[float | str]:
-    """
-
-    @return: dict[float | str]
-        dictionary with default values
-    """
-    return {
-            'interval_start': 310.0,
-            'interval_end': 2000.0,
-            'trim_start_cm': 370.0,
-            'trim_end_cm': 1780.0,
-            'laser_wl': 784.5,
-            'kaiser_beta': 14.0,
-            'EMD_noise_modes': 1,
-            'max_CCD_value': 65536,
-            'EEMD_trials': 10,
-            'EMSC_N_PCA': 8,
-            'baseline_method_comboBox': 'ExModPoly',
-            'guess_method_cb': 'Average',
-
-            'fit_method': 'Least-Squares, Trust Region Reflective method',
-            'max_dx_guess': 12.0,
-            'n_lines_method': 'Min',
-            'max_noise_level': 30.,
-            'dataset_type_cb': 'Decomposed',
-            'test_data_ratio_spinBox': 25,
-            'random_state_sb': 0,
-            'mlp_layer_size_spinBox': 100,
-            'max_epoch_spinBox': 10,
-            'learning_rate_doubleSpinBox': .001,
-            'feature_display_max_spinBox': 50,
-            'l_ratio': .25,
-            'comboBox_lda_solver': 'svd',
-            'lineEdit_lda_shrinkage': 'None',
-            'lr_c_doubleSpinBox': 1.,
-            'lr_solver_comboBox': 'lbfgs',
-            'lr_penalty_comboBox': 'l2',
-            'svc_nu_doubleSpinBox': .5,
-            'n_neighbors_spinBox': 5,
-            'nn_weights_comboBox': 'uniform',
-            'rf_n_estimators_spinBox': 100,
-            'rf_min_samples_split_spinBox': 2,
-            'ab_learning_rate_doubleSpinBox': 1.,
-            'ab_n_estimators_spinBox': 50,
-            'xgb_eta_doubleSpinBox': .3,
-            'xgb_gamma_spinBox': 0,
-            'xgb_max_depth_spinBox': 6,
-            'xgb_min_child_weight_spinBox': 1,
-            'xgb_colsample_bytree_doubleSpinBox': 1.,
-            'xgb_lambda_doubleSpinBox': 1.,
-            'xgb_n_estimators_spinBox': 100,
-            'select_percentile_spin_box': 50,
-            'dt_max_depth_spin_box': 0,
-            'dt_min_samples_split_spin_box': 2,
-            }
-
-
-def peak_shape_params_limits() -> dict[str, tuple[float, float]]:
-    """
-    Using in self.peak_shape_params_limits
-    @return: dict[str, tuple[float, float]]
-    """
-    return {'gamma': (0., 100.), 'skew': (-100., 100.), 'l_ratio': (0., 1.), 'expon': (0.1, 100.),
-            'beta': (0.1, 100.), 'alpha': (-1., 1.), 'q': (-0.5, 0.5)}
-
-
-def baseline_parameter_defaults() -> dict[dict[float | int]]:
+def baseline_parameter_defaults() -> dict[str, dict[str, int | float] ]:
     return {'Poly': {'polynome_degree': 5},
             'ModPoly': {'polynome_degree': 5, 'tol': 1e-3, 'max_iter': 250},
             'iModPoly': {'polynome_degree': 6, 'tol': 1e-3, 'max_iter': 250, 'num_std': 0.},
@@ -125,43 +58,6 @@ def baseline_parameter_defaults() -> dict[dict[float | int]]:
             'FastChrom': {'half_window': 5, 'min_length': 2, 'max_iter': 100},
             'FABC': {'lambda': 1000000, 'num_std': 3.0, 'min_length': 2}
             }
-
-
-def fitting_methods() -> dict[str]:
-    """
-    fitting_methods. see lmfit.minimizer
-    @return: dict[str]
-    """
-    return {'Least-Squares, Trust Region Reflective method': 'least_squares',
-            'Levenberg-Marquardt': 'leastsq',
-            # 'Differential evolution': 'differential_evolution',
-            # 'Brute force method': 'brute',
-            'Basin-hopping': 'basinhopping',
-            'Adaptive Memory Programming for Global Optimization': 'ampgo',
-            'Nelder-Mead': 'nelder',
-            'L-BFGS-B': 'lbfgsb',
-            'Powell': 'powell',
-            'Conjugate-Gradient': 'cg',
-            # 'Newton-CG': 'newton',
-            'Cobyla': 'cobyla',
-            'BFGS': 'bfgs',
-            'Truncated Newton': 'tnc',
-            # 'Newton-CG trust-region': 'trust-ncg',
-            # 'nearly exact trust-region': 'trust-exact',
-            # 'Newton GLTR trust-region': 'trust-krylov',
-            'trust-region for constrained optimization': 'trust-constr',
-            # 'Dog-leg trust-region': 'dogleg',
-            'Sequential Linear Squares Programming': 'slsqp',
-            # 'Maximum likelihood via Monte-Carlo Markov Chain': 'emcee',
-            'Simplicial Homology Global Optimization': 'shgo',
-            'Dual Annealing optimization': 'dual_annealing'
-            }
-
-
-def peak_shape_names() -> list[str]:
-    return ['Gaussian', 'Split Gaussian', 'Skewed Gaussian', 'Lorentzian', 'Split Lorentzian', 'Voigt',
-            'Split Voigt', 'Skewed Voigt', 'Pseudo Voigt', 'Split Pseudo Voigt', 'Pearson4', 'Split Pearson4',
-            'Pearson7', 'Split Pearson7']
 
 
 def scoring_metrics() -> list[str]:
@@ -243,20 +139,12 @@ def baseline_methods() -> dict[str, tuple[Callable, int]]:
 
 
 def classificator_funcs() -> dict[str, callable]:
-    return {'LDA': fit_lda_clf, 'Logistic regression': fit_lr_clf, 'NuSVC': fit_svc_clf, 'Nearest Neighbors': fit_nn_clf,
-            'GPC': fit_gpc_clf, 'Naive Bayes': fit_nb_clf, 'MLP': fit_mlp_clf, 'Decision Tree': fit_dt_clf,
-            'Random Forest': fit_rf_clf, 'AdaBoost': fit_ab_clf, 'XGBoost': fit_xgboost_clf, 'Voting': fit_voting_clf,
-            'Stacking': fit_stacking_clf, 'PCA': fit_pca, 'PLS-DA': fit_plsda, }
+    return {'LDA': fit_lda, 'Logistic regression': fit_lr_clf, 'NuSVC': fit_svc_clf,
+            'Nearest Neighbors': fit_nn_clf, 'Naive Bayes': fit_nb_clf, 'Decision Tree': fit_dt_clf,
+            'Random Forest': fit_rf_clf, 'XGBoost': fit_xgboost_clf, 'PCA': fit_pca}
 
-
-def classificators_names() -> list[str]:
-    """
-    returns classificator_funcs().keys() withoud PCA and PLS-DA
-    Returns
-    -------
-
-    """
-    return list(classificator_funcs().keys())[: -2]
+def objectives() -> dict[str, callable]:
+    return {'LDA': objective_lda}
 
 
 def normalize_methods() -> dict[str, tuple]:
@@ -296,14 +184,6 @@ def peak_shapes_params() -> dict:
             'Split Pearson4': {'func': split_pearson4, 'add_params': ['dx_left', 'expon', 'skew']},
             'Pearson7': {'func': pearson7, 'add_params': ['expon']},
             'Split Pearson7': {'func': split_pearson7, 'add_params': ['dx_left', 'expon']}
-            # 'Moffat':
-            #     {'func': moffat, 'add_params': ['beta']},
-            # 'Split Moffat':
-            #     {'func': split_moffat, 'add_params': ['dx_left', 'beta']}
-            # 'Doniach':
-            #     {'func': doniach, 'add_params': ['alpha']}
-            # 'Breit-Wigner-Fano':
-            #     {'func': bwf, 'add_params': ['q']}
             }
 
 

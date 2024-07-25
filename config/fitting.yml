@@ -1,0 +1,22 @@
+peak_shape_names: ['Gaussian', 'Split Gaussian', 'Skewed Gaussian', 'Lorentzian',
+                   'Split Lorentzian', 'Voigt', 'Split Voigt', 'Skewed Voigt', 'Pseudo Voigt',
+                   'Split Pseudo Voigt', 'Pearson4', 'Split Pearson4', 'Pearson7', 'Split Pearson7']
+peak_shape_params_limits: {'gamma': (0., 100.), 'skew': (-100., 100.), 'l_ratio': (0., 1.),
+                           'expon': (0.1, 100.), 'beta': (0.1, 100.), 'alpha': (-1., 1.),
+                           'q': (-0.5, 0.5)}
+fitting_methods:
+  Least-Squares, Trust Region Reflective method: 'least_squares'
+  Levenberg-Marquardt: 'leastsq'
+  Basin-hopping: 'basinhopping'
+  Adaptive Memory Programming for Global Optimization: 'ampgo'
+  Nelder-Mead: 'nelder'
+  L-BFGS-B: 'lbfgsb'
+  Powell: 'powell'
+  Conjugate-Gradient: 'cg'
+  Cobyla: 'cobyla'
+  BFGS: 'bfgs'
+  Truncated Newton: 'tnc'
+  trust-region for constrained optimization: 'trust-constr'
+  Sequential Linear Squares Programming: 'slsqp'
+  Simplicial Homology Global Optimization: 'shgo'
+  Dual Annealing optimization: 'dual_annealing'

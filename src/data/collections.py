@@ -7,6 +7,7 @@ classes:
 """
 
 from collections import deque
+from collections import defaultdict
 
 
 class IndexedDeque:
@@ -243,3 +244,199 @@ class ObservableDict:
         dict
         """
         return self._data
+
+
+class NestedDefaultDict:
+    """
+    A nested defaultdict structure with three levels of nesting, where the innermost
+    level defaults to float.
+
+    This class encapsulates a nested defaultdict structure with a convenient API for
+    accessing and setting nested dictionary values.
+
+    Examples
+    --------
+    >>> from src.data.collections import NestedDefaultDict
+    >>> a = NestedDefaultDict()
+    >>> a['key1']['key2']['key3'] = 1.0
+    >>> print(a['key1']['key2']['key3'])
+    1.0
+    >>> print(a)
+    defaultdict(<bound method NestedDefaultDict._nested_defaultdict of <__main__.NestedDefaultDict object at ...>>,
+               {'key1': defaultdict(<bound method NestedDefaultDict._float_defaultdict of <__main__.NestedDefaultDict object at ...>>,
+                                    {'key2': defaultdict(<class 'float'>, {'key3': 1.0})})})
+
+    Attributes
+    ----------
+    data : defaultdict
+       The main nested defaultdict structure.
+
+    Methods
+    -------
+    __getitem__(key)
+       Returns the value associated with the key, creating nested levels as needed.
+    __setitem__(key, value)
+       Sets the value associated with the key.
+    __contains__(key)
+        Checks if the key exists in the nested structure.
+    __repr__()
+       Returns the string representation of the object.
+    __str__()
+       Returns the string representation of the object.
+    items()
+        Returns an iterator over the (key, value) pairs in the nested structure.
+    """
+
+    def __init__(self):
+        """
+        Initializes the NestedDefaultDict with a three-level nested defaultdict structure.
+        """
+        self.data = defaultdict(self._nested_defaultdict)
+
+    def _float_defaultdict(self):
+        """
+        Returns a defaultdict that defaults to float.
+
+        Returns
+        -------
+        defaultdict
+            A defaultdict that returns float by default.
+        """
+        return defaultdict(float)
+
+    def _nested_defaultdict(self):
+        """
+        Returns a defaultdict that defaults to another level of nested defaultdict.
+
+        Returns
+        -------
+        defaultdict
+            A defaultdict that returns a defaultdict with float as the innermost default.
+        """
+        return defaultdict(self._float_defaultdict)
+
+    def __getitem__(self, key):
+        """
+        Returns the value associated with the key, creating nested levels as needed.
+
+        Parameters
+        ----------
+        key : hashable
+            The key to access in the nested defaultdict.
+
+        Returns
+        -------
+        defaultdict
+            The value associated with the key, which is another level of defaultdict.
+        """
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        """
+        Sets the value associated with the key.
+
+        Parameters
+        ----------
+        key : hashable
+            The key to set in the nested defaultdict.
+        value : any
+            The value to associate with the key.
+        """
+        self.data[key] = value
+
+    def __delitem__(self, key):
+        """
+        Delete a key-value pair from the dictionary and trigger callbacks.
+
+        Args:
+            key: The key to delete.
+        """
+        del self.data[key]
+
+    def __contains__(self, key):
+        """
+        Checks if the key exists in the nested structure without creating new entries.
+
+        Parameters
+        ----------
+        key : hashable
+            The key to check in the nested defaultdict.
+
+        Returns
+        -------
+        bool
+            True if the key exists, False otherwise.
+        """
+        return key in self.data
+
+    def __repr__(self):
+        """
+        Returns the string representation of the object.
+
+        Returns
+        -------
+        str
+            The string representation of the NestedDefaultDict object.
+        """
+        return repr(self.data)
+
+    def __str__(self) -> str:
+        """
+        Returns the string representation of the object.
+
+        Returns
+        -------
+        str
+            The string representation of the NestedDefaultDict object.
+        """
+        return str(self._recursive_dict(self.data))
+
+    def _recursive_dict(self, d):
+        """
+        Recursively converts the nested defaultdict structure to a regular dictionary
+        for pretty printing.
+
+        Parameters
+        ----------
+        d : defaultdict
+            The nested defaultdict to convert.
+
+        Returns
+        -------
+        dict
+            The converted dictionary.
+        """
+        if isinstance(d, defaultdict):
+            return {k: self._recursive_dict(v) for k, v in d.items()}
+        return d
+
+    def items(self):
+        """
+        Returns an iterator over the (key, value) pairs in the nested structure.
+
+        Yields
+        ------
+        tuple
+            A tuple containing the key and value, where value may be another defaultdict.
+        """
+        return self._recursive_items(self.data)
+
+    def _recursive_items(self, d):
+        """
+        Recursively yields (key, value) pairs from the nested defaultdict structure.
+
+        Parameters
+        ----------
+        d : defaultdict
+            The nested defaultdict to iterate over.
+
+        Yields
+        ------
+        tuple
+            A tuple containing the key and value, where value may be another defaultdict.
+        """
+        for k, v in d.items():
+            if isinstance(v, defaultdict):
+                yield k, dict(self._recursive_items(v))
+            else:
+                yield k, v

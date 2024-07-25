@@ -1,0 +1,4 @@
+1. lmfit/model.py class CompositeModel
+    move   def _tmp(self, *args, **kws):
+                pass
+    outside from __init__

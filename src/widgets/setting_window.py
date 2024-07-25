@@ -57,13 +57,9 @@ class SettingWindow(QWidget):
         self.ui_form.axis_label_font_size_spinBox.setValue(int(os.environ['axis_label_font_size']))
         self.ui_form.axis_label_font_size_spinBox.valueChanged.connect(self.axis_label_font_size_changed)
 
-        self.ui_form.target_peak_parameter_combo_box.addItems(['Amplitude', 'Area'])
-        # self.ui_form.target_peak_parameter_combo_box.setCurrentText(parent.prefs['target_peak_parameter'])
-
         self.closeEvent = self.settings_form_close_event
         self.ui_form.ThemeComboBox_Bckgrnd.currentTextChanged.connect(self.theme_bckgrnd_text_changed)
         self.ui_form.ThemeComboBox_Color.currentTextChanged.connect(self.theme_color_setting_text_changed)
-        self.ui_form.target_peak_parameter_combo_box.currentTextChanged.connect(self.target_peak_parameter_changed)
 
     def settings_form_close_event(self, _) -> None:
         self.write_pref_file()
@@ -75,8 +71,7 @@ class SettingWindow(QWidget):
                     'recent_limit': str(self.ui_form.recent_limit_spinBox.value()),
                     'undo_limit': str(self.parent.undoStack.undoLimit()),
                     'plot_font_size': str(self.ui_form.axis_font_size_spinBox.value()),
-                    'axis_label_font_size': str(self.ui_form.axis_label_font_size_spinBox.value()),
-                    'target_peak_parameter': self.ui_form.target_peak_parameter_combo_box.currentText()}
+                    'axis_label_font_size': str(self.ui_form.axis_label_font_size_spinBox.value())}
         for param, value in settings.items():
             os.environ[param] = value
 
@@ -104,9 +99,6 @@ class SettingWindow(QWidget):
         os.environ['theme_color'] = theme_name
         parent.update_icons()
         parent.theme[2] = get_theme_colors(os.environ['theme'], theme_name)
-
-    def target_peak_parameter_changed(self, target_parameter: str) -> None:
-        os.environ['target_peak_parameter'] = target_parameter
 
     def recent_limit_spin_box_changed(self, recent_limit: int) -> None:
         os.environ['recent_limit'] = recent_limit

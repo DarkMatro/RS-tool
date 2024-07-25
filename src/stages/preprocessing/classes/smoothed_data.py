@@ -1,3 +1,18 @@
+"""
+Module for smoothing data within a preprocessing stage.
+
+This module defines the `SmoothedData` class, which manages the user interface and
+smoothing operations for spectral data, and the `CommandSmooth` class, which handles
+undo/redo operations for the smoothing process.
+
+Classes
+-------
+SmoothedData
+    Manages smoothing operations for spectral data within a preprocessing stage.
+CommandSmooth
+    Handles undo/redo operations for the smoothing process.
+"""
+
 from copy import deepcopy, copy
 
 import numpy as np
@@ -18,19 +33,24 @@ from src.data.default_values import smoothing_methods
 
 class SmoothedData(PreprocessingStage):
     """
-    Smoothed spectrum from previous stage
+    Manages smoothing operations for spectral data within a preprocessing stage.
 
     Parameters
-    -------
-    parent: Preprocessing
-        class Preprocessing
+    ----------
+    parent : Preprocessing
+        The parent preprocessing stage.
 
     Attributes
-    -------
-    ui: object
-        user interface form
+    ----------
+    ui : object
+        The user interface form.
+    smoothing_methods : dict
+        A dictionary of available smoothing methods.
+    current_method : str
+        The currently selected smoothing method.
+    name : str
+        The name of the stage.
     """
-
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.ui = None
@@ -40,12 +60,12 @@ class SmoothedData(PreprocessingStage):
 
     def set_ui(self, ui: Ui_SmoothForm) -> None:
         """
-        Set user interface object
+        Set the user interface object.
 
         Parameters
-        -------
-        ui: Ui_SmoothForm
-            widget
+        ----------
+        ui : Ui_SmoothForm
+            The user interface widget.
         """
         context = get_parent(self.parent, "Context")
         defaults = get_config('defaults')
@@ -54,10 +74,8 @@ class SmoothedData(PreprocessingStage):
         self.ui.save_btn.clicked.connect(self.save)
         self.ui.activate_btn.clicked.connect(self.activate)
         self.ui.smooth_btn.clicked.connect(self._smooth_clicked)
-
         self.ui.smoothing_method_comboBox.currentTextChanged.connect(self.method_changed)
         self.ui.smoothing_method_comboBox.setCurrentText(defaults['smoothing_method_comboBox'])
-
         self._init_smoothing_method_combo_box()
         self.ui.window_length_spinBox.mouseDoubleClickEvent = lambda event: \
             self.reset_field(event, 'window_length_spinBox')
@@ -90,7 +108,7 @@ class SmoothedData(PreprocessingStage):
 
     def reset(self) -> None:
         """
-        Reset class data.
+        Reset the class data and UI to default values.
         """
         self.data.clear()
         defaults = get_config('defaults')
@@ -116,12 +134,12 @@ class SmoothedData(PreprocessingStage):
 
     def read(self) -> dict:
         """
-        Read attributes data.
+        Read the current attributes' data.
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            A dictionary containing all class attributes data.
         """
         dt = {"data": self.data.get_data(),
               'window_length_spinBox': self.ui.window_length_spinBox.value(),
@@ -138,12 +156,12 @@ class SmoothedData(PreprocessingStage):
 
     def load(self, db: dict) -> None:
         """
-        Load attributes data from file.
+        Load attributes data from a dictionary.
 
         Parameters
-        -------
-        db: dict
-            all class attributes data
+        ----------
+        db : dict
+            A dictionary containing all class attributes data.
         """
         self.data.update(db['data'])
         self.ui.window_length_spinBox.setValue(db['window_length_spinBox'])
@@ -160,14 +178,14 @@ class SmoothedData(PreprocessingStage):
 
     def reset_field(self, event: QMouseEvent, field_id: str) -> None:
         """
-        Change field value to default on double click by MiddleButton.
+        Reset the field value to default on a middle-button double click.
 
         Parameters
-        -------
-        event: QMouseEvent
-
-        field_id: str
-            name of field
+        ----------
+        event : QMouseEvent
+            The mouse event.
+        field_id : str
+            The name of the field to reset.
         """
         if event.buttons() != Qt.MouseButton.MiddleButton:
             return
@@ -192,14 +210,30 @@ class SmoothedData(PreprocessingStage):
 
     def plot_items(self) -> ItemsView:
         """
-        Returns data for plotting
+        Get data for plotting.
+
+        Returns
+        -------
+        ItemsView
+            An items view of the data.
         """
         return self.data.items()
 
     def _init_smoothing_method_combo_box(self) -> None:
+        """
+        Initialize the smoothing method combo box with available methods.
+        """
         self.ui.smoothing_method_comboBox.addItems(self.smoothing_methods.keys())
 
     def method_changed(self, current_text: str):
+        """
+        Handle changes in the selected smoothing method.
+
+        Parameters
+        ----------
+        current_text : str
+            The currently selected smoothing method.
+        """
         context = get_parent(self.parent, "Context")
         context.set_modified()
         self.ui.window_length_spinBox.setVisible(False)
@@ -231,6 +265,9 @@ class SmoothedData(PreprocessingStage):
 
     @asyncSlot()
     async def _smooth_clicked(self) -> None:
+        """
+        Handle the smooth button click event asynchronously.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
@@ -242,6 +279,16 @@ class SmoothedData(PreprocessingStage):
 
     @asyncSlot()
     async def _smooth(self, mw: QMainWindow, data: ObservableDict) -> None:
+        """
+        Perform the smoothing operation asynchronously.
+
+        Parameters
+        ----------
+        mw : QMainWindow
+            The main window object.
+        data : ObservableDict
+            The data to be smoothed.
+        """
         n_files = len(data)
         cfg = get_config("texty")["smooth"]
         method = self.ui.smoothing_method_comboBox.currentText()
@@ -259,8 +306,7 @@ class SmoothedData(PreprocessingStage):
         result: list[tuple[str, np.ndarray]] = await mw.progress.run_in_executor(
             "smooth", func, iter_by.items(), *args, **kwargs
         )
-        cancel = mw.progress.close_progress(cfg)
-        if cancel:
+        if mw.progress.close_progress(cfg):
             return
         if not result:
             mw.ui.statusBar.showMessage(cfg["no_result_msg"])
@@ -271,6 +317,19 @@ class SmoothedData(PreprocessingStage):
         context.undo_stack.push(command)
 
     def smoothing_params(self, method: str) -> int | tuple[int, int | str] | tuple[float, int, int]:
+        """
+        Get the smoothing parameters for the selected method.
+
+        Parameters
+        ----------
+        method : str
+            The smoothing method.
+
+        Returns
+        -------
+        int or tuple
+            The parameters for the smoothing method.
+        """
         mw = get_parent(self.parent, "MainWindow")
         params = None
         match method:
@@ -304,19 +363,29 @@ class SmoothedData(PreprocessingStage):
 
 class CommandSmooth(UndoCommand):
     """
-    Change data for smoothing stage.
+    Handles undo/redo operations for the smoothing process.
 
     Parameters
-    -------
-    data: list[tuple[str, ndarray]]
-        filename: str
-            as input
-        array: np.ndarray
-            processed 2D array with normalized wavelengths and intensities
-    parent: Context
-        Backend context class
-    text: str
-        description
+    ----------
+    data : list of tuple[str, np.ndarray]
+        A list of tuples containing filenames and their corresponding smoothed data arrays.
+    parent : Context
+        The backend context class.
+    text : str
+        The description of the command.
+
+    Attributes
+    ----------
+    stage : SmoothedData
+        The smoothing stage object.
+    params : list
+        The parameters used for the smoothing method.
+    method_new : str
+        The description of the new smoothing method.
+    method_old : str
+        The description of the old smoothing method.
+    smoothed_df : pd.DataFrame
+        The new and old smoothed data frame.
     """
 
     def __init__(self, data: list[tuple[str, np.ndarray]],
@@ -329,34 +398,48 @@ class CommandSmooth(UndoCommand):
         self.old_data = deepcopy(self.stage.data.get_data())
         self.method_new = self.generate_title_text(method)
         self.method_old = copy(self.stage.current_method)
-        self.smoothed_df_new = deepcopy(self.create_smoothed_dataset_new())
-        self.smoothed_df_old = deepcopy(self.mw.ui.smoothed_dataset_table_view.model().dataframe())
+        self.smoothed_df = {'new': deepcopy(self.create_smoothed_dataset_new()),
+                            'old': deepcopy(
+                                self.mw.ui.smoothed_dataset_table_view.model().dataframe())}
 
     def redo_special(self):
         """
-        Update data
+        Update data for redo operation.
         """
         self.stage.data.clear()
         self.stage.data.update(dict(self.data))
         self.stage.current_method = self.method_new
-        self.mw.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_df_new)
+        self.mw.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_df['new'])
 
     def undo_special(self):
         """
-        Undo data
+        Undo data for undo operation.
         """
         self.stage.data.clear()
         self.stage.data.update(self.old_data)
         self.stage.current_method = self.method_old
-        self.mw.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_df_old)
+        self.mw.ui.smoothed_dataset_table_view.model().set_dataframe(self.smoothed_df['old'])
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements.
         """
         self.parent.preprocessing.update_plot_item("SmoothedData")
 
     def generate_title_text(self, method: str) -> str:
+        """
+        Generate the title text for the smoothing method.
+
+        Parameters
+        ----------
+        method : str
+            The smoothing method.
+
+        Returns
+        -------
+        str
+            The generated title text.
+        """
         text = method + '. '
         match method:
             case 'EMD':
@@ -385,6 +468,14 @@ class CommandSmooth(UndoCommand):
         return text
 
     def create_smoothed_dataset_new(self) -> pd.DataFrame:
+        """
+        Create a new smoothed dataset data frame.
+
+        Returns
+        -------
+        pd.DataFrame
+            The new smoothed data frame.
+        """
         filename_group = self.mw.ui.input_table.model().column_data(2)
         x_axis = self.data[0][1][:, 0]
         columns_params = [f'k{np.round(i, 2)}' for i in x_axis]

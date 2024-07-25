@@ -5,9 +5,9 @@ from qtpy.QtGui import QColor, QCursor
 from qtpy.QtWidgets import QDoubleSpinBox, QStyledItemDelegate, QListWidget, QListWidgetItem
 
 from qfluentwidgets import TableItemDelegate
-from src.data.default_values import peak_shape_params_limits
-from src.undo_redo import CommandUpdateTableCell, CommandDeconvLineParameterChanged, \
-    CommandFitIntervalChanged
+from src import get_config
+from src.backend.undo_stack import CommandUpdateTableCell, CommandFitIntervalChanged
+from src.stages.fitting.classes.undo import CommandDeconvLineParameterChanged
 
 
 class PandasModel(QAbstractTableModel):
@@ -225,7 +225,7 @@ class PandasModel(QAbstractTableModel):
         self.modelReset.emit()
 
 
-class InputTable(PandasModel):
+class InputPandasTable(PandasModel):
     """A model to interface a Qt view with pandas dataframe """
 
     def __init__(self, dataframe: DataFrame):
@@ -336,13 +336,14 @@ class InputTable(PandasModel):
         filenames = rows.index
         return set(filenames)
 
+
 class GroupsTableModel(PandasModel):
     """A model to interface a Qt view with pandas dataframe """
 
-    def __init__(self, dataframe: DataFrame, undo_stack):
+    def __init__(self, dataframe: DataFrame, context):
         super().__init__(dataframe)
         self._dataframe = dataframe
-        self.undo_stack = undo_stack
+        self.context = context
 
     def get_group_name_by_int(self, group_number: int) -> str:
         return self._dataframe.loc[self._dataframe.index == group_number].iloc[0]['Group name']
@@ -419,16 +420,16 @@ class GroupsTableModel(PandasModel):
     def setData(self, index, value, role):
         if role == Qt.EditRole and not index.column() == 1:
             old_value = self._dataframe.iloc[index.row(), index.column()]
-            command = CommandUpdateTableCell(self, self.undo_stack, index, value, old_value,
-                                             'Change group name')
-            self.undo_stack.push(command)
+            command = CommandUpdateTableCell((value, old_value), self.context,
+                                             "Change group name", **{'index': index,
+                                                                     'obj': self})
+            self.context.undo_stack.push(command)
             return True
-        else:
-            return False
+        return False
 
     @property
     def groups_styles(self) -> list:
-        return [x for x in self._dataframe.iloc[:, 1]]
+        return list(self._dataframe.iloc[:, 1])
 
     @property
     def groups_colors(self) -> list:
@@ -558,9 +559,9 @@ class PandasModelDeconvLinesTable(PandasModel):
 
     sigCheckedChanged = Signal(int, bool)
 
-    def __init__(self, parent, dataframe: DataFrame, checked: list[bool]):
+    def __init__(self, context, dataframe: DataFrame, checked: list[bool]):
         super().__init__(dataframe)
-        self.parent = parent
+        self.context = context
         self._dataframe = dataframe
         self._checked = checked
 
@@ -645,18 +646,18 @@ class PandasModelDeconvLinesTable(PandasModel):
     def setData(self, index, value, role):
         if role == Qt.EditRole and index.column() == 0:
             old_value = self._dataframe.iloc[index.row(), index.column()]
-            command = CommandUpdateTableCell(self, self.parent, index, value, old_value,
-                                             'Change line name')
-            self.parent.undoStack.push(command)
+            command = CommandUpdateTableCell((value, old_value), self.context,
+                                             "Change line name", **{'index': index,
+                                                                    'obj': self})
+            self.context.undo_stack.push(command)
             return True
-        elif role == Qt.CheckStateRole:
+        if role == Qt.CheckStateRole:
             checked = value == 2
             checked_idx = self._dataframe.iloc[index.row()].name
             self._checked[checked_idx] = checked
             self.sigCheckedChanged.emit(checked_idx, checked)
             return True
-        else:
-            return False
+        return False
 
     def sort_values(self, current_name: str, ascending: bool) -> None:
         self._dataframe = self._dataframe.sort_values(by=current_name, ascending=ascending)
@@ -737,7 +738,7 @@ class PandasModelFitParamsTable(PandasModel):
         # limits in self.parent.deconv_line_params_limits
         min_value = param_value
         max_value = param_value
-        par_limits = peak_shape_params_limits()
+        par_limits = get_config('fitting')['peak_shape_params_limits']
         if param_name == 'a':
             min_value = 0
             max_value = param_value * 2
@@ -1256,16 +1257,16 @@ class DoubleSpinBoxDelegate(QStyledItemDelegate):
 
     def __init__(self, rs):
         super().__init__()
-        self.RS = rs
+        self.mw = rs
 
     def createEditor(self, parent, option, index):
-        param_name = self.RS.ui.fit_params_table.model().row_data(index.row()).name[2]
+        param_name = self.mw.ui.fit_params_table.model().row_data(index.row()).name[2]
         min_limit = -1e6
         max_limit = 1e6
         if param_name == 'l_ratio':
             min_limit = 0.0
             max_limit = 1.0
-        elif param_name == 'expon' or param_name == 'beta':
+        elif param_name in ['expon', 'beta']:
             min_limit = 0.1
         elif param_name == 'alpha':
             min_limit = -1.0
@@ -1291,11 +1292,12 @@ class DoubleSpinBoxDelegate(QStyledItemDelegate):
             return
         _, line_index, param_name = model.dataframe().iloc[index.row()].name
         self.sigLineParamChanged.emit(new_float, line_index, param_name)
-        self.RS.fitting.CommandDeconvLineDraggedAllowed = False
-        command = CommandDeconvLineParameterChanged(self, self.RS, index, new_float, current_float,
-                                                    model,
-                                                    line_index, param_name, "Edit line %s" % index)
-        self.RS.undoStack.push(command)
+        command = CommandDeconvLineParameterChanged((index, new_float, current_float),
+                                                    self.mw.context, text=f"Edit line {index}",
+                                                    **{'stage': self, 'model': model,
+                                                       'line_index': line_index,
+                                                       'param_name': param_name})
+        self.mw.context.undo_stack.push(command)
 
     @pyqtSlot()
     def editing_finished(self):
@@ -1304,9 +1306,9 @@ class DoubleSpinBoxDelegate(QStyledItemDelegate):
 
 class IntervalsTableDelegate(TableItemDelegate):
 
-    def __init__(self, parent, rs):
+    def __init__(self, parent, context):
         super().__init__(parent)
-        self.rs = rs
+        self.context = context
 
     def createEditor(self, parent, option, index):
         editor = QDoubleSpinBox(parent)
@@ -1324,9 +1326,10 @@ class IntervalsTableDelegate(TableItemDelegate):
             return
         if index.column() != 0:
             return
-        command = CommandFitIntervalChanged(self.rs, index, new_float, model,
-                                            "Edit interval %s" % index)
-        self.rs.undoStack.push(command)
+        command = CommandFitIntervalChanged(new_float, self.context,
+                                            f"Edit interval {index}",
+                                            **{'index': index, 'model': model})
+        self.context.undo_stack.push(command)
 
     @pyqtSlot()
     def editing_finished(self):

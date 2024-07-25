@@ -1,8 +1,10 @@
 """
-Input data with import, interpolate and despike.
+Input data with import, interpolate, and despike functionalities.
 
-classes:
-    * InputData
+Classes
+-------
+InputData : PreprocessingStage
+    Handles importing files, interpolation, and despiking of data.
 """
 
 from pathlib import Path
@@ -29,25 +31,25 @@ from .stages import PreprocessingStage
 
 class InputData(PreprocessingStage):
     """
-    Import files, interpolate and despike.
+    Class for importing files, interpolating, and despiking data.
 
     Parameters
-    -------
-    parent: Preprocessing
-        class Preprocessing
+    ----------
+    parent : Preprocessing
+        Instance of the Preprocessing class.
 
     Attributes
-    -------
-    ui: Ui_ImportForm
-        user interface form
-    data: ObservableDict
-        key - filename, value - 2D array spectrum
-    before_despike_data: ObservableDict
-        key - filename, value - 2D array spectrum before despike to compare
-    ranges: dict
-        spectral range for interpolation
-    despiked_one_curve: PlotDataItem
-        pyqtgraph plot item for show spectrum before despike procedure
+    ----------
+    ui : Ui_ImportForm
+        User interface form.
+    data : ObservableDict
+        Dictionary where keys are filenames and values are 2D array spectra.
+    before_despike_data : ObservableDict
+        Dictionary to compare data before and after despiking.
+    ranges : dict
+        Spectral range for interpolation.
+    despiked_one_curve : PlotDataItem
+        PyQtGraph plot item for showing spectrum before despiking.
     """
 
     def __init__(self, parent, *args, **kwargs):
@@ -61,9 +63,9 @@ class InputData(PreprocessingStage):
 
     def data_changed(self, _):
         """
-        update selectable ranges for interpolation
-        if there are more than 1 range - enable interpolation button
-        despike enabled if there are any spectrum
+        Update selectable ranges for interpolation.
+        Enable interpolation button if there are more than one range.
+        Enable despike if there is any spectrum.
         """
         ranges = self._check_ranges()
         self.ranges = {str(k): k for k in ranges.keys()}
@@ -79,7 +81,7 @@ class InputData(PreprocessingStage):
 
     def reset(self) -> None:
         """
-        Reset class data.
+        Reset class data to default values.
         """
         self.data.clear()
         self.before_despike_data.clear()
@@ -93,8 +95,8 @@ class InputData(PreprocessingStage):
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            Dictionary containing all class attributes data.
         """
         dt = {"data": self.data.get_data(),
               'before_despike_data': self.before_despike_data.get_data(),
@@ -107,9 +109,9 @@ class InputData(PreprocessingStage):
         Load attributes data from file.
 
         Parameters
-        -------
-        db: dict
-            all class attributes data
+        ----------
+        db : dict
+            Dictionary containing all class attributes data.
         """
         self.data.update(db['data'])
         self.before_despike_data.update(db['before_despike_data'])
@@ -118,13 +120,13 @@ class InputData(PreprocessingStage):
 
     def set_ui(self, ui: Ui_ImportForm) -> None:
         """
-        Set ui as Ui_ImportForm.
-        Setup buttons and input forms events
+        Set the user interface as Ui_ImportForm.
+        Setup buttons and input forms events.
 
         Parameters
-        -------
-        ui: Ui_ImportForm
-            widget Ui_ImportForm
+        ----------
+        ui : Ui_ImportForm
+            User interface form widget.
         """
         context = get_parent(self.parent, "Context")
         self.ui = ui
@@ -145,14 +147,14 @@ class InputData(PreprocessingStage):
 
     def reset_field(self, event: QMouseEvent, field_id: str) -> None:
         """
-        Change field value to default on double click by MiddleButton.
+        Change field value to default on double-click with MiddleButton.
 
         Parameters
-        -------
-        event: QMouseEvent
-
-        field_id: str
-            name of field
+        ----------
+        event : QMouseEvent
+            Mouse event.
+        field_id : str
+            Name of the field to reset.
         """
         if event.buttons() != Qt.MouseButton.MiddleButton:
             return
@@ -167,15 +169,19 @@ class InputData(PreprocessingStage):
 
     def plot_items(self) -> dict:
         """
-        Returns data for plotting
+        Get data for plotting.
+
+        Returns
+        -------
+        dict
+            Dictionary of items for plotting.
         """
         return self.data.items()
 
     @asyncSlot()
     async def _importfile_clicked(self) -> None:
         """
-        importfile clicked event for import files with Raman data
-        Select files with QFileDialog and sent it to import_files
+        Handle import file button clicked event to import files with Raman data.
         """
         main_window = get_parent(self.parent, "MainWindow")
         if main_window.progress.time_start is not None:
@@ -201,15 +207,12 @@ class InputData(PreprocessingStage):
     @asyncSlot()
     async def import_files(self, path_list: list[str]) -> None:
         """
-        importfile clicked event for import files with Raman data
-        1. read files to 2d array by numpy
-        2. using ThreadPoolExecutor add arrays to self.ImportedArray and new row to input_table
-        3. update plot
+        Import files with Raman data.
 
         Parameters
-        -------
-        path_list: list[str]
-            selected filenames
+        ----------
+        path_list : list of str
+            List of selected filenames.
         """
         mw = get_parent(self.parent, "MainWindow")
         path_list = [x for x in path_list if Path(x).suffix.lower() in ['.txt', '.asc']]
@@ -272,6 +275,13 @@ class InputData(PreprocessingStage):
         mw.progress.time_start = None
 
     def _check_ranges(self) -> Counter:
+        """
+        Check ranges for interpolation.
+
+        Returns
+        -------
+        Counter of ranges.
+        """
         cnt = Counter()
         for _, arr in self.data.items():
             arr = arr[:, 0]
@@ -281,6 +291,9 @@ class InputData(PreprocessingStage):
 
     @asyncSlot()
     async def _interpolate_clicked(self) -> None:
+        """
+        Handle interpolate button clicked event.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None or len(self.data) < 2:
             return
@@ -309,6 +322,19 @@ class InputData(PreprocessingStage):
         context.undo_stack.push(command)
 
     def _get_ref_x_axis(self, target_range_nm: tuple[int, int]) -> np.ndarray | None:
+        """
+        Get reference X-axis for interpolation.
+
+        Parameters
+        ----------
+        target_range_nm : tuple of int
+            Target range in nm.
+
+        Returns
+        -------
+        np.ndarray or None
+            Reference X-axis array or None.
+        """
         for spectrum in self.data.values():
             x_axis = spectrum[:, 0]
             new_range = (x_axis[0], x_axis[-1])
@@ -318,6 +344,9 @@ class InputData(PreprocessingStage):
 
     @asyncSlot()
     async def _despike_clicked(self) -> None:
+        """
+        Handle despike button clicked event.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None or len(self.data) == 0:
             return
@@ -382,7 +411,7 @@ class InputData(PreprocessingStage):
 
     async def despike_history_add_plot(self, current_spectrum_name) -> None:
         """
-        Add arrows and BeforeDespike plot item to imported_plot for compare
+        Add arrows and before despike plot item to imported plot for comparison.
         """
         # selected spectrum despiked
         mw = get_parent(self.parent, "MainWindow")
@@ -411,7 +440,7 @@ class InputData(PreprocessingStage):
 
     async def despike_history_remove_plot(self) -> None:
         """
-        remove old history _BeforeDespike plot item and arrows
+        Remove old history before despike plot item and arrows.
         """
         mw = get_parent(self.parent, "MainWindow")
         plot_item = mw.ui.preproc_plot_widget.getPlotItem()
@@ -428,34 +457,26 @@ class InputData(PreprocessingStage):
 
 class CommandImportFiles(UndoCommand):
     """
-    Store new imported spectra into InputData.
-    Add rows into InputTable.
-    Update plot.
+    Command for storing new imported spectra into InputData.
 
     Parameters
-    -------
-    data: list[tuple[str, np.ndarray, str, str, str, float]]
-        indexes: 0 - filename, 1 - array, 2 - group_number, 3 - min_nm, 4 - max_nm, 5 - FWHM nm
-    parent: Context
-        Backend context class
-    text: str
-        description
+    ----------
+    data : list of tuple
+        List containing imported data information.
+    parent : Context
+        Backend context class.
+    text : str
+        Description of the command.
     """
 
-    def __init__(
-            self,
-            data: list[tuple[str, np.ndarray, str, str, str, float]],
-            parent,
-            text: str,
-            *args,
-            **kwargs
-    ) -> None:
+    def __init__(self, data: list[tuple[str, np.ndarray, str, str, str, float]], parent,
+            text: str, *args, **kwargs) -> None:
         super().__init__(data, parent, text, *args, **kwargs)
         self.cols = list(zip(*self.data))
 
     def redo_special(self):
         """
-        Update input_table. Update input_data.data
+        Update input table and input data.
         """
         col_data = {
             "Min, nm": self.cols[3],
@@ -471,7 +492,7 @@ class CommandImportFiles(UndoCommand):
 
     def undo_special(self):
         """
-        Undo update input_table and Undo update input_data.data
+        Undo update to input table and input data.
         """
         self.mw.ui.input_table.model().delete_rows(names=self.cols[0])
         old_data = self.parent.preprocessing.stages.input_data.data

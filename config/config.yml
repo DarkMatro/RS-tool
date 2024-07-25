@@ -1,0 +1,61 @@
+preferences:
+  path: config/preferences.json
+
+splash:
+  path: images/splash.tga
+  font_size: 14
+  font_family: 'Nasalization'
+
+logo:
+  path: images/logo.ico
+
+environ:
+  PYTHONASYNCIODEBUG: '1'
+  QT_AUTO_SCREEN_SCALE_FACTOR: '1'
+  PYQTGRAPH_QT_LIB: 'PyQt5'
+  CANCEL: '0'
+  OPENBLAS_NUM_THREADS: '1'
+
+help:
+  path: help\index.htm
+  demo_project_path: "examples/demo_project.zip"
+
+recent:
+  path: recent_files.pkl
+
+theme:
+  path:
+    background: ./material/themes/background/
+    colors: ./material/themes/colors/
+
+fonts:
+  path: ./material/fonts/
+
+resources:
+  path: ./material/resources/
+
+material:
+  path: ./material/
+  styles_name: styles.css
+
+logging:
+  folder: /RS-tool/
+  filename: log.log
+
+n_files_limit:
+  import: 10000
+  export_files: 100000
+  interpolate: 10000
+  despike: 1000
+  convert: 12000
+  update_range: 100000
+  cut: 16000
+  normalization: 16000
+  smooth: 12
+  baseline: 24
+  fit: -1
+  guess: -1
+  batch_fit: -1
+  uncertain: -1
+  fit_model: -1
+  optuna: -1

@@ -9,7 +9,7 @@ import winsound
 from asyncqtpy import asyncSlot
 from pandas import DataFrame, concat
 
-from src.stages.stat_analysis.functions.fit_classificators import clf_predict
+from src.stages.ml.functions.fit_classificators import clf_predict
 
 
 
@@ -81,7 +81,6 @@ class PredictLogic:
         main_window.open_progress_dialog("Predicting...", "Cancel", maximum=len(clfs))
 
         X, _, _, _, filenames = main_window.stat_analysis_logic.dataset_for_ml()
-        X = X.iloc[:, 1:]
         executor = ThreadPoolExecutor()
         # Для БОльших датасетов возможно лучше будет ProcessPoolExecutor. Но таких пока нет
         main_window.ex = executor

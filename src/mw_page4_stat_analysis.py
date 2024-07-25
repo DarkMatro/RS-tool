@@ -22,7 +22,6 @@ from seaborn import histplot, color_palette
 from sklearn.calibration import CalibrationDisplay
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
-from sklearn.feature_selection import SelectPercentile
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.inspection import DecisionBoundaryDisplay, permutation_importance, \
     PartialDependenceDisplay
@@ -38,46 +37,13 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import label_binarize
 from sklearn.svm import NuSVC
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.tree import plot_tree
 from xgboost import XGBClassifier
 
-from qfluentwidgets import MessageBox
 from src.data.default_values import classificator_funcs
-from src.mutual_functions.static_functions import insert_table_to_text_edit
-from src.stages.stat_analysis.functions.fit_classificators import objective
+from src.stages.ml.functions.fit_classificators import objective
 from src.undo_redo import CommandAfterFittingStat
 
 warnings.filterwarnings('ignore')
-
-
-def lda_coef_equation(model) -> str:
-    """
-    Формирует уравнение LDA вида
-        a = c1*x1 + c2*x2 ... cn*xn
-        где cn - коэффиент, xn - признак
-    Коэффициенты отсортированы по возрастанию по абсолютной величине.
-
-    Parameters
-    ----------
-    model : LDA model
-
-    Returns
-    -------
-    out : str
-        Equation
-    """
-    model = model.best_estimator_ if isinstance(model, GridSearchCV) else model
-    for n_ld in range(len(model.coef_)):
-        coef = model.coef_[n_ld]
-        feature_names = model.feature_names_in_
-        name_coef = {}
-        for i, n in enumerate(feature_names):
-            name_coef[n] = coef[i]
-        name_coef = sorted(name_coef.items(), key=lambda x: abs(x[1]), reverse=True)
-        eq_text = 'LD-%s =' % str(n_ld + 1)
-        for feature_name, coef_value in name_coef:
-            eq_text += '+ %s * x(%s) ' % (coef_value, feature_name)
-        return eq_text
 
 
 class StatAnalysisLogic:
@@ -93,9 +59,7 @@ class StatAnalysisLogic:
 
     def get_random_state(self) -> None | int:
         main_window = self.parent
-        rng = None
-        if main_window.ui.random_state_cb.isChecked():
-            rng = np.random.RandomState(main_window.ui.random_state_sb.value())
+        rng = main_window.ui.random_state_sb.value()
         return rng
 
     @asyncSlot()
@@ -114,19 +78,8 @@ class StatAnalysisLogic:
                                                                        'PLS-DA'] else "Fitting %s ..." % cl_type
         main_window.open_progress_dialog(t, "Cancel", maximum=0)
         X, Y, feature_names, target_names, _ = self.dataset_for_ml()
+        Y = list(Y)
         rnd_state = self.get_random_state()
-        # # randoming X
-        # exact_values = main_window.ui.fit_params_table.model().get_df_by_filename('').iloc[:, 1: 2].query("param_name == 'a'").values.T
-        # stderr = [d['a'] for d in list(main_window.fitting.params_stderr[''].values())]
-        # rel_stderr = np.array(stderr) / exact_values
-        # rel_stderr = rel_stderr.T
-        # x_before = X.copy()
-        # for i, col in enumerate(reversed(X.columns[1:])):
-        #     err = rel_stderr[i]
-        #     X[col] = X[col].map(lambda v: np.random.uniform(v - v * err, v + v * err)[0])
-        # # --------
-        ros = RandomOverSampler(random_state=rnd_state)
-        X, Y = ros.fit_resample(X, Y)
         filenames = X['Filename']
         X = X.iloc[:, 1:]
         if cl_type == 'XGBoost':
@@ -139,11 +92,9 @@ class StatAnalysisLogic:
         y_test_bin = label_binarize(y_test, classes=list(set(Y))) if len(target_names) > 2 else None
         executor = ProcessPoolExecutor()
         func = self.classificator_funcs[cl_type]
-        # Для БОльших датасетов возможно лучше будет ProcessPoolExecutor. Но таких пока нет
         main_window.ex = executor
-        params = {'use_pca': self.parent.ui.use_pca_checkBox.isChecked(),
+        params = {
                   'refit': self.parent.ui.refit_score.currentText(),
-                  'use_GridSearchCV': self.parent.ui.use_grid_search_checkBox.isChecked(),
                   'random_state': rnd_state}
         self.add_params(params, cl_type, input_layer_size=x_train.shape[1])
         with Manager() as manager:
@@ -163,7 +114,6 @@ class StatAnalysisLogic:
         result['X'] = X
         result['Y'] = Y
         result['y_train'] = y_train
-        result['use_pca'] = self.parent.ui.use_pca_checkBox.isChecked()
         result['y_test'] = y_test
         result['x_train'] = x_train
         result['x_test'] = x_test
@@ -524,53 +474,6 @@ class StatAnalysisLogic:
         idx = np.argwhere(self.new_labels == i)[0][0]
         return self.old_labels[idx]
 
-    def dataset_for_ml(self) -> tuple[
-                                    DataFrame, list[int], list[str], np.ndarray, DataFrame] | None:
-        """
-        Выбор данных для обучения из датасета
-        @return:
-        X: DataFrame. Columns - fealures, rows - samples
-        Y: list[int]. True labels
-        feature_names: feature names (lol)
-        target_names: classes names
-        filenames
-        """
-        main_window = self.parent
-        selected_dataset = main_window.ui.dataset_type_cb.currentText()
-        if selected_dataset == 'Smoothed':
-            model = main_window.ui.smoothed_dataset_table_view.model()
-        elif selected_dataset == 'Baseline corrected':
-            model = main_window.ui.baselined_dataset_table_view.model()
-        elif selected_dataset == 'Decomposed':
-            model = main_window.ui.deconvoluted_dataset_table_view.model()
-        else:
-            return
-        q_res = model.dataframe()
-        if main_window.ui.classes_lineEdit.text() != '':
-            v = list(main_window.ui.classes_lineEdit.text().strip().split(','))
-            classes = []
-            for i in v:
-                classes.append(int(i))
-            if len(classes) > 1:
-                q_res = model.query_result_with_list('Class == @input_list', classes)
-        if selected_dataset == 'Decomposed':
-            ignored_features = main_window.ui.ignore_dataset_table_view.model().ignored_features
-            q_res = q_res.drop(ignored_features, axis=1)
-        y = list(q_res['Class'])
-        uniq_classes = np.unique(q_res['Class'].values)
-        classes = []
-        groups = main_window.context.group_table.table_widget.model().groups_list()
-        for i in uniq_classes:
-            if i in groups:
-                classes.append(i)
-        if main_window.predict_logic.is_production_project:
-            target_names = None
-        else:
-            target_names = main_window.context.group_table.table_widget.model().dataframe().loc[classes][
-                'Group name'].values
-
-        return q_res.iloc[:, 1:], y, list(q_res.axes[1][2:]), target_names, q_res.iloc[:, 1]
-
     def _get_plot_colors(self, classes: list[int]) -> list[str]:
         plt_colors = []
         for cls in classes:
@@ -590,98 +493,6 @@ class StatAnalysisLogic:
         else:
             return None
 
-    def update_stat_report_text(self, cl_type: str):
-        if self.parent.ui.current_classificator_comboBox.currentText() in ['PCA', 'PLS-DA']:
-            self.parent.ui.stat_report_text_edit.setText('')
-            return
-        classificator_type = cl_type
-        if classificator_type not in self.latest_stat_result or 'metrics_result' \
-                not in self.latest_stat_result[classificator_type]:
-            self.parent.ui.stat_report_text_edit.setText('')
-            return
-        if classificator_type in self.top_features:
-            top = self.top_features[classificator_type]
-        else:
-            top = None
-        model_results = self.latest_stat_result[classificator_type]
-        misclassified_filenames = np.unique(
-            model_results['filenames'].values[model_results['misclassified']])
-        self.update_report_text(model_results['metrics_result'], model_results['cv_scores'], top,
-                                model_results['model'], classificator_type, misclassified_filenames)
-
-    def update_report_text(self, metrics_result: dict, cv_scores=None, top=None, model=None,
-                           classificator_type=None,
-                           misclassified_filenames=None) -> None:
-        """
-        Set report text
-
-        Parameters
-        ----------
-        metrics_result: dict
-        cv_scores:
-        top:
-        model:
-        classificator_type
-        misclassified_filenames: ndarray
-            filenames which was classified wrong and will be shown in --Misclassified-- section
-
-        """
-        text = '\n' + 'Accuracy score (test data): {!s}%'.format(
-            metrics_result['accuracy_score']) + '\n' \
-               + 'Accuracy score (train data): {!s}%'.format(
-            metrics_result['accuracy_score_train']) + '\n' \
-               + 'Precision score: {!s}%'.format(metrics_result['precision_score']) + '\n' \
-               + 'Recall score: {!s}%'.format(metrics_result['recall_score']) + '\n' \
-               + 'F1 score: {!s}%'.format(metrics_result['f1_score']) + '\n' \
-               + 'F_beta score: {!s}%'.format(metrics_result['fbeta_score']) + '\n' \
-               + 'Hamming loss score: {!s}%'.format(metrics_result['hamming_loss']) + '\n' \
-               + 'Jaccard score: {!s}%'.format(metrics_result['jaccard_score']) + '\n' \
-               + 'AUC: {!s}%'.format(metrics_result['AUC']) + '\n' + '\n'
-        if top is not None:
-            text += 'top 5 features per class:' + '\n' + str(top) + '\n'
-        if cv_scores is not None:
-            text += '\n' + cv_scores + '\n'
-        if model is not None and not isinstance(model, HalvingGridSearchCV) and not isinstance(
-                model, GridSearchCV):
-            model = model.best_estimator_ if isinstance(model, GridSearchCV) else model
-            evr = model.explained_variance_ratio_
-            text += '\n' + 'Explained variance ratio : %s' % evr + '\n'
-        if model is not None and (
-                isinstance(model, GridSearchCV) or isinstance(model, HalvingGridSearchCV)):
-            text += '\n' + 'Mean Accuracy of best estimator: %.3f' % model.best_score_ + '\n'
-            text += 'Config: %s' % model.best_params_ + '\n'
-        if classificator_type in ['Random Forest', 'AdaBoost']:
-            text += 'N Trees: %s' % len(model.best_estimator_.estimators_) + '\n'
-
-        if misclassified_filenames is not None and misclassified_filenames.any():
-            text += '\n' + '--Misclassified--'
-            text += str(list(misclassified_filenames)) + '\n'
-        if classificator_type == 'LDA' and model:
-            model = model.best_estimator_ if (isinstance(model, GridSearchCV) or
-                                              isinstance(model, HalvingGridSearchCV)) else model
-            text += lda_coef_equation(model) + '\n'
-        self.parent.ui.stat_report_text_edit.setText(text)
-        if metrics_result['classification_report'] is None:
-            return
-        headers = [' ']
-        rows = []
-        for i in metrics_result['classification_report'].split('\n')[0].strip().split(' '):
-            if i != '':
-                headers.append(i)
-        for i, r in enumerate(metrics_result['classification_report'].split('\n')):
-            new_row = []
-            if r == '' or i == 0:
-                continue
-            rr = r.split('  ')
-            for c in rr:
-                if c == '':
-                    continue
-                new_row.append(c)
-            if new_row[0].strip() == 'accuracy':
-                new_row = [new_row[0], '', '', new_row[1], new_row[2]]
-            rows.append(new_row)
-
-        insert_table_to_text_edit(self.parent.ui.stat_report_text_edit.textCursor(), headers, rows)
 
     # region plots update
     def update_scores_plot(self, features_in_2d: np.ndarray, y: list[int], y_pred: list[int],
@@ -1464,8 +1275,6 @@ class StatAnalysisLogic:
             y_score_dec_func_x = model.decision_function(model_results['X'])
         if cl_type == 'LDA':
             dr_method = 'LD'
-        elif 'use_pca' in model_results and not model_results['use_pca']:
-            dr_method = 'PLS-DA'
         else:
             dr_method = 'PC'
         y_test_bin = model_results['y_test_bin']
@@ -1629,34 +1438,6 @@ class StatAnalysisLogic:
         except ValueError:
             pass
 
-    def compare_models_roc(self):
-        if not self.latest_stat_result:
-            return
-        models = []
-        for clf_name, model_results in self.latest_stat_result.items():
-            if clf_name in ['PCA', 'PLS-DA']:
-                continue
-            n_classes = len(model_results['model'].classes_)
-            if n_classes != 2:
-                MessageBox("ROC can't be created",
-                           'Expected binary classificator, got %s classes %s instead' % (
-                           n_classes, clf_name),
-                           self.parent, {'Ok'}).exec()
-                return
-            models.append((clf_name, model_results))
-        plot_widget = self.parent.ui.roc_comparsion_plot_widget
-        ax = plot_widget.canvas.axes
-        ax.cla()
-        for clf_name, model_results in models:
-            RocCurveDisplay.from_estimator(model_results['model'], model_results['x_test'],
-                                           model_results['y_test'],
-                                           pos_label=1, ax=ax, name=clf_name)
-        try:
-            plot_widget.canvas.draw()
-            plot_widget.canvas.figure.tight_layout()
-        except ValueError:
-            pass
-
     # region LDA
 
     def build_decision_score_plot(self, decision_function_values, class_names, Y) -> None:
@@ -1717,18 +1498,6 @@ class StatAnalysisLogic:
             ax.set_ylabel('MDI importance', fontsize=int(environ['axis_label_font_size']))
 
         ax.set_title(title)
-        try:
-            plot_widget.canvas.draw()
-            plot_widget.canvas.figure.tight_layout()
-        except ValueError:
-            pass
-
-    def update_plot_tree(self, clf, feature_names, class_names) -> None:
-        plot_widget = self.parent.ui.tree_plot_widget
-        ax = plot_widget.canvas.axes
-        ax.cla()
-        plot_tree(clf, feature_names=feature_names, fontsize=int(environ['plot_font_size']),
-                  class_names=class_names, ax=ax)
         try:
             plot_widget.canvas.draw()
             plot_widget.canvas.figure.tight_layout()
@@ -1822,58 +1591,6 @@ class StatAnalysisLogic:
 
     # endregion
 
-    # region PLS DA
-
-    def update_plsda_plots(self) -> None:
-        """
-        Update all PLS-DA plots and fields
-        @return: None
-        """
-        if 'PLS-DA' not in self.latest_stat_result:
-            return
-        model_results = self.latest_stat_result['PLS-DA']
-        y_train_plus_test = model_results['y_train_plus_test']
-        features_in_2d = model_results['features_in_2d']
-        explained_variance_ratio = model_results['explained_variance_ratio']
-
-        self.update_scores_plot_pca(features_in_2d, y_train_plus_test,
-                                    self.parent.ui.plsda_scores_plot_widget,
-                                    explained_variance_ratio, model_results['target_names'])
-        if 'vips' in model_results:
-            vips = model_results['vips']
-            df = DataFrame(list(zip(model_results['feature_names'], vips)),
-                           columns=['feature', 'VIP'])
-            self.parent.ui.plsda_vip_table_view.model().set_dataframe(df)
-            self.update_vip_plot(model_results['vips'], model_results['feature_names'])
-
-    def update_vip_plot(self, vips, features_names) -> None:
-        plot_widget = self.parent.ui.plsda_vip_plot_widget
-        ax = plot_widget.canvas.axes
-        ax.cla()
-        if self.parent.ui.dataset_type_cb.currentText() == 'Decomposed':
-            ser = Series(vips, index=features_names).sort_values(ascending=True)
-            ax.barh(ser.index, ser, color=environ['primaryColor'])
-            ax.set_xlabel('VIP', fontsize=int(environ['axis_label_font_size']))
-            ax.set_ylabel('Raman shift, cm\N{superscript minus}\N{superscript one}',
-                          fontsize=int(environ['axis_label_font_size']))
-        else:
-            k = []
-            for i in features_names:
-                k.append(float(i.replace('k', '')))
-            ser = Series(vips, index=k)
-            ax.plot(ser)
-            ax.set_xlabel('Raman shift, cm\N{superscript minus}\N{superscript one}',
-                          fontsize=int(environ['axis_label_font_size']))
-            ax.set_ylabel('VIP', fontsize=int(environ['axis_label_font_size']))
-        ax.set_title("Variable Importance in the Projection (VIP)")
-        try:
-            plot_widget.canvas.draw()
-        except ValueError:
-            pass
-        plot_widget.canvas.figure.tight_layout()
-
-    # endregion
-
     # region XGBoost
     def update_features_plot_xgboost(self, model) -> None:
         plot_widget = self.parent.ui.features_plot_widget
@@ -1886,20 +1603,6 @@ class StatAnalysisLogic:
             plot_widget.canvas.draw()
         except ValueError:
             pass
-        plot_widget.canvas.figure.tight_layout()
-
-    def update_xgboost_tree_plot(self, model, idx: int = 0) -> None:
-        plot_widget = self.parent.ui.tree_plot_widget
-        ax = plot_widget.canvas.axes
-        ax.cla()
-        # try:
-        xgboost.plot_tree(model, ax=ax, num_trees=idx,
-                          yes_color=environ['secondaryDarkColor'],
-                          no_color=environ['primaryColor'])
-        plot_widget.canvas.draw()
-        # except:
-        #     error('update_xgboost_tree_plot')
-        #     return
         plot_widget.canvas.figure.tight_layout()
 
     def tune_xgboost_params(self) -> None:
@@ -1919,6 +1622,7 @@ class StatAnalysisLogic:
                 and self.parent.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
             return
         X, Y, _, _, _ = self.dataset_for_ml()
+        Y = list(Y)
         Y = list(map(lambda x: x - 1, Y))
         rnd_state = self.get_random_state()
         test_size = self.parent.ui.test_data_ratio_spinBox.value() / 100.
@@ -1944,41 +1648,5 @@ class StatAnalysisLogic:
                                 max_evals=100,
                                 trials=trials)
         print(best_hyperparams)
-
-    # endregion
-
-    # region Feature selection
-
-    def feature_select_percentile(self) -> None:
-        """
-        1. Check on all features in the ignore_dataset_table_view
-        2. Use VarianceThreshold to find not important features
-        3. Uncheck not important features
-
-        Returns
-        -------
-        None
-        """
-        # 1. Check on all features in the ignore_dataset_table_view
-        self.parent.ui.ignore_dataset_table_view.model().set_all_features_checked()
-
-        # 2. Use VarianceThreshold to find not important features
-        df = self.parent.ui.deconvoluted_dataset_table_view.model().dataframe()
-        X = df.iloc[:, 2:]
-        Y = df['Class']
-        percentile = self.parent.ui.select_percentile_spin_box.value()
-        selector = SelectPercentile(percentile=percentile)
-        selector = selector.fit(X, Y)
-        feature_names_in = selector.feature_names_in_
-        support = selector.get_support()
-
-        # 3. Uncheck not important features
-        checked = {}
-        for feature_name, b in zip(feature_names_in, support):
-            checked[feature_name] = b
-        self.parent.ui.ignore_dataset_table_view.model().set_checked(checked)
-        self.parent.ui.ignore_dataset_table_view.model().set_column_data('Score', selector.scores_)
-        self.parent.ui.ignore_dataset_table_view.model().set_column_data('P value',
-                                                                         selector.pvalues_)
 
     # endregion

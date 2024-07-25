@@ -1,2 +1,2 @@
 from .normalization import *
-from .EMSC import *
+from .emsc import *

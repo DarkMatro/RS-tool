@@ -13,11 +13,12 @@ from numpy import ndarray
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import KernelDensity
 from src.stages.preprocessing.functions.cut_trim import cut_full_spectrum
-from src.stages.fitting.functions.fitting import fitting_model, fit_model
+from src.stages.fitting.functions.fitting import fitting_model, fit_model, load_model_result
 from src.data.work_with_arrays import find_nearest, nearest_idx
 
 
-def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user, verbose: int = 1) -> ModelResult:
+def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user, verbose: int = 1)\
+        -> str:
     """
     Part of the algorithm for iterative selection of Raman lines in the n_array spectral contour.
     Here we collect possible variations in the number of lines and their positions by fitting them across all spectra.
@@ -153,19 +154,19 @@ def guess_peaks(n_array: np.ndarray, input_parameters: dict, break_event_by_user
         model = fitting_model(func_legend)
         # fit model and estimate y_residual.
         try:
-            fit_result = fit_model(model, y_input, params, x_input, method)
+            fit_result = fit_model((x_input, y_input, model, params), method)
         except np.linalg.LinAlgError:
             return fit_result
+        # fit_result = load_model_result(fit_result)
         y_residual = y_input - fit_result.best_fit
         y_residual[y_residual < 0.] = 0.  # we don't want see negative amplitude.
         for arg_l_qr, arg_r_qr in used_idx_dead_zone.values():
             y_residual[arg_l_qr: arg_r_qr] = 0.
         if verbose > 1:
-            debug_msg = 'n_peaks: {!s} / {!s}, max_amp {!s},' \
-                        ' x_arg_max {!s}, calc time {!s}'.format(n_peaks, max_n_peaks,
-                                                                 np.round(np.max(y_residual), 3),
-                                                                 np.round(x_max, 1),
-                                                                 (datetime.now() - time_start))
+            debug_msg = (f'n_peaks: {n_peaks} / {max_n_peaks},'
+                         f' max_amp {np.round(np.max(y_residual), 3)},'
+                         f' x_arg_max {np.round(x_max, 1)},'
+                         f' calc time {(datetime.now() - time_start)}')
             print(debug_msg)
             info(debug_msg)
     else:
@@ -381,19 +382,20 @@ def find_interval_key(x0: float, data_by_intervals: dict) -> str | None:
 @asyncSlot()
 async def clustering_lines_intervals(data_by_intervals: dict, hwhm: float) -> list[ndarray]:
     """
-    Determining the final composition of lines for the transferred set of lines. The result of the function is further
-     needed to determine final parameters and line deconvolution model template.
+    Determining the final composition of lines for the transferred set of lines. The result of the
+    function is further needed to determine final parameters and line deconvolution model template.
 
     Parameters
     ----------
     data_by_intervals: {'interval': (start, end), 'x0': list, 'lines_count': list}
-        parameter 'x0' contains a list of wave-numbers of the interval of all spectra in one list. To return one again
-        list to list of lists is used by 'lines_count' which stores the number of lines for each spectrum.
+        parameter 'x0' contains a list of wave-numbers of the interval of all spectra in one list.
+        To return one again list to list of lists is used by 'lines_count' which stores the number
+        of lines for each spectrum.
 
     hwhm: float
         Half Width at Half Maximum - set by the user, affects the size of the clusters.
-        The maximum distance between two samples (or sample and center of cluster) for one to be considered
-        as in the neighborhood of the other.
+        The maximum distance between two samples (or sample and center of cluster) for one to be
+        considered as in the neighborhood of the other.
 
     Returns
     -------
@@ -404,11 +406,9 @@ async def clustering_lines_intervals(data_by_intervals: dict, hwhm: float) -> li
     all_ranges_clustered_x0_sd = []
     for item in data_by_intervals.values():
         x0 = split_list(item['x0'], item['lines_count'])
-        # info('x0 {!s}'.format(x0))
         x_merged = await centers_of_clusters(x0, hwhm)
         clustered_lines_of_current_range = estimate_n_lines_in_range(x0, hwhm, x_merged)
         all_ranges_clustered_x0_sd.append(clustered_lines_of_current_range)
-    # info('clustered_lines_x0 {!s}'.format(all_ranges_clustered_x0_sd))
     return all_ranges_clustered_x0_sd
 
 

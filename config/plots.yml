@@ -1,0 +1,12 @@
+preproc:
+  alpha: 0.12
+  linear_region_alpha: 20
+  linear_region_hover_alpha: 40
+  InputData: 'Imported Raman spectra'
+  ConvertData: 'Converted to 1/cm'
+  CutData: 'Limited range'
+  NormalizedData: 'Normalized'
+  SmoothedData: 'Smoothed'
+  BaselineData: 'Baseline corrected'
+  TrimData: 'Limited range'
+  AvData: 'Averaged'

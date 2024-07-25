@@ -93,6 +93,7 @@ class Project:
         self.parent.ui.projectLabel.setText('')
         self.project_path = ''
         self.clear_all_parameters()
+        self.parent.decide_vertical_scroll_bar_visible()
 
     def update_project_title(self, path: str) -> None:
         self.parent.ui.projectLabel.setText(path)
@@ -108,13 +109,30 @@ class Project:
         self.clear_all_parameters()
         self.load_params(path)
 
+    def open_demo_project(self) -> None:
+        """
+        1. Open Demo project
+        Returns
+        -------
+        None
+        """
+        path = get_config()['help']['demo_project_path']
+        self.open_project(path)
+        self.load_params(path)
+
     def load_params(self, path: str) -> None:
         cfg = get_config("texty")["load_params"]
         self.parent.progress.open_progress(cfg)
         self.parent.setEnabled(False)
+        self.parent.context.decomposition.graph_drawing.deselect_selected_line()
         self.unzip_project_file(path)
         self.parent.context.preprocessing.update_plot_item(
             self.parent.drag_widget.get_current_widget_name())
+        self.parent.context.decomposition.switch_template()
+        if (self.parent.ui.fit_params_table.model().rowCount() != 0
+                and self.parent.ui.deconv_lines_table.model().rowCount() != 0):
+            self.parent.context.decomposition.graph_drawing.draw_all_curves()
+        self.parent.decide_vertical_scroll_bar_visible()
         self.parent.progress.time_start = None
         self.parent.setEnabled(True)
         self.parent.progress.close_progress(cfg, self.clear_all_parameters)
@@ -191,9 +209,14 @@ class Project:
             db["BaselineData"] = self.parent.context.preprocessing.stages.bl_data.read()
             db["TrimData"] = self.parent.context.preprocessing.stages.trim_data.read()
             db["AvData"] = self.parent.context.preprocessing.stages.av_data.read()
+            db["Decomposition"] = self.parent.context.decomposition.read()
+            db["Datasets"] = self.parent.context.datasets.read()
+            db["ML"] = self.parent.context.ml.read()
 
     def unshelve_project_file(self, file_name: str) -> None:
         with shelve_open(file_name, "r") as db:
+            if 'Decomposition' in db:
+                self.parent.context.decomposition.load(db["Decomposition"])
             if "InputTable" in db:
                 df = db["InputTable"]
                 self.parent.ui.input_table.model().set_dataframe(df)
@@ -218,6 +241,11 @@ class Project:
                 self.parent.context.preprocessing.stages.av_data.load(db["AvData"])
             if 'widgets_order' in db:
                 self.parent.drag_widget.set_order(db["widgets_order"])
+            if 'Datasets' in db:
+                self.parent.context.datasets.load(db["Datasets"])
+            if 'ML' in db:
+                self.parent.context.ml.load(db["ML"])
+
 
     def can_close_project(self) -> bool:
         if not self.parent.context.modified:

@@ -18,6 +18,7 @@ from PyQt5.QtCore import pyqtSignal
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QWidget, QMainWindow
 from src.ui import ui_curve_properties
+from src.ui.style import color_dialog
 
 
 class CurvePropertiesWindow(QWidget):
@@ -67,7 +68,6 @@ class CurvePropertiesWindow(QWidget):
         self._ui_form.fill_color_button.clicked.connect(self._set_new_fill_color)
         self._ui_form.opacity_spinBox.valueChanged.connect(self._set_new_fill_opacity)
         self._ui_form.fill_group_box.setVisible(fill_enabled)
-        self.closeEvent = self.at_close
 
     def _init_style_cb(self) -> None:
         """
@@ -121,8 +121,8 @@ class CurvePropertiesWindow(QWidget):
         Opens a color dialog to select a new line color and updates the style.
         """
         init_color = self._style['color']
-        color_dialog = self.parent.color_dialog(init_color)
-        color = color_dialog.getColor(init_color)
+        dialog = color_dialog(init_color)
+        color = dialog.getColor(init_color)
         if color.isValid():
             self._line_color_button_new_style_sheet(color.name())
             old_style = self._style.copy()
@@ -218,8 +218,8 @@ class CurvePropertiesWindow(QWidget):
         Opens a color dialog to select a new fill color and updates the style.
         """
         init_color = self._style['fill_color']
-        color_dialog = self.parent.color_dialog(init_color)
-        color = color_dialog.getColor(init_color)
+        dialog = color_dialog(init_color)
+        color = dialog.getColor(init_color)
         if color.isValid():
             self._fill_color_button_new_style_sheet(color.name())
             old_style = self._style.copy()
@@ -261,14 +261,3 @@ class CurvePropertiesWindow(QWidget):
             The index of the curve.
         """
         return self._idx
-
-    def at_close(self, _):
-        """
-        Handles the close event to update all plots in the parent window.
-
-        Parameters
-        ----------
-        event : QCloseEvent
-            The close event.
-        """
-        self.parent.update_all_plots()

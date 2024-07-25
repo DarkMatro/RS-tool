@@ -14,6 +14,8 @@ CONFIG_PATH = "config/config.yml"
 TEXTY_PATH = "config/texty.yml"
 DEFAULTS_PATH = "config/defaults.yml"
 PLOTS_PATH = "config/plots.yml"
+FITTING_PATH = "config/fitting.yml"
+
 
 def get_config(cfg_type: str = "params") -> dict | None:
     """
@@ -36,6 +38,8 @@ def get_config(cfg_type: str = "params") -> dict | None:
         path = DEFAULTS_PATH
     elif cfg_type == "plots":
         path = PLOTS_PATH
+    elif cfg_type == "fitting":
+        path = FITTING_PATH
     else:
         return None
     with open(path, encoding="utf-8") as file:

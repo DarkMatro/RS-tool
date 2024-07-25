@@ -34,6 +34,15 @@ class AvData(PreprocessingStage):
         super().__init__(parent, *args, **kwargs)
         self.ui = None
         self.name = 'AvData'
+        self.data.on_change(self.data_changed)
+
+    def data_changed(self, _):
+        """
+        Update template combo box
+        """
+        print('data_changed')
+        context = get_parent(self.parent, "Context")
+        context.decomposition.update_template_combo_box()
 
     def set_ui(self, ui: Ui_AverageForm) -> None:
         """
@@ -148,11 +157,8 @@ class AvData(PreprocessingStage):
         if prev_stage is None or not prev_stage.data:
             mw.ui.statusBar.showMessage("No data for averaging")
             return
-        await self._update_averaged(mw, prev_stage.data)
+        await self.update_averaged(mw, prev_stage.data)
         self.parent.update_plot_item("AvData")
-        mw.fitting.update_template_combo_box()
-        if not mw.predict_logic.is_production_project:
-            mw.fitting.update_deconv_intervals_limits()
 
     @asyncSlot()
     async def _sns_plot_clicked(self) -> None:
@@ -183,7 +189,7 @@ class AvData(PreprocessingStage):
         plt.show()
 
     @asyncSlot()
-    async def _update_averaged(self, mw: QMainWindow, data: ObservableDict) -> None:
+    async def update_averaged(self, mw: QMainWindow, data: ObservableDict) -> None:
         context = get_parent(self.parent, "Context")
         n_files = len(data)
         cfg = get_config("texty")["average"]
@@ -191,6 +197,7 @@ class AvData(PreprocessingStage):
         n_groups = context.group_table.table_widget.model().rowCount()
         self.data.clear()
         averaging_method = self.ui.average_method_cb.currentText()
+        new_dict = {}
         for i in range(n_groups):
             group_id = i + 1
             filenames = mw.ui.input_table.model().names_of_group(group_id)
@@ -200,7 +207,8 @@ class AvData(PreprocessingStage):
             if not arrays_list:
                 continue
             arrays_list_av = get_average_spectrum(arrays_list, averaging_method)
-            self.data[group_id] = arrays_list_av
+            new_dict[group_id] = arrays_list_av
+        self.data.update(new_dict)
         cancel = mw.progress.close_progress(cfg)
         if cancel:
             return

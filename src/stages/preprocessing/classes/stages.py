@@ -1,10 +1,13 @@
 """
-this class will be used for input_data, convert, cut_spectrum, normalizetion,
-smoothing, baseline correction
+This module defines a class for various preprocessing stages such as input data handling,
+conversion, spectrum cutting, normalization, smoothing, and baseline correction.
 
-classes:
-    * PreprocessingStage - Abstract class for defining a stage for preprocessing data.
+Classes
+-------
+PreprocessingStage
+    Abstract class for defining a stage for preprocessing data.
 """
+
 from qtpy.QtWidgets import QFileDialog
 from qtpy.QtCore import QObject
 from src.data.collections import ObservableDict
@@ -14,7 +17,22 @@ from ....data.config import get_config
 from pathlib import Path
 from src.files.export import export_files
 
+
 class PreprocessingStage(QObject):
+    """
+    Abstract class for defining a stage for preprocessing data.
+
+    Attributes
+    ----------
+    parent : object
+        The parent object.
+    ui : object, optional
+        User interface object.
+    data : ObservableDict
+        Dictionary to store the data.
+    active : bool
+        Status of the preprocessing stage.
+    """
     def __init__(self, parent, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.parent = parent
@@ -24,18 +42,22 @@ class PreprocessingStage(QObject):
 
     def set_ui(self, ui: object) -> None:
         """
-        Set user interface object
+        Set user interface object.
 
         Parameters
-        -------
-        ui: object
-            widget
+        ----------
+        ui : object
+            The user interface widget.
         """
         self.ui = ui
 
     def reset(self) -> None:
         """
         Reset class data.
+
+        Returns
+        -------
+        None
         """
         self.data.clear()
 
@@ -45,8 +67,8 @@ class PreprocessingStage(QObject):
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            Dictionary containing all class attributes data.
         """
         dt = {"data": self.data.get_data()}
         return dt
@@ -56,14 +78,25 @@ class PreprocessingStage(QObject):
         Load attributes data from file.
 
         Parameters
+        ----------
+        db : dict
+            Dictionary containing all class attributes data.
+
+        Returns
         -------
-        db: dict
-            all class attributes data
+        None
         """
         self.data.update(db['data'])
 
     @asyncSlot()
     async def save(self) -> None:
+        """
+        Save attributes data to file asynchronously.
+
+        Returns
+        -------
+        None
+        """
         mw = get_parent(self.parent, 'MainWindow')
         if not self.data:
             mw.ui.statusBar.showMessage('Export failed. No files to save.', 25000)
@@ -90,6 +123,18 @@ class PreprocessingStage(QObject):
         mw.progress.time_start = None
 
     def activate(self, b: bool | None = None) -> None:
+        """
+        Activate or deactivate the preprocessing stage.
+
+        Parameters
+        ----------
+        b : bool, optional
+            If None, toggles the active status. If bool, sets the active status to the given value.
+
+        Returns
+        -------
+        None
+        """
         if b is None:
             self.active = not self.active
         else:
