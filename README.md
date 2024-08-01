@@ -29,7 +29,7 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 - Intuitive graphical interface.
 - 
 ![image](https://github.com/user-attachments/assets/f988dd8c-1b69-41e4-b73b-ee8ea9cdb260)
-![image](https://github.com/user-attachments/assets/1e74cb7a-eac1-4549-ab22-a40a04893d40)
+![image](https://github.com/user-attachments/assets/f43bdd02-21f9-483f-8d9a-55b4fe0d5098)
 ![image](https://github.com/user-attachments/assets/dd512e53-4859-4f99-8128-3295dd7ebf3e)
 ![image](https://github.com/user-attachments/assets/f41f8a1b-8eff-47f2-87f9-20b658c3eb04)
 ![image](https://github.com/user-attachments/assets/919b86eb-d011-4b50-881d-e9bdc80030fe)
