@@ -1,62 +1,86 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+This module provides functions for generating various peak shapes commonly used in
+spectroscopic analysis. The peak shapes include Gaussian, Lorentzian, Voigt, and Pearson
+distributions, along with their skewed and split variants.
+
+Functions
+---------
+gaussian : Compute a Gaussian peak.
+split_gaussian : Compute a split Gaussian peak with different widths for left and right slopes.
+skewed_gaussian : Compute a skewed Gaussian peak.
+lorentzian : Compute a Lorentzian peak.
+split_lorentzian : Compute a split Lorentzian peak with different widths for left and right slopes.
+voigt : Compute a Voigt peak.
+voigt_sigma : Compute the sigma parameter for the Voigt peak.
+voigt_z_norm : Compute the normalized z parameter for the Voigt peak.
+voigt_z : Compute the z parameter for the Voigt peak.
+split_voigt : Compute a split Voigt peak with different widths for left and right slopes.
+skewed_voigt : Compute a skewed Voigt peak.
+pseudovoigt : Compute a pseudo-Voigt peak.
+split_pseudovoigt : Compute a split pseudo-Voigt peak with different widths for left and right
+slopes.
+pearson4 : Compute a Pearson IV peak.
+split_pearson4 : Compute a split Pearson IV peak with different widths for left and right slopes.
+pearson7 : Compute a Pearson VII peak.
+split_pearson7 : Compute a split Pearson VII peak with different widths for left and right slopes.
+"""
+
+import numpy as np
 import scipy.special as sc
 from numba import njit
-import numpy as np
+from scipy.special import wofz
+
 from src.data.work_with_arrays import nearest_idx
 
 
-# @njit(float64[::](float64[::], float64, float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
 def gaussian(x: np.ndarray, a: float, x0: float, dx: float) -> np.ndarray:
-    """compute a Gaussian peak
+    """
+    Compute a Gaussian peak.
 
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx : float or ndarray with size equal to x.shape
-        half-width at half-maximum
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Gaussian component.
+    dx : float or ndarray
+        Half-width at half-maximum.
 
     Returns
     -------
-    out : ndarray
-        the signal
-
-    Remarks
-    -------
-    Formula is a*np.exp(-np.log(2)*((x-x0)/dx)**2)
+    ndarray
+        The signal.
     """
     return a * np.exp(-np.log(2) * ((x - x0) / dx) ** 2)
 
 
-# @njit(float64[::](float64[::], float64, float64, float64, float64),
-#       locals={'x0_idx': int64, 'x_left': float64[::], 'x_right': float64[::], 'y_left': float64[::],
-#               'y_right': float64[::]}, fastmath=True)
 @njit(cache=True, fastmath=True)
 def split_gaussian(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float) -> np.ndarray:
-    """Return a 1-dimensional piecewise gaussian function.
+    """
+    Compute a split Gaussian peak with different widths for left and right slopes.
 
-    Split means that width of the function is different between
-    left and right slope of the function.
-
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Gaussian component.
+    dx : float or ndarray
+        Half-width at half-maximum of the right slope.
+    dx_left : float or ndarray
+        Half-width at half-maximum of the left slope.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        The signal.
     """
     x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
@@ -79,61 +103,75 @@ def skewed_gaussian(x: np.ndarray, a: float, x0: float, dx: float, gamma: float)
     For more information, see:
     https://en.wikipedia.org/wiki/Skew_normal_distribution
 
+    Parameters
+    ----------
+    x : ndarray
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Gaussian component.
+    dx : float or ndarray
+        Half-width at half-maximum.
+    gamma : float
+        Skewness parameter.
+
+    Returns
+    -------
+    ndarray
+        The signal.
     """
     sigma = dx / np.sqrt(2 * np.log(2))
     asym = 1 + sc.erf(gamma * (x - x0) / (np.sqrt(2.0) * sigma))
     return asym * gaussian(x, a, x0, dx)
 
 
-# @njit(float64[::](float64[::], float64, float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
 def lorentzian(x: np.ndarray, a: float, x0: float, dx: float) -> np.ndarray:
-    """compute a Lorentzian peak
+    """
+    Compute a Lorentzian peak.
 
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx : float or ndarray with size equal to x.shape
-        half-width at half-maximum
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Lorentzian component.
+    dx : float or ndarray
+        Half-width at half-maximum.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        The signal.
     """
     return a / (1 + ((x - x0) / dx) ** 2)
 
 
-# @njit(float64[::](float64[::], float64, float64, float64, float64),
-#       locals={'x0_idx': int64, 'x_left': float64[::], 'x_right': float64[::], 'y_left': float64[::],
-#               'y_right': float64[::]}, fastmath=True)
 @njit(cache=True, fastmath=True)
 def split_lorentzian(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float) ->np.ndarray:
-    """Return a 1-dimensional piecewise Lorentzian function.
+    """
+    Compute a split Lorentzian peak with different widths for left and right slopes.
 
-    Split means that width of the function is different between
-    left and right slope of the function.
-
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Lorentzian component.
+    dx : float or ndarray
+        Half-width at half-maximum of the right slope.
+    dx_left : float or ndarray
+        Half-width at half-maximum of the left slope.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        The signal.
     """
     x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
@@ -143,82 +181,126 @@ def split_lorentzian(x: np.ndarray, a: float, x0: float, dx: float, dx_left: flo
     return np.concatenate((y_left, y_right), axis=0)
 
 
-def voigt(x: np.ndarray, a: float = 1., x0: float = 0., dx: float = 1., gamma: float = 0.) -> np.ndarray:
+def voigt(x: np.ndarray, a: float = 1., x0: float = 0., dx: float = 1., gamma: float = 0.) \
+        -> np.ndarray:
     """
-    Return a 1-dimensional Voigt function.
+    Compute a Voigt peak.
+    For more information, see: https://en.wikipedia.org/wiki/Voigt_profile
 
     Parameters
-    ------
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
+        The positions at which the signal should be sampled.
     a : float
-        target amplitude of peak
+        Amplitude.
     x0 : float
-        frequency/position of the peak
+        Frequency/position of the Voigt component.
     dx : float
-        half-width at half-maximum (left dx = right dx)
-    gamma: float
+        Half-width at half-maximum.
+    gamma : float
+        Lorentzian width.
 
     Returns
     -------
-    out : ndarray
-        the signal
-
-    voigt(x, amplitude, center, sigma, gamma) = amplitude*wofz(z).real / (sigma*s2pi)
-
-    For more information, see: https://en.wikipedia.org/wiki/Voigt_profile
-
+    ndarray
+        The signal.
     """
     sigma = voigt_sigma(dx, gamma)
     z_norm = voigt_z_norm(gamma, sigma)
-    _norm_factor = sc.wofz(z_norm).real / (sigma * np.sqrt(2 * np.pi))
+    _norm_factor = wofz(z_norm).real / (sigma * np.sqrt(2 * np.pi))
     z = voigt_z(x - x0, gamma, sigma)
-    y = sc.wofz(z).real / (sigma * np.sqrt(2 * np.pi))
+    y = wofz(z).real / (sigma * np.sqrt(2 * np.pi))
     return a * y / _norm_factor
 
 
-# @njit(float64(float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
 def voigt_sigma(dx, gamma) -> float:
+    """
+    Compute the sigma parameter for the Voigt peak.
+
+    Parameters
+    ----------
+    dx : float
+        Half-width at half-maximum.
+    gamma : float
+        Lorentzian width.
+
+    Returns
+    -------
+    float
+        Sigma parameter.
+    """
     sigma = dx**2 - 1.0692 * dx * gamma + .06919716 * gamma**2
     sigma = np.sqrt(sigma) / np.sqrt(2 * np.log(2))
     return max(1.e-15, sigma)
 
 
-# @njit(complex128(float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
 def voigt_z_norm(gamma, sigma) -> np.ndarray:
-    return (1j * gamma) / (sigma * np.sqrt(2.0))
+    """
+    Compute the normalized z parameter for the Voigt peak.
 
-
-# @njit(complex128[::](float64[::], float64, float64), fastmath=True)
-@njit(cache=True, fastmath=True)
-def voigt_z(x, gamma, sigma) -> np.ndarray:
-    return (x + 1j * gamma) / (sigma * np.sqrt(2.0))
-
-
-def split_voigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, gamma: float) -> np.ndarray:
-    """Return a 1-dimensional piecewise Lorentzian function.
-
-    Split means that width of the function is different between
-    left and right slope of the function.
-
-    Inputs
-    ------
-    x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
-    gam : float
+    Parameters
+    ----------
+    gamma : float
+        Lorentzian width.
+    sigma : float
+        Sigma parameter.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        Normalized z parameter.
+    """
+    return (1j * gamma) / (sigma * np.sqrt(2.0))
+
+
+@njit(cache=True, fastmath=True)
+def voigt_z(x, gamma, sigma) -> np.ndarray:
+    """
+    Compute the z parameter for the Voigt peak.
+
+    Parameters
+    ----------
+    x : float or ndarray
+        Frequency/position.
+    gamma : float
+        Lorentzian width.
+    sigma : float
+        Sigma parameter.
+
+    Returns
+    -------
+    ndarray
+        z parameter.
+    """
+    return (x + 1j * gamma) / (sigma * np.sqrt(2.0))
+
+
+def split_voigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, gamma: float) \
+        -> np.ndarray:
+    """
+    Compute a split Voigt peak with different widths for left and right slopes.
+
+    Parameters
+    ----------
+    x : ndarray
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Voigt component.
+    dx : float or ndarray
+        Half-width at half-maximum of the right slope.
+    dx_left : float or ndarray
+        Half-width at half-maximum of the left slope.
+    gamma : float
+        Lorentzian width.
+
+    Returns
+    -------
+    ndarray
+        The signal.
     """
     x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
@@ -228,8 +310,8 @@ def split_voigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, g
     return np.concatenate((y_left, y_right), axis=0)
 
 
-def skewed_voigt(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, gamma: float = 0.0, skew: float = 0.0) \
-        -> np.ndarray:
+def skewed_voigt(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0,
+                 gamma: float = 0.0, skew: float = 0.0) -> np.ndarray:
     """Return a Voigt line shape, skewed with error function.
 
     Equal to: voigt(x, center, sigma, gamma)*(1+erf(beta*(x-center)))
@@ -242,6 +324,25 @@ def skewed_voigt(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0
     Useful, for example, for ad-hoc Compton scatter profile. For more
     information, see: https://en.wikipedia.org/wiki/Skew_normal_distribution
 
+    Parameters
+    ----------
+    x : ndarray
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Voigt component.
+    dx : float or ndarray
+        Half-width at half-maximum.
+    gamma : float
+        Lorentzian width.
+    skew : float
+        Skewness parameter.
+
+    Returns
+    -------
+    ndarray
+        The signal.
     """
     sigma = dx * np.sqrt(2 * np.log(2))
     beta = skew / sigma
@@ -249,57 +350,59 @@ def skewed_voigt(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0
     return asym * voigt(x, a, x0, dx, gamma)
 
 
-# @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
 def pseudovoigt(x: np.ndarray, a: float, x0: float, dx: float, l_ratio: float) -> np.ndarray:
-    """compute a pseudo-Voigt peak
-    Inputs
-    ------
+    """
+    compute a pseudo-Voigt peak
+
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled. Can be provided as vector, nx1 or nxm array.
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx : float or ndarray with size equal to x.shape
-        half-width at half-maximum
-    L_ratio : float or ndarray with size equal to x.shape
-        ratio pf the Lorentzian component, should be between 0 and 1 (included)
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the pseudo-Voigt component.
+    dx : float or ndarray
+        Half-width at half-maximum.
+    l_ratio : float or ndarray
+        Ratio of the Lorentzian component, should be between 0 and 1.
 
     Returns
     -------
-    out : ndarray of size equal to x.shape
-        the signal
+    ndarray
+        The signal.
     """
     if (l_ratio > 1) or (l_ratio < 0):  # if entries are floats
         raise ValueError("L_ratio should be comprised between 0 and 1")
     return l_ratio * lorentzian(x, a, x0, dx) + (1 - l_ratio) * gaussian(x, a, x0, dx)
 
 
-# @njit(float64[::](float64[::], float64, float64, float64, float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
-def split_pseudovoigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, l_ratio: float) -> np.ndarray:
-    """Return a 1-dimensional piecewise Pseudo-Voigt function.
+def split_pseudovoigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float,
+                      l_ratio: float) -> np.ndarray:
+    """
+    Compute a split pseudo-Voigt peak with different widths for left and right slopes.
 
-    Split means that width of the function is different between
-    left and right slope of the function.
-
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
-    l_ratio : float [0.0 - 1.0]
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the pseudo-Voigt component.
+    dx : float or ndarray
+        Half-width at half-maximum of the right slope.
+    dx_left : float or ndarray
+        Half-width at half-maximum of the left slope.
+    l_ratio : float or ndarray
+        Ratio of the Lorentzian component, should be between 0 and 1.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        The signal.
     """
     x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
@@ -309,50 +412,78 @@ def split_pseudovoigt(x: np.ndarray, a: float, x0: float, dx: float, dx_left: fl
     return np.concatenate((y_left, y_right), axis=0)
 
 
-def pearson4(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon: float = 1.0, skew: float = 0.0) \
-        -> np.ndarray:
+def pearson4(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0,
+             expon: float = 1.0, skew: float = 0.0) -> np.ndarray:
     """Return a Pearson4 line shape.
 
     Using the Wikipedia definition:
 
     pearson4(x, amplitude, center, sigma, expon, skew) =
-        amplitude*|gamma(expon + I skew/2)/gamma(m)|**2/(w*beta(expon-0.5, 0.5)) * (1+arg**2)**(-expon)
-        * exp(-skew * arc-tan(arg))
+        * amplitude*|gamma(expon + I skew/2)/gamma(m)|**2/(w*beta(expon-0.5, 0.5)) *
+        * (1+arg**2)**(-expon) * exp(-skew * arc-tan(arg))
 
-    where ``arg = (x-center)/sigma``, `gamma` is the gamma function and `beta` is the beta function.
+    where ``arg = (x-center)/sigma``, `gamma` is the gamma function and `beta` is the beta
+    function.
 
-    For more information, see: https://en.wikipedia.org/wiki/Pearson_distribution#The_Pearson_type_IV_distribution
+    For more information,
+    see: https://en.wikipedia.org/wiki/Pearson_distribution#The_Pearson_type_IV_distribution
 
+    Parameters
+    ----------
+    x : ndarray
+        The positions at which the signal should be sampled.
+    a : float
+        Amplitude.
+    x0 : float
+        Frequency/position of the Pearson IV component.
+    dx : float
+        Half-width at half-maximum.
+    expon : float
+        Exponent parameter.
+    skew : float
+        Skewness parameter.
+
+    Returns
+    -------
+    ndarray
+        The signal.
     """
     arg = (x - x0) / dx
-    log_pre_factor = 2 * (np.real(sc.loggamma(expon + skew * 0.5j)) - sc.loggamma(expon)) - sc.betaln(expon - 0.5, 0.5)
-    return (a * np.pi / expon) * np.exp(log_pre_factor - expon * np.log1p(arg * arg) - skew * np.arctan(arg))
+    log_pre_factor = (2 * (np.real(sc.loggamma(expon + skew * 0.5j)) - sc.loggamma(expon))
+                      - sc.betaln(expon - 0.5, 0.5))
+    return (a * np.pi / expon) * np.exp(log_pre_factor - expon * np.log1p(arg * arg) - skew
+                                        * np.arctan(arg))
 
 
-def split_pearson4(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float, skew: float = 0.0) \
-        -> np.ndarray:
-    """Return a 1-dimensional piecewise Pearson7 function.
+def split_pearson4(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float,
+                   skew: float = 0.0) -> np.ndarray:
+    """
+    Return a 1-dimensional piecewise Pearson7 function.
 
     Split means that width of the function is different between
     left and right slope of the function.
 
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
-    expon : float > 0.0
-    skew: float
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Pearson IV component.
+    dx : float or ndarray
+        Half-width at half-maximum of the right slope.
+    dx_left : float or ndarray
+        Half-width at half-maximum of the left slope.
+    expon : float
+        Exponent parameter.
+    skew : float
+        Skewness parameter.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        The signal.
     """
     x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
@@ -363,9 +494,9 @@ def split_pearson4(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float
     return y
 
 
-# @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
-def pearson7(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, expon: float = 1.0) -> np.ndarray:
+def pearson7(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0,
+             expon: float = 1.0) -> np.ndarray:
     """Return a Pearson7 line shape.
 
     Using the Wikipedia definition:
@@ -375,39 +506,60 @@ def pearson7(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, ex
 
     where ``arg = (x-center)/sigma`` and `beta` is the beta function.
 
+    Parameters
+    ----------
+    x : ndarray
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Pearson VII component.
+    dx : float or ndarray
+        Half-width at half-maximum.
+    expon : float or ndarray
+        Exponent parameter.
+
+    Returns
+    -------
+    ndarray
+        The signal.
     """
     if expon == 0.0:
         expon = 0.1
     arg = ((x - x0) / dx) ** 2
-    arg2 = (2 ** (1 / expon) - 1)
+    arg2 = 2 ** (1 / expon) - 1
     arg3 = (1 + arg * arg2) ** expon
     return a / arg3
 
 
-# @njit(float64[::](float64[::], float64, float64, float64, float64, float64), fastmath=True)
 @njit(cache=True, fastmath=True)
-def split_pearson7(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float) -> np.ndarray:
-    """Return a 1-dimensional piecewise Pearson7 function.
+def split_pearson7(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, expon: float) \
+        -> np.ndarray:
+    """
+    Return a 1-dimensional piecewise Pearson7 function.
 
     Split means that width of the function is different between
     left and right slope of the function.
 
-    Inputs
-    ------
+    Parameters
+    ----------
     x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
-    expon : float > 0.0
+        The positions at which the signal should be sampled.
+    a : float or ndarray
+        Amplitude.
+    x0 : float or ndarray
+        Frequency/position of the Pearson VII component.
+    dx : float or ndarray
+        Half-width at half-maximum of the right slope.
+    dx_left : float or ndarray
+        Half-width at half-maximum of the left slope.
+    expon : float or ndarray
+        Exponent parameter.
 
     Returns
     -------
-    out : ndarray
-        the signal
+    ndarray
+        The signal.
     """
     x0_idx = nearest_idx(x, x0)
     x_left = x[:x0_idx]
@@ -415,79 +567,3 @@ def split_pearson7(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float
     y_left = pearson7(x_left, a, x0, dx_left, expon)
     y_right = pearson7(x_right, a, x0, dx, expon)
     return np.concatenate((y_left, y_right), axis=0)
-
-
-# @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-@njit(cache=True, fastmath=True)
-def moffat(x: np.ndarray, a: float = 1.0, x0: float = 0., dx: float = 1.0, beta: float = 1.):
-    """Return a 1-dimensional Moffat function.
-
-    moffat(x, amplitude, center, sigma, beta) =
-        amplitude / (((x - center)/sigma)**2 + 1)**beta
-
-    """
-
-    return a / (((x - x0) / dx) ** 2 + 1) ** beta
-
-
-# @njit(float64[::](float64[::], float64, float64, float64, float64, float64), fastmath=True)
-@njit(cache=True, fastmath=True)
-def split_moffat(x: np.ndarray, a: float, x0: float, dx: float, dx_left: float, beta: float) -> np.ndarray:
-    """Return a 1-dimensional Moffat function.
-
-    Split means that width of the function is different between
-    left and right slope of the function.
-
-    Inputs
-    ------
-    x : ndarray
-        the positions at which the signal should be sampled
-    a : float or ndarray with size equal to x.shape
-        amplitude
-    x0 : float or ndarray with size equal to x.shape
-        frequency/position of the Gaussian component
-    dx_left, dx_right : float or ndarray with size equal to x.shape
-        half-width at half-maximum of left/right slope
-    beta : float > 0.0
-
-    Returns
-    -------
-    out : ndarray
-        the signal
-    """
-    x0_idx = nearest_idx(x, x0)
-    x_left = x[:x0_idx]
-    x_right = x[x0_idx:]
-    y_left = moffat(x_left, a, x0, dx_left, beta)
-    y_right = moffat(x_right, a, x0, dx, beta)
-    y = np.concatenate((y_left, y_right), axis=0)
-    return y
-
-
-# @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-@njit(cache=True, fastmath=True)
-def doniach(x: np.ndarray, a: float = 1.0, x0: float = 0.0, dx: float = 1.0, alpha: float = 0.0) -> np.ndarray:
-    """Return a Doniach Sunjic asymmetric line shape.
-
-    doniach(x, amplitude, center, sigma, gamma) =
-        amplitude / sigma^(1-gamma) *
-        cos(pi*gamma/2 + (1-gamma) arc-tan((x-center)/sigma) /
-        (sigma**2 + (x-center)**2)**[(1-gamma)/2]
-     -1.0 > gam < 1.0
-
-    For example used in photo-emission; see
-    http://www.casaxps.com/help_manual/line_shapes.htm for more information.
-
-    """
-    arg = (x - x0) / dx
-    gm1 = (1.0 - alpha)
-    return a * np.cos(np.pi * alpha / 2 + gm1 * np.arctan(arg)) / (1 + arg ** 2) ** (gm1 / 2)
-
-
-# @njit(float64[::](float64[::], float64, float64, float64, float64), fastmath=True)
-@njit(cache=True, fastmath=True)
-def bwf(x: np.ndarray, a: float, x0: float, dx: float, q: float) -> np.ndarray:
-    # Breit-Wigner-Fano line shape
-    temp = (x - x0) / dx
-    return a * (1 + temp * q)**2 / (1 + temp**2)
-

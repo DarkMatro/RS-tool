@@ -1,3 +1,4 @@
+# pylint: disable=no-name-in-module, too-many-lines, invalid-name, import-error
 """
 This module defines a class for various preprocessing stages such as input data handling,
 conversion, spectrum cutting, normalization, smoothing, and baseline correction.
@@ -7,7 +8,7 @@ Classes
 PreprocessingStage
     Abstract class for defining a stage for preprocessing data.
 """
-
+import numpy as np
 from qtpy.QtWidgets import QFileDialog
 from qtpy.QtCore import QObject
 from src.data.collections import ObservableDict
@@ -15,8 +16,49 @@ from asyncqtpy import asyncSlot
 from src.data.get_data import get_parent
 from ....data.config import get_config
 from pathlib import Path
-from src.files.export import export_files
 
+
+def export_files(item: tuple[str, np.ndarray], path: str) -> None:
+    """
+    Export utility functions for handling file operations related to NumPy arrays.
+
+    Functions
+    ---------
+    - export_files(item: tuple[str, np.ndarray], path: str) -> None
+      Save a NumPy array to a file with a specified filename and path.
+
+    Notes
+    -----
+    - This function uses NumPy's `savetxt` function to save the array data to a text file.
+    - The filename is extracted from the first element of the input tuple, and the array data is
+        extracted from the second element.
+    - The file will be saved in the directory specified by the `path` parameter.
+
+    Examples
+    --------
+    >>> import numpy as np
+
+    >>> array_data = np.array([[1.23456, 2.34567], [3.45678, 4.56789]])
+    >>> file_info = ("data.txt", array_data)
+    >>> export_files(file_info, "/path/to/directory")
+
+    This will save the array `array_data` to a file named `data.txt` in the `/path/to/directory`
+    directory.
+
+    Parameters
+    ----------
+    item : tuple[str, np.ndarray]
+        A tuple where the first element is the filename (string) and the second element is the
+        NumPy array to be saved.
+    path : str
+        The directory path where the file will be saved.
+
+    Returns
+    -------
+    None
+        This function does not return any value. It performs file I/O operations.
+    """
+    np.savetxt(fname=path + "/" + item[0], X=item[1], fmt="%10.5f")
 
 class PreprocessingStage(QObject):
     """
@@ -105,11 +147,11 @@ class PreprocessingStage(QObject):
             return
         fd = QFileDialog(mw)
         folder_path = fd.getExistingDirectory(
-            mw, "Choose folder to export files", mw.latest_file_path
+            mw, "Choose folder to export files", mw.attrs.latest_file_path
         )
         if not folder_path:
             return
-        mw.latest_file_path = folder_path
+        mw.attrs.latest_file_path = folder_path
         cfg = get_config('texty')['export_spectrum']
         mw.progress.open_progress(cfg)
         if not Path(folder_path).exists():

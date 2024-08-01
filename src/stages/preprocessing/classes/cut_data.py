@@ -1,42 +1,107 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+This module provides functionalities for cutting and trimming data as part of the preprocessing
+stages.
+It includes the CutData class for handling the cut/trim operations and CommandCut for managing the
+undo stack.
+
+Classes
+-------
+CutData
+    Manages the cut and trim operations for data preprocessing.
+CommandCut
+    Handles the undo and redo operations for the cut stage.
+
+Functions
+---------
+data_changed(data)
+    Updates the range for the trim stage.
+set_ui(ui)
+    Sets the user interface object.
+init_linear_region()
+    Initializes the linear region for selection.
+lr_cm_region_changed()
+    Updates the linear region based on cm range changes.
+set_ranges_default()
+    Sets default ranges for the trim stage.
+reset()
+    Resets the class data.
+read()
+    Reads and returns the attributes data.
+load(db)
+    Loads attributes data from a dictionary.
+reset_field(event, field_id)
+    Resets the field value to default on middle mouse button double click.
+plot_items()
+    Returns data for plotting.
+get_range_info()
+    Returns range information for the linear region.
+cm_range_start_change_event(new_value)
+    Handles the event for changing the start of the cm range.
+cm_range_end_change_event(new_value)
+    Handles the event for changing the end of the cm range.
+_update_range_cm()
+    Sets the left bound for the cut range.
+_update_trim_range()
+    Sets the left and right bounds for the trim range.
+_cut_clicked()
+    Handles the cut button click event.
+_cut(mw, data)
+    Performs the cut operation.
+redo_special()
+    Updates data and input table columns.
+undo_special()
+    Undoes the data and input table columns.
+stop_special()
+    Updates UI elements.
+"""
+
 from copy import deepcopy
+from os import environ
+from typing import ItemsView
 
 import numpy as np
-from qtpy.QtWidgets import QMainWindow
 from asyncqtpy import asyncSlot
 from pyqtgraph import LinearRegionItem
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor, QMouseEvent
+from qtpy.QtWidgets import QMainWindow
 
 from src.backend.undo_stack import UndoCommand
 from src.data.collections import ObservableDict
-from src.stages.preprocessing.classes.stages import PreprocessingStage
-from src.ui.ui_cut_widget import Ui_CutForm
-from src.data.get_data import get_parent
-from typing import ItemsView
-from qtpy.QtGui import QColor, QMouseEvent
-from qtpy.QtCore import Qt
-from os import environ
 from src.data.config import get_config
+from src.data.get_data import get_parent
 from src.data.work_with_arrays import find_nearest, find_nearest_by_idx
+from src.stages.preprocessing.classes.stages import PreprocessingStage
 from src.stages.preprocessing.functions.cut_trim import (find_fluorescence_beginning, cut_spectrum,
                                                          find_first_right_local_minimum,
                                                          find_first_left_local_minimum)
+from src.ui.ui_cut_widget import Ui_CutForm
 
 
 class CutData(PreprocessingStage):
     """
-    Cut data from previous stage
+    Cut data from the previous stage.
 
     Parameters
-    -------
-    parent: Preprocessing
-        class Preprocessing
+    ----------
+    parent : Preprocessing
+        Instance of the Preprocessing class.
+    is_trim : bool, optional
+        Indicates if the operation is trim (default is False).
 
     Attributes
-    -------
-    ui: object
-        user interface form
+    ----------
+    ui : object
+        User interface form.
+    name : str
+        Name of the stage (TrimData or CutData).
+    data : ObservableDict
+        Data to be processed.
     """
 
-    def __init__(self, parent, is_trim: bool=False, *args, **kwargs):
+    def __init__(self, parent, is_trim: bool = False, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.linear_region = None
         self.ui = None
@@ -44,7 +109,14 @@ class CutData(PreprocessingStage):
         self.data.on_change(self.data_changed)
 
     def data_changed(self, data: ObservableDict):
-        """change range for trim stage"""
+        """
+        Change range for trim stage.
+
+        Parameters
+        ----------
+        data : ObservableDict
+            Data to be processed.
+        """
         if not data:
             return
         mw = get_parent(self.parent, "MainWindow")
@@ -77,18 +149,18 @@ class CutData(PreprocessingStage):
 
     def set_ui(self, ui: Ui_CutForm) -> None:
         """
-        Set user interface object
+        Set user interface object.
 
         Parameters
-        -------
-        ui: Ui_CutForm
-            widget
+        ----------
+        ui : Ui_CutForm
+            User interface form.
         """
         context = get_parent(self.parent, "Context")
         self.ui = ui
         self.ui.reset_btn.clicked.connect(self.reset)
         self.ui.save_btn.clicked.connect(self.save)
-        self.ui.cut_btn.clicked.connect(self._cut_clicked)
+        self.ui.cut_btn.clicked.connect(self.cut_clicked)
 
         self.ui.neg_grad_factor_spin_box.mouseDoubleClickEvent = lambda event: \
             self.reset_field(event, 'neg_grad_factor_spin_box')
@@ -112,6 +184,9 @@ class CutData(PreprocessingStage):
         self.set_ranges_default()
 
     def init_linear_region(self):
+        """
+        Initialize the linear region for selection.
+        """
         cfg = get_config('plots')['preproc']
         mw = get_parent(self.parent, "MainWindow")
         color_for_lr = QColor(environ["secondaryDarkColor"])
@@ -130,11 +205,17 @@ class CutData(PreprocessingStage):
         self.linear_region.setMovable(not mw.ui.lr_movableBtn.isChecked())
 
     def lr_cm_region_changed(self) -> None:
+        """
+        Update the linear region based on cm range changes.
+        """
         start, end = self.linear_region.getRegion()
         self.ui.cm_range_start.setValue(start)
         self.ui.cm_range_end.setValue(end)
 
     def set_ranges_default(self) -> None:
+        """
+        Set default ranges for the trim stage.
+        """
         defaults = get_config('defaults')
         if self.name == 'TrimData':
             self.ui.cm_range_start.setValue(defaults['trim_range_start'])
@@ -145,7 +226,7 @@ class CutData(PreprocessingStage):
 
     def reset(self) -> None:
         """
-        Reset class data.
+        Reset the class data.
         """
         self.data.clear()
         defaults = get_config('defaults')
@@ -154,31 +235,33 @@ class CutData(PreprocessingStage):
         if self.parent.active_stage == self:
             self.parent.update_plot_item(self.name)
 
-    def read(self) -> dict:
+    def read(self, production_export: bool=False) -> dict:
         """
-        Read attributes data.
+        Read and return the attributes' data.
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            Dictionary containing the class attributes' data.
         """
-        dt = {"data": self.data.get_data(),
-              'neg_grad_factor_spin_box': self.ui.neg_grad_factor_spin_box.value(),
+        dt = {'neg_grad_factor_spin_box': self.ui.neg_grad_factor_spin_box.value(),
               'cm_range_start': self.ui.cm_range_start.value(),
               'cm_range_end': self.ui.cm_range_end.value()}
+        if not production_export:
+            dt['data'] = self.data.get_data()
         return dt
 
     def load(self, db: dict) -> None:
         """
-        Load attributes data from file.
+        Load attributes data from a dictionary.
 
         Parameters
-        -------
-        db: dict
-            all class attributes data
+        ----------
+        db : dict
+            Dictionary containing the class attributes' data.
         """
-        self.data.update(db['data'])
+        if 'data' in db:
+            self.data.update(db['data'])
         self.ui.neg_grad_factor_spin_box.setValue(db['neg_grad_factor_spin_box'])
         self.ui.cm_range_start.setValue(db['cm_range_start'])
         self.ui.cm_range_end.setValue(db['cm_range_end'])
@@ -188,11 +271,11 @@ class CutData(PreprocessingStage):
         Change field value to default on double click by MiddleButton.
 
         Parameters
-        -------
-        event: QMouseEvent
-
-        field_id: str
-            name of field
+        ----------
+        event : QMouseEvent
+            The mouse event.
+        field_id : str
+            Name of the field.
         """
         if event.buttons() != Qt.MouseButton.MiddleButton:
             return
@@ -213,24 +296,45 @@ class CutData(PreprocessingStage):
 
     def plot_items(self) -> ItemsView:
         """
-        Returns data for plotting
+        Return data for plotting.
+
+        Returns
+        -------
+        ItemsView
+            Data for plotting.
         """
         if len(self.data) > 0:
             return self.data.items()
 
         mw = get_parent(self.parent, "MainWindow")
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         return prev_stage.data.items()
 
     def get_range_info(self) -> tuple:
+        """
+        Return range information for the linear region.
+
+        Returns
+        -------
+        tuple
+            Information about the range.
+        """
         return (self.ui.cm_range_start.value(), self.ui.cm_range_end.value(),
                 self.ui.cm_range_start.minimum(), self.ui.cm_range_end.maximum())
 
     def cm_range_start_change_event(self, new_value: float) -> None:
+        """
+        Handle the event for changing the start of the cm range.
+
+        Parameters
+        ----------
+        new_value : float
+            The new start value for the cm range.
+        """
         mw = get_parent(self.parent, "MainWindow")
         context = get_parent(self.parent, "Context")
         context.set_modified()
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if prev_stage is None:
             return
         if prev_stage.data:
@@ -242,10 +346,18 @@ class CutData(PreprocessingStage):
         self.linear_region.setRegion((self.ui.cm_range_start.value(), self.ui.cm_range_end.value()))
 
     def cm_range_end_change_event(self, new_value: float) -> None:
+        """
+        Handle the event for changing the end of the cm range.
+
+        Parameters
+        ----------
+        new_value : float
+            The new end value for the cm range.
+        """
         mw = get_parent(self.parent, "MainWindow")
         context = get_parent(self.parent, "Context")
         context.set_modified()
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if prev_stage is None:
             return
         if prev_stage.data:
@@ -259,12 +371,12 @@ class CutData(PreprocessingStage):
     @asyncSlot()
     async def _update_range_cm(self) -> None:
         """
-        Set left bound
+        Set the left bound for the cut range.
         """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if not prev_stage.data:
             mw.ui.statusBar.showMessage(
                 "Range update failed because there are no any converted plot ", 15000
@@ -296,12 +408,12 @@ class CutData(PreprocessingStage):
     @asyncSlot()
     async def _update_trim_range(self) -> None:
         """
-        Set left, right bound
+        Set the left and right bounds for the trim range.
         """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if not prev_stage.data:
             mw.ui.statusBar.showMessage('Range update failed because there are no any data', 15000)
             return
@@ -336,12 +448,14 @@ class CutData(PreprocessingStage):
         mw.progress.time_start = None
 
     @asyncSlot()
-    async def _cut_clicked(self) -> None:
+    async def cut_clicked(self) -> None:
+        """
+        Handle the cut button click event.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
-        prev_stage = mw.drag_widget.get_previous_stage(self)
-        print(prev_stage)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if not prev_stage.data:
             mw.ui.statusBar.showMessage("No data to cut")
             return
@@ -357,6 +471,16 @@ class CutData(PreprocessingStage):
 
     @asyncSlot()
     async def _cut(self, mw: QMainWindow, data: ObservableDict) -> None:
+        """
+        Perform the cut operation.
+
+        Parameters
+        ----------
+        mw : QMainWindow
+            The main window instance.
+        data : ObservableDict
+            Data to be processed.
+        """
         n_files = len(data)
         cfg = get_config("texty")["cut"]
 
@@ -378,19 +502,16 @@ class CutData(PreprocessingStage):
 
 class CommandCut(UndoCommand):
     """
-    Change data for cut stage.
+    Change data for the cut stage.
 
     Parameters
-    -------
-    data: list[tuple[str, ndarray]]
-        filename: str
-            as input
-        array: np.ndarray
-            processed 2D array with cutted wavelengths and intensities
-    parent: Context
-        Backend context class
-    text: str
-        description
+    ----------
+    data : list of tuple
+        List of tuples containing filenames and processed data arrays.
+    parent : Context
+        Backend context class.
+    text : str
+        Description of the command.
     """
 
     def __init__(self, data: list[tuple[str, np.ndarray]],
@@ -402,7 +523,7 @@ class CommandCut(UndoCommand):
 
     def redo_special(self):
         """
-        Update data and input table columns
+        Update data and input table columns.
         """
         self.cut_stage.data.clear()
         new_data = dict(self.data)
@@ -410,13 +531,13 @@ class CommandCut(UndoCommand):
 
     def undo_special(self):
         """
-        Undo data and input table columns
+        Undo data and input table columns.
         """
         self.cut_stage.data.clear()
         self.cut_stage.data.update(self.old_data)
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements.
         """
         self.parent.preprocessing.update_plot_item(self.cut_stage.name)

@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Module for converting spectroscopic data.
 

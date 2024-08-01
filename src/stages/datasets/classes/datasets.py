@@ -1,9 +1,22 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+"""
+Module for managing datasets, including operations like resetting tables, updating UI components,
+and performing statistical tests.
+
+This module integrates with a Qt-based GUI and provides functionalities to handle datasets used
+in the application. It includes classes and methods to reset dataset tables, initialize UI
+components, read and load data, perform feature selection, and update statistical plots.
+"""
+from asyncio import get_event_loop
 from logging import error
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from asyncqtpy import asyncSlot
+from pandas import ExcelWriter
 from qtpy.QtGui import QMouseEvent
-from qtpy.QtWidgets import QHeaderView
+from qtpy.QtWidgets import QHeaderView, QFileDialog
 from qtpy.QtCore import QObject, Qt
 from seaborn import color_palette, violinplot, boxplot, swarmplot
 from sklearn.feature_selection import SelectPercentile
@@ -20,9 +33,17 @@ from src.stages.datasets.functions.stat_test import check_normality, \
 
 class Datasets(QObject):
     """
-    parent is context
-    """
+    Manages dataset operations and updates UI components accordingly.
 
+    Parameters
+    ----------
+    parent : QObject
+        The parent context for the Datasets class.
+    *args : tuple
+        Additional arguments.
+    **kwargs : dict
+        Additional keyword arguments.
+    """
     def __init__(self, parent, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.parent = parent
@@ -32,6 +53,9 @@ class Datasets(QObject):
         self.init_current_filename_combobox()
 
     def reset(self):
+        """
+        Resets the dataset tables and UI components to their default state.
+        """
         mw = get_parent(self.parent, "MainWindow")
         defaults = get_config('defaults')
         self.reset_smoothed_dataset_table()
@@ -41,11 +65,11 @@ class Datasets(QObject):
         self.reset_describe_dataset_tables()
         self.init_current_filename_combobox()
         mw.ui.select_percentile_spin_box.setValue(defaults["select_percentile_spin_box"])
-        mw.ui.violin_describe_plot_widget.canvas.axes.cla()
+        mw.ui.violin_describe_plot_widget.canvas.gca().cla()
         mw.ui.violin_describe_plot_widget.canvas.draw()
-        mw.ui.boxplot_describe_plot_widget.canvas.axes.cla()
+        mw.ui.boxplot_describe_plot_widget.canvas.gca().cla()
         mw.ui.boxplot_describe_plot_widget.canvas.draw()
-        mw.ui.bootstrap_plot_widget.canvas.axes.cla()
+        mw.ui.bootstrap_plot_widget.canvas.gca().cla()
         mw.ui.bootstrap_plot_widget.canvas.draw()
         mw.ui.stat_test_text_edit.setText('')
 
@@ -54,11 +78,11 @@ class Datasets(QObject):
         Change field value to default on double click by MiddleButton.
 
         Parameters
-        -------
-        event: QMouseEvent
-
-        field_id: str
-            name of field
+        ----------
+        event : QMouseEvent
+            The mouse event triggering the reset.
+        field_id : str
+            The field ID to reset.
         """
         if event.buttons() != Qt.MouseButton.MiddleButton:
             return
@@ -71,6 +95,9 @@ class Datasets(QObject):
                 return
 
     def _set_ui(self):
+        """
+        Sets up the UI components and connects signals to their respective slots.
+        """
         mw = get_parent(self.parent, "MainWindow")
         context = get_parent(self.parent, "Context")
         self._initial_smoothed_dataset_table()
@@ -95,36 +122,58 @@ class Datasets(QObject):
         mw.ui.violin_box_plots_update_push_button.clicked.connect(self.update_violin_boxplot)
         mw.ui.stat_test_btn.clicked.connect(self.stat_test)
 
-    def read(self) -> dict:
+    def read(self, production_export: bool) -> dict:
         """
-        Read attributes data.
+        Reads attributes data.
+
+        Parameters
+        -------
+        production_export: bool
+            flag to export production project
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            A dictionary containing all class attributes data.
         """
         mw = get_parent(self.parent, "MainWindow")
-        dt = {"smoothed_dataset_df": mw.ui.smoothed_dataset_table_view.model().dataframe(),
-              "baselined_dataset_df": mw.ui.baselined_dataset_table_view.model().dataframe(),
-              "deconvoluted_dataset_df": mw.ui.deconvoluted_dataset_table_view.model().dataframe(),
-              "ignore_dataset_df": mw.ui.ignore_dataset_table_view.model().dataframe(),
+        dt = {
+              "ignore_dataset_df": mw.ui.ignore_dataset_table_view.model().dataframe,
               "IgnoreTableChecked": mw.ui.ignore_dataset_table_view.model().checked,
               "select_percentile_spin_box": mw.ui.select_percentile_spin_box.value(),
               }
+        if not production_export:
+            dt['smoothed_dataset_df'] = mw.ui.smoothed_dataset_table_view.model().dataframe
+            dt['baselined_dataset_df'] = mw.ui.baselined_dataset_table_view.model().dataframe
+            dt['deconvoluted_dataset_df'] = mw.ui.deconvoluted_dataset_table_view.model().dataframe
         return dt
 
     def load(self, db: dict):
+        """
+        Loads the dataset from a given dictionary.
+
+        Parameters
+        ----------
+        db : dict
+            The dictionary containing dataset attributes.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        mw.ui.smoothed_dataset_table_view.model().set_dataframe(db["smoothed_dataset_df"])
-        mw.ui.baselined_dataset_table_view.model().set_dataframe(db["baselined_dataset_df"])
-        mw.ui.deconvoluted_dataset_table_view.model().set_dataframe(db["deconvoluted_dataset_df"])
+        if 'smoothed_dataset_df' in db:
+            mw.ui.smoothed_dataset_table_view.model().set_dataframe(db["smoothed_dataset_df"])
+        if 'baselined_dataset_df' in db:
+            mw.ui.baselined_dataset_table_view.model().set_dataframe(db["baselined_dataset_df"])
+        if 'deconvoluted_dataset_df' in db:
+            mw.ui.deconvoluted_dataset_table_view.model().set_dataframe(
+                db["deconvoluted_dataset_df"])
         mw.ui.ignore_dataset_table_view.model().set_checked(db["IgnoreTableChecked"])
         mw.ui.ignore_dataset_table_view.model().set_dataframe(db["ignore_dataset_df"])
         mw.ui.select_percentile_spin_box.setValue(db["select_percentile_spin_box"])
         self.init_current_filename_combobox()
 
     def _initial_smoothed_dataset_table(self) -> None:
+        """
+        Initializes the smoothed dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         mw.ui.smoothed_dataset_table_view.verticalScrollBar().valueChanged.connect(
             mw.move_side_scrollbar
@@ -133,6 +182,9 @@ class Datasets(QObject):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def _initial_baselined_dataset_table(self) -> None:
+        """
+        Initializes the baselined dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         mw.ui.baselined_dataset_table_view.verticalScrollBar().valueChanged.connect(
             mw.move_side_scrollbar)
@@ -140,6 +192,9 @@ class Datasets(QObject):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def _initial_deconvoluted_dataset_table(self) -> None:
+        """
+        Initializes the deconvoluted dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         mw.ui.deconvoluted_dataset_table_view.verticalScrollBar().valueChanged.connect(
             mw.move_side_scrollbar)
@@ -150,6 +205,9 @@ class Datasets(QObject):
             self.init_current_filename_combobox)
 
     def _initial_ignore_dataset_table(self) -> None:
+        """
+        Initializes the ignore dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         mw.ui.ignore_dataset_table_view.verticalScrollBar().valueChanged.connect(
             mw.move_side_scrollbar)
@@ -172,6 +230,9 @@ class Datasets(QObject):
             self._ignore_dataset_table_header_clicked)
 
     def _initial_describe_dataset_tables(self) -> None:
+        """
+        Initializes the describe dataset tables.
+        """
         mw = get_parent(self.parent, "MainWindow")
         mw.ui.describe_dataset_table_view.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -179,18 +240,27 @@ class Datasets(QObject):
         mw.ui.describe_1st_group.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def reset_smoothed_dataset_table(self) -> None:
+        """
+        Resets the smoothed dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         df = pd.DataFrame(columns=["Class", "Filename"])
         model = PandasModelSmoothedDataset(mw, df)
         mw.ui.smoothed_dataset_table_view.setModel(model)
 
     def reset_baselined_dataset_table(self) -> None:
+        """
+        Resets the baselined dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         df = pd.DataFrame(columns=["Class", "Filename"])
         model = PandasModelBaselinedDataset(mw, df)
         mw.ui.baselined_dataset_table_view.setModel(model)
 
     def reset_deconvoluted_dataset_table(self) -> None:
+        """
+        Resets the deconvoluted dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         df = pd.DataFrame(columns=["Class", "Filename"])
         model = PandasModelDeconvolutedDataset(mw, df)
@@ -199,6 +269,9 @@ class Datasets(QObject):
         mw.ui.deconvoluted_dataset_table_view.setModel(model)
 
     def reset_ignore_dataset_table(self) -> None:
+        """
+        Resets the ignore dataset table.
+        """
         mw = get_parent(self.parent, "MainWindow")
         df = pd.DataFrame(columns=["Feature", "Score", "P value"])
         model = PandasModelIgnoreDataset(mw, df, {})
@@ -207,6 +280,9 @@ class Datasets(QObject):
         mw.ui.ignore_dataset_table_view.setModel(model)
 
     def reset_describe_dataset_tables(self) -> None:
+        """
+        Resets the describe dataset tables.
+        """
         mw = get_parent(self.parent, "MainWindow")
         model = PandasModelDescribeDataset(mw, pd.DataFrame())
         mw.ui.describe_dataset_table_view.setModel(model)
@@ -217,15 +293,26 @@ class Datasets(QObject):
         mw.ui.describe_2nd_group.setModel(model)
 
     def init_current_filename_combobox(self) -> None:
+        """
+        Initializes the current filename combobox.
+        """
         mw = get_parent(self.parent, "MainWindow")
         mw.ui.current_filename_combobox.clear()
         if not mw.ui.deconvoluted_dataset_table_view.model():
             return
-        q_res = mw.ui.deconvoluted_dataset_table_view.model().dataframe()
+        q_res = mw.ui.deconvoluted_dataset_table_view.model().dataframe
         mw.ui.current_filename_combobox.addItem(None)
         mw.ui.current_filename_combobox.addItems(q_res["Filename"])
 
     def decomp_table_key_pressed(self, key_event) -> None:
+        """
+        Handles key press events for the deconvoluted dataset table.
+
+        Parameters
+        ----------
+        key_event : QKeyEvent
+            The key event triggering the function.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if (key_event.key() == Qt.Key.Key_Delete
                 and mw.ui.deconvoluted_dataset_table_view.selectionModel().currentIndex().row() > -1
@@ -238,8 +325,16 @@ class Datasets(QObject):
             context.undo_stack.push(command)
 
     def _ignore_dataset_table_header_clicked(self, idx: int):
+        """
+        Handles header click events for the ignore dataset table.
+
+        Parameters
+        ----------
+        idx : int
+            The index of the clicked header.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        df = mw.ui.ignore_dataset_table_view.model().dataframe()
+        df = mw.ui.ignore_dataset_table_view.model().dataframe
         column_names = df.columns.values.tolist()
         current_name = column_names[idx]
         self._ascending_ignore_table = not self._ascending_ignore_table
@@ -249,20 +344,14 @@ class Datasets(QObject):
 
     def feature_select_percentile(self) -> None:
         """
-        1. Check on all features in the ignore_dataset_table_view
-        2. Use VarianceThreshold to find not important features
-        3. Uncheck not important features
-
-        Returns
-        -------
-        None
+        Performs feature selection using SelectPercentile and updates the ignore dataset table.
         """
         mw = get_parent(self.parent, "MainWindow")
         # 1. Check on all features in the ignore_dataset_table_view
         mw.ui.ignore_dataset_table_view.model().set_all_features_checked()
 
         # 2. Use VarianceThreshold to find not important features
-        df = mw.ui.deconvoluted_dataset_table_view.model().dataframe()
+        df = mw.ui.deconvoluted_dataset_table_view.model().dataframe
         x = df.iloc[:, 2:]
         y = df['Class']
         percentile = mw.ui.select_percentile_spin_box.value()
@@ -281,24 +370,18 @@ class Datasets(QObject):
 
     def update_describe_tables(self) -> None:
         """
-        1. Update describe_dataset_table_view
-        2. Update describe_1st_group
-        3. Update describe_2nd_group
-
-        Returns
-        -------
-        None
+        Updates the describe dataset tables.
         """
         mw = get_parent(self.parent, "MainWindow")
         # 1. Update describe_dataset_table_view
-        x, _, _, _, _ = mw.stat_analysis_logic.dataset_for_ml()
+        x, _, _, _, _ = mw.context.ml.dataset_for_ml()
         if x.empty:
             return
         df = x.describe()
         mw.ui.describe_dataset_table_view.model().set_dataframe(df)
         # 2. Update describe_1st_group
         group_id_1 = mw.ui.describe_1_SpinBox.value()
-        df = mw.ui.deconvoluted_dataset_table_view.model().dataframe()
+        df = mw.ui.deconvoluted_dataset_table_view.model().dataframe
         ignored_features = mw.ui.ignore_dataset_table_view.model().ignored_features
         df = df.drop(ignored_features, axis=1)
         df2 = df[df['Class'] == group_id_1].describe().iloc[:, 1:]
@@ -311,11 +394,7 @@ class Datasets(QObject):
 
     def update_violin_boxplot(self) -> None:
         """
-        1. Build violin plot for decomposed only data
-        2. Build boxplot
-        Returns
-        -------
-        None
+        Updates the violin and box plots.
         """
         mw = get_parent(self.parent, "MainWindow")
         if mw.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
@@ -323,7 +402,7 @@ class Datasets(QObject):
                        {'Ok'})
             return
         # Build dataframe
-        df = mw.ui.deconvoluted_dataset_table_view.model().dataframe()
+        df = mw.ui.deconvoluted_dataset_table_view.model().dataframe
         ignored_features = mw.ui.ignore_dataset_table_view.model().ignored_features
         df = df.drop(ignored_features, axis=1)
         n_rows = df.shape[0]
@@ -347,20 +426,19 @@ class Datasets(QObject):
 
     def build_violin_box_plot(self, df: pd.DataFrame, violin: bool = True) -> None:
         """
-        Grouped violin plots with split violins
+        Builds grouped violin plots with split violins.
+
         Parameters
         ----------
-        df: DataFrame
-        violin: bool
-            violin or box plot
-        Returns
-        -------
-        None
+        df : pd.DataFrame
+            The dataframe containing data for the plots.
+        violin : bool, optional
+            If True, builds violin plots, otherwise builds box plots (default is True).
         """
         mw = get_parent(self.parent, "MainWindow")
         plot_widget = mw.ui.violin_describe_plot_widget if violin \
             else mw.ui.boxplot_describe_plot_widget
-        ax = plot_widget.canvas.axes
+        ax = plot_widget.canvas.gca()
         ax.cla()
         palette = color_palette(self.parent.group_table.table_widget.model().groups_colors)
         order = mw.ui.ignore_dataset_table_view.model().features_by_order()
@@ -390,8 +468,11 @@ class Datasets(QObject):
             error(err)
 
     def stat_test(self) -> None:
+        """
+        Performs statistical tests and updates the UI with results.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        x, y, _, _, _ = mw.stat_analysis_logic.dataset_for_ml()
+        x, y, _, _, _ = self.parent.ml.dataset_for_ml()
         group_id0 = mw.ui.describe_1_SpinBox.value()
         group_id1 = mw.ui.describe_2_SpinBox.value()
         df_0 = x[y.isin([group_id0])]
@@ -426,3 +507,147 @@ class Datasets(QObject):
                  + '\n' + f"P-value: {res[1]}" + '\n'
                  + f"Are Samples Different? {'Yes' if res[2] else 'No'}" + '\n' + '\n')
         mw.ui.stat_test_text_edit.setText(text)
+
+    @asyncSlot()
+    async def action_save_decomposed_to_csv(self) -> None:
+        """
+        Action saves decomposed dataset pandas table into .csv format
+        Table consists is like
+
+        Returns
+        -------
+            None
+        """
+        mw = get_parent(self.parent, "MainWindow")
+        if mw.ui.deconvoluted_dataset_table_view.model().rowCount() == 0:
+            msg = MessageBox("Export failed.", "No data to save", mw, {"Ok"})
+            msg.setInformativeText("Try to decompose spectra before save.")
+            msg.exec()
+            return
+        fd = QFileDialog(mw)
+        file_path = fd.getSaveFileName(mw, "Save decomposed lines data to csv table",
+                                       mw.attrs.latest_file_path, "CSV (*.csv")
+        if not file_path[0]:
+            return
+        mw.attrs.latest_file_path = str(Path(file_path[0]).parent)
+        mw.ui.deconvoluted_dataset_table_view.model().dataframe.to_csv(file_path[0])
+
+    @asyncSlot()
+    async def action_export_table_excel(self) -> None:
+        """
+        Asynchronously exports various tables from the GUI to an Excel file.
+
+        This method opens a file dialog for the user to select the save location and file name for
+        the Excel file.
+        It checks if there is data in the input table and shows a message if the table is empty.
+        It displays a progress  indicator while the export is in progress and saves the data to the
+        specified Excel file.
+
+        Parameters
+        ----------
+        self : object
+            The instance of the class containing this method.
+
+        Raises
+        ------
+        None
+
+
+        This will trigger a file dialog, allowing the user to choose where to save the Excel file,
+        and then export the data asynchronously.
+
+        Notes
+        -----
+        - Uses `QFileDialog` to open the file dialog for saving the Excel file.
+        - Displays a `MessageBox` if the input table is empty.
+        - Uses `ExcelWriter` to handle writing data to the Excel file.
+        - Displays progress and status messages during the export process.
+        """
+        mw = get_parent(self.parent, "MainWindow")
+        context = get_parent(self.parent, "Context")
+        if not context.preprocessing.stages.input_data.data:
+            msg = MessageBox("Export failed.", "Table is empty", mw, {"Ok"})
+            msg.exec()
+            return
+        fd = QFileDialog(mw)
+        path = fd.getSaveFileName(
+            mw, "Choose file to save excel file", mw.attrs.latest_file_path, "XLSX (*.xlsx")
+        if not path[0]:
+            return
+        mw.attrs.latest_file_path = path[0]
+        cfg = get_config("texty")["save"]
+        mw.progress.open_progress(cfg)
+        loop = get_event_loop()
+        await loop.run_in_executor(None, self.excel_write, path[0])
+        mw.progress.close_progress(cfg)
+        mw.ui.statusBar.showMessage(f"Excel file saved to {path[0]}")
+
+    def excel_write(self, path) -> None:
+        """
+        Writes data from various tables in the GUI to an Excel file.
+
+        This method creates an Excel file at the specified path and writes the data from different
+        tables to separate sheets in the file. Each table in the GUI is exported to a distinct sheet
+        if it contains data.
+
+        Parameters
+        ----------
+        self : object
+            The instance of the class containing this method.
+        path : str
+            The file path where the Excel file will be saved.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        None
+
+
+        This will save the data from various GUI tables into the specified Excel file.
+
+        Notes
+        -----
+        - Uses `ExcelWriter` to handle the creation and writing of the Excel file.
+        - Each table in the GUI is checked for data and written to a separate sheet if it contains
+            rows.
+        - The sheets are named as follows:
+          - "Spectrum info"
+          - "Fit lines"
+          - "Fit initial params"
+          - "Smoothed dataset"
+          - "Pure Raman dataset"
+          - "Deconvoluted dataset"
+          - "Ignored features"
+          - "PCA loadings"
+          - "Predicted"
+        """
+        mw = get_parent(self.parent, "MainWindow")
+        with ExcelWriter(path) as writer:
+            mw.ui.input_table.model().dataframe.to_excel(writer, sheet_name="Spectrum info")
+            if mw.ui.deconv_lines_table.model().rowCount() > 0:
+                mw.ui.deconv_lines_table.model().dataframe.to_excel(
+                    writer, sheet_name="Fit lines")
+            if mw.ui.fit_params_table.model().rowCount() > 0:
+                mw.ui.fit_params_table.model().dataframe.to_excel(
+                    writer, sheet_name="Fit initial params")
+            if mw.ui.smoothed_dataset_table_view.model().rowCount() > 0:
+                mw.ui.smoothed_dataset_table_view.model().dataframe.to_excel(
+                    writer, sheet_name="Smoothed dataset")
+            if mw.ui.baselined_dataset_table_view.model().rowCount() > 0:
+                mw.ui.baselined_dataset_table_view.model().dataframe.to_excel(
+                    writer, sheet_name="Pure Raman dataset")
+            if mw.ui.deconvoluted_dataset_table_view.model().rowCount() > 0:
+                mw.ui.deconvoluted_dataset_table_view.model().dataframe.to_excel(
+                    writer, sheet_name="Deconvoluted dataset")
+            if mw.ui.ignore_dataset_table_view.model().rowCount() > 0:
+                mw.ui.ignore_dataset_table_view.model().dataframe.to_excel(
+                    writer, sheet_name="Ignored features")
+            if mw.ui.pca_features_table_view.model().rowCount() > 0:
+                mw.ui.pca_features_table_view.model().dataframe.to_excel(
+                    writer, sheet_name="PCA loadings")
+            if mw.ui.predict_table_view.model().rowCount() > 0:
+                mw.ui.predict_table_view.model().dataframe.to_excel(
+                    writer, sheet_name="Predicted")

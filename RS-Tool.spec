@@ -6,12 +6,13 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['ui_main_window', 'ui_main_window', 'csstemplate'],
-    hookspath=[],
+    hiddenimports=['xgboost', 'shap', 'config'],
+    hookspath=['.venv/Lib/site-packages/xgboost'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
+    optimize=0,
 )
 pyz = PYZ(a.pure)
 

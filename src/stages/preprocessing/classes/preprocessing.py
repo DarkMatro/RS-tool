@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Module for managing preprocessing stages in spectral data analysis.
 
@@ -19,21 +21,21 @@ from os import environ
 from typing import ItemsView
 
 import numpy as np
+from pyqtgraph import SignalProxy, InfiniteLine
 from qtpy.QtCore import QObject, Qt
 from qtpy.QtGui import QColor
-from pyqtgraph import SignalProxy, InfiniteLine
 
 from src import get_config
 from src.data.get_data import get_parent
 from src.data.plotting import random_rgb
+from src.ui.MultiLine import MultiLine
+from .av_data import AvData
+from .baseline_data import BaselineData
 from .convertdata import ConvertData
 from .cut_data import CutData
 from .input_data import InputData
 from .normalized_data import NormalizedData
 from .smoothed_data import SmoothedData
-from .baseline_data import BaselineData
-from .av_data import AvData
-from src.ui.MultiLine import MultiLine
 
 
 @dataclasses.dataclass
@@ -143,7 +145,7 @@ class Preprocessing(QObject):
         """
         mw = get_parent(self.parent, "MainWindow")
         if stage_name is None:
-            stage_name = mw.drag_widget.get_current_widget_name()
+            stage_name = mw.ui.drag_widget.get_current_widget_name()
         match stage_name:
             case "InputData" | '':
                 stage = self.stages.input_data
@@ -330,7 +332,7 @@ class Preprocessing(QObject):
         plot_item_id : int
             The ID of the plot item being updated.
         """
-        arrays_by_ranges = dict()
+        arrays_by_ranges = {}
         for j in xy_arrays:
             array_len = j.shape[0]
             x_axis = j[:, 0]
@@ -430,7 +432,7 @@ class Preprocessing(QObject):
         mw.ui.crosshair_update_preproc = SignalProxy(
             mw.ui.preproc_plot_widget.scene().sigMouseMoved,
             rateLimit=60,
-            slot=mw.update_crosshair,
+            slot=self.update_crosshair,
         )
         plot_item = mw.ui.preproc_plot_widget.getPlotItem()
         mw.ui.preproc_plot_widget.setAntialiasing(1)
@@ -459,8 +461,24 @@ class Preprocessing(QObject):
         Set the initial colors for the plot elements.
         """
         mw = get_parent(self.parent, "MainWindow")
-        mw.ui.preproc_plot_widget.setBackground(mw.plot_background_color)
-        mw.ui.preproc_plot_widget.getPlotItem().getAxis("bottom").setPen(mw.plot_text_color)
-        mw.ui.preproc_plot_widget.getPlotItem().getAxis("left").setPen(mw.plot_text_color)
-        mw.ui.preproc_plot_widget.getPlotItem().getAxis("bottom").setTextPen(mw.plot_text_color)
-        mw.ui.preproc_plot_widget.getPlotItem().getAxis("left").setTextPen(mw.plot_text_color)
+        mw.ui.preproc_plot_widget.setBackground(mw.attrs.plot_background_color)
+        mw.ui.preproc_plot_widget.getPlotItem().getAxis("bottom").setPen(mw.attrs.plot_text_color)
+        mw.ui.preproc_plot_widget.getPlotItem().getAxis("left").setPen(mw.attrs.plot_text_color)
+        mw.ui.preproc_plot_widget.getPlotItem().getAxis("bottom").setTextPen(
+            mw.attrs.plot_text_color)
+        mw.ui.preproc_plot_widget.getPlotItem().getAxis("left").setTextPen(mw.attrs.plot_text_color)
+
+    def update_crosshair(self, point_event) -> None:
+        """Paint crosshair on mouse"""
+        mw = get_parent(self.parent, "MainWindow")
+        coordinates = point_event[0]
+        if (mw.ui.preproc_plot_widget.sceneBoundingRect().contains(coordinates)
+                and mw.ui.crosshairBtn.isChecked()):
+            mouse_point = mw.ui.preproc_plot_widget.plotItem.vb.mapSceneToView(coordinates)
+            mw.ui.preproc_plot_widget.setTitle(
+                f"<span style='font-size: 12pt; font-family: AbletonSans; color: "
+                f"{environ["secondaryColor"]}"
+                + f"'>x={mouse_point.x():.1f}, <span style=>y={mouse_point.y():.1f}</span>"
+            )
+            mw.ui.preproc_plot_widget.vertical_line.setPos(mouse_point.x())
+            mw.ui.preproc_plot_widget.horizontal_line.setPos(mouse_point.y())

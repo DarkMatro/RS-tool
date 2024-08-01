@@ -1,3 +1,13 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+Module for handling baseline correction of spectral data.
+
+This module provides the BaselineData class which manages baseline correction of spectral data
+using various methods. It interfaces with the user through a UI form and handles data
+manipulation, UI updates, and baseline correction computations.
+"""
+
 from copy import deepcopy, copy
 from os import environ
 from typing import ItemsView
@@ -11,26 +21,53 @@ from qtpy.QtWidgets import QMainWindow
 
 from src import (baseline_methods, baseline_parameter_defaults, get_config, get_parent,
                  ObservableDict, Ui_BaselineForm, PreprocessingStage, UndoCommand)
+from src.data.plotting import get_curve_plot_data_item
 
 
 class BaselineData(PreprocessingStage):
     """
-    Baseline correction of spectrum from previous stage
+    Handles baseline correction of spectrum from the previous stage.
 
     Parameters
-    -------
-    parent: Preprocessing
-        class Preprocessing
+    ----------
+    parent : Preprocessing
+        Instance of the Preprocessing class.
 
     Attributes
-    -------
-    ui: object
-        user interface form
+    ----------
+    ui : object
+        User interface form.
+    baseline_data : ObservableDict
+        Dictionary to store baseline data.
+    baseline_methods : dict
+        Available baseline correction methods.
+    current_method : str
+        Current baseline correction method being used.
+    fields : dict
+        Fields in the UI form corresponding to different parameters.
+    baseline_one_curve : np.ndarray
+        Baseline data for a single curve.
+    not_corrected_one_curve : np.ndarray
+        Original data for a single curve before baseline correction.
+    name : str
+        Name of the class instance.
     """
 
     # pylint: disable=too-many-instance-attributes
     # Eight is reasonable in this case.
     def __init__(self, parent, *args, **kwargs):
+        """
+        Initialize BaselineData with the given parent and optional arguments.
+
+        Parameters
+        ----------
+        parent : Preprocessing
+            Instance of the Preprocessing class.
+        *args : tuple
+            Additional arguments.
+        **kwargs : dict
+            Additional keyword arguments.
+        """
         super().__init__(parent, *args, **kwargs)
         self.ui = None
         self.baseline_data = ObservableDict()
@@ -43,12 +80,12 @@ class BaselineData(PreprocessingStage):
 
     def set_ui(self, ui: Ui_BaselineForm) -> None:
         """
-        Set user interface object
+        Set the user interface object.
 
         Parameters
-        -------
-        ui: Ui_BaselineForm
-            widget
+        ----------
+        ui : Ui_BaselineForm
+            User interface form widget.
         """
         context = get_parent(self.parent, "Context")
         defaults = get_config('defaults')
@@ -56,7 +93,7 @@ class BaselineData(PreprocessingStage):
         self.ui.reset_btn.clicked.connect(self.reset)
         self.ui.save_btn.clicked.connect(self.save)
         self.ui.activate_btn.clicked.connect(self.activate)
-        self.ui.bl_cor_btn.clicked.connect(self._bl_clicked)
+        self.ui.bl_cor_btn.clicked.connect(self.process_clicked)
         self._init_method_combo_box()
         self._init_cost_func_combo_box()
         self.ui.cost_func_comboBox.currentTextChanged.connect(context.set_modified)
@@ -117,7 +154,7 @@ class BaselineData(PreprocessingStage):
 
     def reset(self) -> None:
         """
-        Reset class data.
+        Reset class data to default values.
         """
         self.data.clear()
         self.baseline_data.clear()
@@ -134,35 +171,37 @@ class BaselineData(PreprocessingStage):
         self.baseline_one_curve = None
         self.not_corrected_one_curve = None
 
-    def read(self) -> dict:
+    def read(self, production_export: bool=False) -> dict:
         """
-        Read attributes data.
+        Read the current state of the class attributes.
 
         Returns
         -------
-        dt: dict
-            all class attributes data
+        dict
+            Dictionary containing all class attributes data.
         """
-        dt = {"data": self.data.get_data(),
-              "baseline_data": self.baseline_data.get_data(),
+        dt = {"baseline_data": self.baseline_data.get_data(),
               'bl_method_comboBox': self.ui.method_comboBox.currentText(),
               'cost_func_comboBox': self.ui.cost_func_comboBox.currentText(),
               'current_method': self.current_method,
               'active': self.active}
         for k, field in self.fields.items():
             dt[k] = field.value()
+        if not production_export:
+            dt['data'] = self.data.get_data()
         return dt
 
     def load(self, db: dict) -> None:
         """
-        Load attributes data from file.
+        Load class attributes data from a given dictionary.
 
         Parameters
-        -------
-        db: dict
-            all class attributes data
+        ----------
+        db : dict
+            Dictionary containing class attributes data.
         """
-        self.data.update(db['data'])
+        if 'data' in db:
+            self.data.update(db['data'])
         self.baseline_data.update(db['baseline_data'])
         self.ui.method_comboBox.setCurrentText(db['bl_method_comboBox'])
         self.ui.cost_func_comboBox.setCurrentText(db['cost_func_comboBox'])
@@ -173,14 +212,14 @@ class BaselineData(PreprocessingStage):
 
     def reset_field(self, event: QMouseEvent, field_id: str) -> None:
         """
-        Change field value to default on double click by MiddleButton.
+        Reset a specific field value to default on middle-button double-click.
 
         Parameters
-        -------
-        event: QMouseEvent
-
-        field_id: str
-            name of field
+        ----------
+        event : QMouseEvent
+            Mouse event triggering the reset.
+        field_id : str
+            Identifier of the field to reset.
         """
         if event.buttons() != Qt.MouseButton.MiddleButton:
             return
@@ -192,20 +231,30 @@ class BaselineData(PreprocessingStage):
         else:
             value = get_config('defaults')[field_id]
         assert field_id in self.fields, 'Something gone wrong. There is no such field_id.'
-        print(value, type(value), field_id)
         field = self.fields[field_id]
         field.setValue(value)
 
     def plot_items(self) -> ItemsView:
         """
-        Returns data for plotting
+        Get data items for plotting.
+
+        Returns
+        -------
+        ItemsView
+            Items for plotting.
         """
         return self.data.items()
 
     def _init_method_combo_box(self) -> None:
+        """
+        Initialize the method combo box with available baseline methods.
+        """
         self.ui.method_comboBox.addItems(self.baseline_methods.keys())
 
     def _init_cost_func_combo_box(self) -> None:
+        """
+        Initialize the cost function combo box with available cost functions.
+        """
         self.ui.cost_func_comboBox.addItems(
             [
                 "asymmetric_truncated_quadratic",
@@ -218,6 +267,14 @@ class BaselineData(PreprocessingStage):
         )
 
     def method_changed(self, current_text: str):
+        """
+        Handle changes in the selected baseline method.
+
+        Parameters
+        ----------
+        current_text : str
+            Currently selected method text.
+        """
         get_parent(self.parent, "Context").set_modified()
         self.hide_all_field()
         match current_text:
@@ -296,6 +353,9 @@ class BaselineData(PreprocessingStage):
                 self._show_beads_fields()
 
     def hide_all_field(self) -> None:
+        """
+        Hide all UI fields.
+        """
         self.ui.alpha_factor_doubleSpinBox.setVisible(False)
         self.ui.cost_func_comboBox.setVisible(False)
         self.ui.eta_doubleSpinBox.setVisible(False)
@@ -316,11 +376,17 @@ class BaselineData(PreprocessingStage):
         self.ui.peak_ratio_doubleSpinBox.setVisible(False)
 
     def _show_modpoly_fields(self) -> None:
+        """
+        Show fields related to the ModPoly baseline method.
+        """
         self.ui.n_iterations_spinBox.setVisible(True)
         self.ui.polynome_degree_spinBox.setVisible(True)
         self.ui.grad_doubleSpinBox.setVisible(True)
 
     def _show_ex_mod_poly_fields(self) -> None:
+        """
+        Show fields related to the ExModPoly baseline method.
+        """
         self._show_modpoly_fields()
         self.ui.quantile_doubleSpinBox.setVisible(True)
         self.ui.scale_doubleSpinBox.setVisible(True)
@@ -329,23 +395,35 @@ class BaselineData(PreprocessingStage):
         self.ui.half_window_spinBox.setVisible(True)
 
     def _show_imor_fields(self) -> None:
+        """
+        Show fields related to the iMor baseline method.
+        """
         self.ui.n_iterations_spinBox.setVisible(True)
         self.ui.grad_doubleSpinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
 
     def _show_jbcd_fields(self) -> None:
+        """
+        Show fields related to the JBCD baseline method.
+        """
         self.ui.n_iterations_spinBox.setVisible(True)
         self.ui.grad_doubleSpinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
         self.ui.alpha_factor_doubleSpinBox.setVisible(True)
 
     def _show_mpspline_fields(self) -> None:
+        """
+        Show fields related to the MPSpline baseline method.
+        """
         self.ui.lambda_spinBox.setVisible(True)
         self.ui.p_doubleSpinBox.setVisible(True)
         self.ui.spline_degree_spinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
 
     def _show_mixture_fields(self) -> None:
+        """
+        Show fields related to the Mixture Model baseline method.
+        """
         self.ui.lambda_spinBox.setVisible(True)
         self.ui.p_doubleSpinBox.setVisible(True)
         self.ui.n_iterations_spinBox.setVisible(True)
@@ -353,6 +431,9 @@ class BaselineData(PreprocessingStage):
         self.ui.grad_doubleSpinBox.setVisible(True)
 
     def _show_irsqr_fields(self) -> None:
+        """
+        Show fields related to the IRSQR baseline method.
+        """
         self.ui.lambda_spinBox.setVisible(True)
         self.ui.quantile_doubleSpinBox.setVisible(True)
         self.ui.spline_degree_spinBox.setVisible(True)
@@ -360,48 +441,72 @@ class BaselineData(PreprocessingStage):
         self.ui.grad_doubleSpinBox.setVisible(True)
 
     def _show_ipsa_fields(self) -> None:
+        """
+        Show fields related to the IPSA baseline method.
+        """
         self.ui.half_window_spinBox.setVisible(True)
         self.ui.n_iterations_spinBox.setVisible(True)
         self.ui.grad_doubleSpinBox.setVisible(True)
 
     def _show_dietrich_fields(self) -> None:
+        """
+        Show fields related to the Dietrich baseline method.
+        """
         self._show_modpoly_fields()
         self.ui.num_std_doubleSpinBox.setVisible(True)
         self.ui.min_length_spinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
 
     def _show_golotvin_fields(self) -> None:
+        """
+        Show fields related to the Golotvin baseline method.
+        """
         self.ui.num_std_doubleSpinBox.setVisible(True)
         self.ui.min_length_spinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
         self.ui.sections_spinBox.setVisible(True)
 
     def _show_std_fields(self) -> None:
+        """
+        Show fields related to the Std Distribution baseline method.
+        """
         self.ui.num_std_doubleSpinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
         self.ui.half_window_spinBox.setVisible(True)
 
     def _show_fastchrom_fields(self) -> None:
+        """
+        Show fields related to the FastChrom baseline method.
+        """
         self.ui.half_window_spinBox.setVisible(True)
         self.ui.min_length_spinBox.setVisible(True)
         self.ui.n_iterations_spinBox.setVisible(True)
 
     def _show_fabc_fields(self) -> None:
+        """
+        Show fields related to the FABC baseline method.
+        """
         self.ui.lambda_spinBox.setVisible(True)
         self.ui.num_std_doubleSpinBox.setVisible(True)
         self.ui.min_length_spinBox.setVisible(True)
 
     def _show_beads_fields(self) -> None:
+        """
+        Show fields related to the BEaDS baseline method.
+        """
         self.ui.lambda_spinBox.setVisible(True)
         self.ui.n_iterations_spinBox.setVisible(True)
         self.ui.grad_doubleSpinBox.setVisible(True)
 
     @asyncSlot()
-    async def _bl_clicked(self) -> None:
+    async def process_clicked(self) -> None:
+        """
+        Handle baseline correction button click event.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if prev_stage is None or not prev_stage.data:
             mw.ui.statusBar.showMessage("No data for baseline correction")
             return
@@ -409,6 +514,16 @@ class BaselineData(PreprocessingStage):
 
     @asyncSlot()
     async def _correction(self, mw: QMainWindow, data: ObservableDict) -> None:
+        """
+        Perform baseline correction on the data.
+
+        Parameters
+        ----------
+        mw : QMainWindow
+            Main window instance.
+        data : ObservableDict
+            Dictionary containing the data to be corrected.
+        """
         n_files = len(data)
         cfg = get_config("texty")["baseline"]
         method = self.ui.method_comboBox.currentText()
@@ -431,6 +546,19 @@ class BaselineData(PreprocessingStage):
         context.undo_stack.push(command)
 
     def baseline_correction_params(self, method: str) -> dict:
+        """
+        Get the baseline correction parameters for the given method.
+
+        Parameters
+        ----------
+        method : str
+            Baseline correction method.
+
+        Returns
+        -------
+        dict
+            Dictionary of parameters for the method.
+        """
         params = {}
         match method:
             case 'Poly':
@@ -581,14 +709,17 @@ class BaselineData(PreprocessingStage):
                           'method': method}
         return params
 
-    async def baseline_add_plot(self, current_spectrum_name) -> None:
+    async def baseline_add_plot(self, current_spectrum_name: str) -> None:
         """
         Add baseline to plot
+
+        Parameters
+        ----------
+        current_spectrum_name : str
+            filename
         """
         # selected spectrum despiked
         mw = get_parent(self.parent, "MainWindow")
-        current_index = mw.ui.input_table.selectionModel().currentIndex()
-        group_number = mw.ui.input_table.model().cell_data(current_index.row(), 2)
         arr = self.baseline_data[current_spectrum_name]
         arr_before = copy(arr)
         arr_before[:, 1] = arr[:, 1] + self.data[current_spectrum_name][:, 1]
@@ -596,11 +727,9 @@ class BaselineData(PreprocessingStage):
             mw.ui.preproc_plot_widget.getPlotItem().removeItem(self.baseline_one_curve)
         if self.not_corrected_one_curve:
             mw.ui.preproc_plot_widget.getPlotItem().removeItem(self.not_corrected_one_curve)
-        self.baseline_one_curve = mw.get_curve_plot_data_item(arr, group_number,
-                                                              color=environ['primaryColor'])
+        self.baseline_one_curve = get_curve_plot_data_item(arr, environ['primaryColor'])
         self.not_corrected_one_curve = (
-            mw.get_curve_plot_data_item(arr_before, group_number,
-                                        color=environ['secondaryLightColor']))
+            get_curve_plot_data_item(arr_before, environ['secondaryLightColor']))
         mw.ui.preproc_plot_widget.getPlotItem().addItem(self.baseline_one_curve,
                                                         kargs=['ignoreBounds', 'skipAverage'])
         mw.ui.preproc_plot_widget.getPlotItem().addItem(self.not_corrected_one_curve,
@@ -608,7 +737,7 @@ class BaselineData(PreprocessingStage):
 
     async def baseline_remove_plot(self) -> None:
         """
-        remove old history _BeforeDespike plot item and arrows
+        Remove old history _BeforeDespike plot item and arrows
         """
         mw = get_parent(self.parent, "MainWindow")
         plot_item = mw.ui.preproc_plot_widget.getPlotItem()
@@ -648,7 +777,7 @@ class CommandBaseline(UndoCommand):
         self.method_name = {'new': self.generate_title_text(method, params),
                             'old': copy(self.stage.current_method)}
         self.bl_df = {'new': deepcopy(self.create_baseline_corrected_dataset_new()),
-                      'old': deepcopy(self.mw.ui.baselined_dataset_table_view.model().dataframe())}
+                      'old': deepcopy(self.mw.ui.baselined_dataset_table_view.model().dataframe)}
 
     def redo_special(self):
         """
@@ -679,12 +808,33 @@ class CommandBaseline(UndoCommand):
         self.parent.preprocessing.update_plot_item("BaselineData")
 
     def generate_title_text(self, method: str, params: dict) -> str:
+        """
+        Create title text for plot
+
+        Parameters
+        -------
+        method: str
+
+        params: dict
+            all used parameters
+
+        Returns
+        -------
+        text: str
+        """
         text = method + '. '
         for param_name, value in params.items():
             text += param_name + ': ' + str(value) + '. '
         return text
 
     def create_baseline_corrected_dataset_new(self) -> pd.DataFrame:
+        """
+        Create dataframe for baseline corrected table.
+
+        Returns
+        -------
+        df: pd.DataFrame:
+        """
         filename_group = self.mw.ui.input_table.model().column_data(2)
         x_axis = next(iter(self.bl_corrected_data.values()))[:, 0]
         columns_params = [f'k{np.round(i, 2)}' for i in x_axis]

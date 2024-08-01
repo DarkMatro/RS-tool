@@ -1,3 +1,28 @@
+# pylint: disable=no-name-in-module, too-many-lines, invalid-name, import-error
+"""
+This module provides a set of utility functions for various tasks in spectral data processing
+and machine learning model fitting. It includes methods for baseline correction, normalization,
+smoothing, peak shape parameterization, and machine learning classifiers. The module is designed
+to facilitate the processing and analysis of spectral data using different baseline correction
+techniques, normalization methods, and smoothing algorithms. Additionally, it provides a means
+to configure and fit machine learning models for classification tasks.
+
+Functions:
+    - baseline_parameter_defaults: Returns default parameters for various baseline correction
+        methods.
+    - baseline_methods: Returns a dictionary of baseline correction methods with their corresponding
+        functions and sample limits.
+    - classificator_funcs: Returns a dictionary of machine learning classifier fitting functions.
+    - objectives: Returns a dictionary of objective functions for hyperparameter optimization.
+    - normalize_methods: Returns a dictionary of normalization methods with their corresponding
+        functions and sample limits.
+    - peak_shapes_params: Returns a dictionary of peak shape functions and additional parameters.
+    - smoothing_methods: Returns a dictionary of smoothing methods with their corresponding
+        functions and sample limits.
+    - get_optuna_params: Returns a dictionary of hyperparameters for Optuna optimization for various
+        classifiers.
+"""
+
 from typing import Callable
 
 from src.stages.fitting.functions.peak_shapes import gaussian, split_gaussian, skewed_gaussian, \
@@ -5,7 +30,10 @@ from src.stages.fitting.functions.peak_shapes import gaussian, split_gaussian, s
     voigt, split_voigt, skewed_voigt, pseudovoigt, split_pseudovoigt, pearson4, split_pearson4, \
     pearson7, \
     split_pearson7
-from src.stages.ml.functions.hyperopt import objective_lda
+from src.stages.ml.functions.fit_classificators import (
+    fit_lda, fit_lr, fit_svc, fit_dt, fit_rf, fit_xgboost)
+from src.stages.ml.functions.hyperopt import objective_lda, objective_lr, objective_svc, \
+    objective_dt, objective_rf
 from src.stages.preprocessing.functions.baseline_correction import baseline_correct, ex_mod_poly, \
     baseline_asls, baseline_arpls, \
     baseline_airpls, baseline_drpls
@@ -15,21 +43,32 @@ from src.stages.preprocessing.functions.normalization.normalization import norma
 from src.stages.preprocessing.functions.smoothing.functions_smoothing import smooth_mlesg, \
     smooth_ceemdan, smooth_eemd, smooth_emd, smooth_savgol, whittaker, \
     smooth_flat, smooth_window, smooth_window_kaiser, smooth_med_filt, smooth_wiener
-from src.stages.ml.functions.fit_classificators import (fit_lda_clf, fit_lr_clf, \
-                                                        fit_svc_clf, fit_nn_clf, fit_nb_clf,
-                                                        fit_dt_clf, fit_rf_clf, fit_xgboost_clf,
-                                                        fit_pca, fit_lda)
 
-def baseline_parameter_defaults() -> dict[str, dict[str, int | float] ]:
+
+def baseline_parameter_defaults() -> dict[str, dict[str, int | float]]:
+    """
+    Returns default parameters for various baseline correction methods.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are baseline correction method names and values
+        are dictionaries containing parameter names and their default values.
+    """
     return {'Poly': {'polynome_degree': 5},
             'ModPoly': {'polynome_degree': 5, 'tol': 1e-3, 'max_iter': 250},
             'iModPoly': {'polynome_degree': 6, 'tol': 1e-3, 'max_iter': 250, 'num_std': 0.},
-            'ExModPoly': {'polynome_degree': 7, 'tol': 1e-6, 'max_iter': 100, 'quantile': 1e-5, 'scale': .5, 'num_std': 3.,
+            'ExModPoly': {'polynome_degree': 7, 'tol': 1e-6, 'max_iter': 100, 'quantile': 1e-5,
+                          'scale': .5, 'num_std': 3.,
                           'half_window': 2},
-            'Penalized poly': {'polynome_degree': 2, 'tol': 1e-3, 'max_iter': 250, 'alpha_factor': 0.99999},
-            'LOESS': {'polynome_degree': 1, 'tol': 1e-3, 'max_iter': 10, 'fraction': 0.2, 'scale': 3.0},
-            'Quantile regression': {'polynome_degree': 2, 'tol': 1e-6, 'max_iter': 250, 'quantile': 0.01},
-            'Goldindec': {'polynome_degree': 2, 'tol': 1e-3, 'max_iter': 250, 'peak_ratio': 0.5, 'alpha_factor': 0.99},
+            'Penalized poly': {'polynome_degree': 2, 'tol': 1e-3, 'max_iter': 250,
+                               'alpha_factor': 0.99999},
+            'LOESS': {'polynome_degree': 1, 'tol': 1e-3, 'max_iter': 10, 'fraction': 0.2,
+                      'scale': 3.0},
+            'Quantile regression': {'polynome_degree': 2, 'tol': 1e-6, 'max_iter': 250,
+                                    'quantile': 0.01},
+            'Goldindec': {'polynome_degree': 2, 'tol': 1e-3, 'max_iter': 250, 'peak_ratio': 0.5,
+                          'alpha_factor': 0.99},
             'AsLS': {'lambda': 1000000, 'p': 1e-3, 'max_iter': 50},
             'iAsLS': {'lambda': 1000000, 'p': 1e-2, 'max_iter': 50, 'tol': 1e-3},
             'arPLS': {'lambda': 100000, 'p': 1e-6, 'max_iter': 50},
@@ -45,13 +84,16 @@ def baseline_parameter_defaults() -> dict[str, dict[str, int | float] ]:
             'AMorMol': {'max_iter': 200, 'tol': 1e-3},
             'MPSpline': {'lambda': 10000, 'p': 0.0, 'spline_degree': 3},
             'JBCD': {'max_iter': 20, 'tol': 1e-2, 'alpha_factor': 0.1},
-            'Mixture Model': {'lambda': 100000, 'p': 1e-2, 'spline_degree': 3, 'max_iter': 50, 'tol': 1e-3},
-            'IRSQR': {'lambda': 100, 'quantile': 0.01, 'spline_degree': 3, 'max_iter': 100, 'tol': 1e-6},
+            'Mixture Model': {'lambda': 100000, 'p': 1e-2, 'spline_degree': 3, 'max_iter': 50,
+                              'tol': 1e-3},
+            'IRSQR': {'lambda': 100, 'quantile': 0.01, 'spline_degree': 3, 'max_iter': 100,
+                      'tol': 1e-6},
             'Corner-Cutting': {'max_iter': 100},
             'Noise Median': {'half_window': 5},
             'IPSA': {'max_iter': 500},
             'RIA': {'tol': 1e-2, 'max_iter': 500},
-            'Dietrich': {'num_std': 3.0, 'polynome_degree': 5, 'max_iter': 50, 'tol': 1e-3, 'half_window': 5,
+            'Dietrich': {'num_std': 3.0, 'polynome_degree': 5, 'max_iter': 50, 'tol': 1e-3,
+                         'half_window': 5,
                          'min_length': 2},
             'Golotvin': {'num_std': 2.0, 'half_window': 5, 'min_length': 2, 'sections': 32},
             'Std Distribution': {'num_std': 1.1, 'half_window': 5},
@@ -60,32 +102,16 @@ def baseline_parameter_defaults() -> dict[str, dict[str, int | float] ]:
             }
 
 
-def scoring_metrics() -> list[str]:
-    return ['precision_macro', 'precision_micro', 'precision_samples', 'precision', 'average_precision',
-            'precision_weighted',
-            'recall', 'recall_macro', 'recall_micro', 'recall_samples', 'recall_weighted',
-            'accuracy', 'top_k_accuracy', 'balanced_accuracy',
-            'f1', 'f1_macro', 'f1_micro', 'f1_weighted', 'f1_samples',
-            'roc_auc_ovo_weighted', 'roc_auc_ovo', 'roc_auc_ovr_weighted', 'roc_auc', 'roc_auc_ovr',
-            'matthews_corrcoef', 'explained_variance',
-            'v_measure_score', 'max_error'
-                               'neg_log_loss', 'neg_mean_absolute_percentage_error', 'neg_mean_squared_error',
-            'neg_brier_score',
-            'neg_mean_poisson_deviance', 'neg_mean_absolute_error', 'neg_mean_squared_log_error',
-            'neg_root_mean_squared_error', 'neg_negative_likehood_ratio' 'neg_median_absolute_error',
-            'neg_mean_gamma_deviance',
-            'jaccard_macro', 'jaccard_micro', 'jaccard', 'jaccard_samples', 'jaccard_weighted',
-            'adjusted_mutual_info_score', 'normalized_mutual_info_score', 'mutual_info_score',
-            'completeness_score', 'fowlkes_mallows_score', 'homogeneity_score',
-            'rand_score', 'r2', 'adjusted_rand_score', 'positive_likehood_ratio']
-
-
 def baseline_methods() -> dict[str, tuple[Callable, int]]:
     """
-    keys using in adding items of baseline_correction_method_comboBox
-    func is using in baseline correction
-    limit is n_samples_limit in do_baseline_correction to switch btwn ThreadPoolExecutor and ProcessPoolExecutor
-    @return: dict[tuple]
+    Returns a dictionary of baseline correction methods with their corresponding functions and
+    sample limits.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are baseline correction method names and values
+        are tuples containing the baseline correction function and the sample limit.
     """
     return {
         # Polynomial methods
@@ -139,20 +165,43 @@ def baseline_methods() -> dict[str, tuple[Callable, int]]:
 
 
 def classificator_funcs() -> dict[str, callable]:
-    return {'LDA': fit_lda, 'Logistic regression': fit_lr_clf, 'NuSVC': fit_svc_clf,
-            'Nearest Neighbors': fit_nn_clf, 'Naive Bayes': fit_nb_clf, 'Decision Tree': fit_dt_clf,
-            'Random Forest': fit_rf_clf, 'XGBoost': fit_xgboost_clf, 'PCA': fit_pca}
+    """
+    Returns a dictionary of machine learning classifier fitting functions.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are classifier names and values are the corresponding fitting
+        functions.
+    """
+    return {'LDA': fit_lda, 'Logistic regression': fit_lr, 'SVC': fit_svc,
+            'Decision Tree': fit_dt, 'Random Forest': fit_rf, 'XGBoost': fit_xgboost}
+
 
 def objectives() -> dict[str, callable]:
-    return {'LDA': objective_lda}
+    """
+    Returns a dictionary of objective functions for hyperparameter optimization.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are classifier names and values are the corresponding objective
+        functions.
+    """
+    return {'LDA': objective_lda, 'Logistic regression': objective_lr, 'SVC': objective_svc,
+            'Decision Tree': objective_dt, 'Random Forest': objective_rf, 'XGBoost': None}
 
 
 def normalize_methods() -> dict[str, tuple]:
     """
-    keys using in adding items of normalizing_method_comboBox
-    func is using in normalize procedure
-    limit is n_samples_limit to switch btwn ThreadPoolExecutor and ProcessPoolExecutor
-    @return: dict[tuple]
+    Returns a dictionary of normalization methods with their corresponding functions and sample
+    limits.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are normalization method names and values are tuples
+        containing the normalization function and the sample limit.
     """
     return {'EMSC': (normalize_emsc, 200),
             'SNV': (normalize_snv, 16_000),
@@ -165,10 +214,13 @@ def normalize_methods() -> dict[str, tuple]:
 
 def peak_shapes_params() -> dict:
     """
-    Using in self.peak_shapes_params in RS
-    keys of dict MUST BE EQUAL TO peak_shape_names() in default_values.py
+    Returns a dictionary of peak shape functions and additional parameters.
 
-    @return: dict
+    Returns
+    -------
+    dict
+        A dictionary where keys are peak shape names and values are dictionaries
+        containing the peak shape function and additional parameters.
     """
     return {'Gaussian': {'func': gaussian},
             'Split Gaussian': {'func': split_gaussian, 'add_params': ['dx_left']},
@@ -189,10 +241,13 @@ def peak_shapes_params() -> dict:
 
 def smoothing_methods() -> dict[str, tuple[Callable, int]]:
     """
-    keys using in adding items of smoothing_method_comboBox
-    func is using in smoothing procedure
-    limit is n_samples_limit to switch btwn ThreadPoolExecutor and ProcessPoolExecutor
-    @return: dict[tuple]
+    Returns a dictionary of smoothing methods with their corresponding functions and sample limits.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are smoothing method names and values are tuples
+        containing the smoothing function and the sample limit.
     """
     return {'MLESG': (smooth_mlesg, 256),
             'CEEMDAN': (smooth_ceemdan, 12),
@@ -209,3 +264,33 @@ def smoothing_methods() -> dict[str, tuple[Callable, int]]:
             'Median filter': (smooth_med_filt, 12_000),
             'Wiener filter': (smooth_wiener, 12_000),
             }
+
+
+def get_optuna_params() -> dict:
+    """
+    Returns a dictionary of hyperparameters for Optuna optimization for various classifiers.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are classifier names and values are lists of hyperparameter names.
+    """
+    return {'LDA': [["solver", "shrinkage"]],
+            'Logistic regression': [["penalty", "solver"], ["C", "l1_ratio"]],
+            'SVC': [['C', 'tol']],
+            'Decision Tree': [['criterion', 'max_depth'], ['splitter', 'min_samples_split'],
+                              ['min_samples_leaf', 'max_features']],
+            'Random Forest': [['criterion', 'max_depth'], ['min_samples_leaf', 'min_samples_split'],
+                              ['max_samples', 'max_features']],
+            'XGBoost': [['max_depth', 'gamma'], ['min_child_weight', 'reg_alpha'],
+                        ['reg_lambda', 'subsample'], ['colsample_bytree', 'colsample_bylevel'],
+                        ['colsample_bynode', 'max_delta_step']]
+            }
+
+
+def peak_shape_params_limits() -> dict:
+    """
+    Limits for additional parameters.
+    """
+    return {'gamma': (0., 100.), 'skew': (-100., 100.), 'l_ratio': (0., 1.),  'expon': (0.1, 100.),
+            'beta': (0.1, 100.), 'alpha': (-1., 1.), 'q': (-0.5, 0.5)}

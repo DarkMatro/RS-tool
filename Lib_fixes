@@ -2,3 +2,9 @@
     move   def _tmp(self, *args, **kws):
                 pass
     outside from __init__
+
+2. - File "joblib\_memmapping_reducer.py", line 585 and 601, in register_folder_finalizer commented
+to avoid running program process copy.
+resource_tracker.register(pool_subfolder, "folder")
+and
+resource_tracker.unregister(pool_subfolder, "folder")

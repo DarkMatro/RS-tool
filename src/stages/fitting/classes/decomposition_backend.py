@@ -1,3 +1,14 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+decomposition_backend module
+============================
+
+This module contains the main classes and functions for spectral decomposition, including peak
+guessing, spectrum splitting, and parameter estimation for fitting models.
+"""
+
+import warnings
 from copy import deepcopy
 from typing import KeysView
 
@@ -10,7 +21,7 @@ from pandas import MultiIndex
 
 from qfluentwidgets import MessageBox
 from src import get_parent, get_config, ObservableDict
-from src.data.default_values import peak_shapes_params
+from src.data.default_values import peak_shapes_params, peak_shape_params_limits
 from src.data.work_with_arrays import nearest_idx
 from src.stages import guess_peaks, fit_model, update_fit_parameters, legend_from_float, \
     clustering_lines_intervals, intervals_by_borders, create_intervals_data, params_func_legend, \
@@ -22,19 +33,39 @@ from src.stages.fitting.classes.undo import CommandAfterGuess, CommandAfterBatch
 
 class DecompositionBackend:
     """
-    parent - DecompositionStage
+    Handles the backend logic for spectral decomposition, including fitting models to spectra,
+    guessing peak parameters, and batch processing.
+
+    Parameters
+    ----------
+    parent : DecompositionStage
+        The parent stage to which this backend is attached.
     """
     def __init__(self, parent, *args, **kwargs):
+        """
+        Initialize the DecompositionBackend.
+
+        Parameters
+        ----------
+        parent : DecompositionStage
+            The parent stage to which this backend is attached.
+        *args : tuple
+            Additional arguments.
+        **kwargs : dict
+            Additional keyword arguments.
+        """
         super().__init__(*args, **kwargs)
         self.parent = parent
+        warnings.filterwarnings("ignore")
 
     # region Fit
     @asyncSlot()
     async def fit(self):
         """
-        Check conditions when Fit button pressed, if all ok - go do_fit
-        For fitting must be more than 0 lines to fit and current spectrum in plot must also be
-        Должна быть хотя бы 1 линия и выделен текущий спектр
+        Check conditions when Fit button is pressed, if all conditions are met, proceed to fit.
+
+        This function verifies that there are lines to fit and that the current spectrum is
+        selected in the plot.
         """
         mw = get_parent(self.parent, "MainWindow")
         if mw.ui.deconv_lines_table.model().rowCount() == 0:
@@ -55,16 +86,17 @@ class DecompositionBackend:
     @asyncSlot()
     async def _do_fit(self) -> None:
         """
-        Fitting line's parameters to current spectrum data
-        1. Get x, y axes of current spectrum
-        2. Prepare data before creating model and parameters
-        3. Create params
-        4. Create model
-        5. Fit model to y_data
+        Perform the fitting of line parameters to the current spectrum data.
+
+        This involves:
+        1. Getting the x, y axes of the current spectrum.
+        2. Preparing data before creating the model and parameters.
+        3. Creating parameters.
+        4. Creating the model.
+        5. Fitting the model to the y data.
         """
         mw = get_parent(self.parent, "MainWindow")
         cfg = get_config("texty")["fit"]
-        fitting_methods = get_config("fitting")['fitting_methods']
         arr = self.parent.graph_drawing.array_of_current_filename_in_deconvolution()
         filename = self.parent.data.current_spectrum_name
         spl_arr = self.split_array_for_fitting({filename: [arr]})[filename]
@@ -74,7 +106,8 @@ class DecompositionBackend:
                                                      'min_x0': arr[:, 0][0],
                                                      'max_x0': arr[:, 0][-1]})
         x_y_models_params, _ = models_params_splitted(spl_arr, params, static_params)
-        method = fitting_methods[mw.ui.fit_opt_method_comboBox.currentText()]
+        method = get_config("fitting")['fitting_methods'][
+            mw.ui.fit_opt_method_comboBox.currentText()]
         kwargs = {'n_files': len(spl_arr), 'method': method}
         result = await mw.progress.run_in_executor(
             "fit", fit_model, x_y_models_params, **kwargs
@@ -92,14 +125,12 @@ class DecompositionBackend:
 
     def prepare_data_fitting(self) -> list[tuple[int, str, int, str, callable]]:
         """
-        Get prepared data to create model and parameters
+        Prepare data to create model and parameters.
 
         Returns
         -------
-        idx_type_paramcount_legend : list[tuple[int, str, int, str]]
-            using to create Parameters of model. idx - curve index, type - curve type,
-             param_count - number of
-            parameters of line_type, legend - curve legend by index
+        list[tuple[int, str, int, str, callable]]
+            Prepared data used to create model parameters.
         """
         # get dataframe with active lines - idx | Legend, Type, Style
         mw = get_parent(self.parent, "MainWindow")
@@ -120,30 +151,20 @@ class DecompositionBackend:
     def fitting_params(self, list_idx_type: list[tuple[int, str, int, str, callable]],
                        bounds: dict) -> Parameters:
         """
-        Set parameters for fit model
+        Set parameters for the fitting model.
 
         Parameters
-        ---------
-        list_idx_type : list[tuple[int, str, int, str, callable]
-            idx - line index
-            line_type - 'Gaussian' for example
-            param_count - number of parameters for line type. example for Gaussian = 3, pearson4 = 5
-            legend - for parameter name
-            _callable - not used here
-        bounds:
-            bound_max_a : float
-                maximal Intensity of y_axis spectrum
-
-            bound_min_x0 : float
-                minimal x of x_axis (first value of x_axis)
-
-            bound_max_x0 : float
-                maximal x of x_axis (last value of x_axis)
+        ----------
+        list_idx_type : list[tuple[int, str, int, str, callable]]
+            List containing index, line type, parameter count, legend, and callable function for
+            each line.
+        bounds : dict
+            Dictionary containing the bounds for the fitting parameters.
 
         Returns
         -------
-        params : Parameters()
-            initial values of fit parameters
+        Parameters
+            Initial values of fit parameters.
         """
         bounds['min_a'] = 0.
         if not self.parent.data.current_spectrum_name:
@@ -156,7 +177,7 @@ class DecompositionBackend:
                                    'FWHM, cm\N{superscript minus}\N{superscript one}'] / 2.
         params = Parameters()
         i = 0
-        pspl = get_config('fitting')['peak_shape_params_limits']
+        pspl = peak_shape_params_limits()
         for idx, line_type, param_count, legend, _ in list_idx_type:
             params_from_table = self.parent.current_line_parameters(idx, '')
             param_names = ['a', 'x0', 'dx']
@@ -198,11 +219,13 @@ class DecompositionBackend:
     @asyncSlot()
     async def batch_fit(self) -> None:
         """
-        Check conditions when Fit button pressed, if all ok - go do_batch_fit
-        For fitting must be more than 0 lines to fit
+        Check conditions when the Fit button is pressed for batch fitting. If all conditions are
+        met, proceed to batch fit.
+
+        This function ensures there are lines to fit and data is available for fitting.
         """
         mw = get_parent(self.parent, "MainWindow")
-        stage = mw.drag_widget.get_latest_active_stage()
+        stage = mw.ui.drag_widget.get_latest_active_stage()
         assert stage is not None, 'Cant find latest active stage.'
         data = stage.data
         if mw.ui.deconv_lines_table.model().rowCount() == 0:
@@ -215,22 +238,24 @@ class DecompositionBackend:
         try:
             await self._do_batch_fit()
         except Exception as err:
-            mw.show_error(err)
+            mw.progress.show_error(err)
 
     @asyncSlot()
     async def _do_batch_fit(self) -> None:
         """
-        Fitting line's parameters to all spectrum files
-        1. Get x, y axes of current spectrum
-        2. Prepare data before creating model and parameters
-        3. Create params
-        4. Create model
-        5. Fit model to y_data
+        Perform batch fitting of line parameters to all spectrum files.
+
+        This involves:
+        1. Getting the x, y axes of the current spectrum.
+        2. Preparing data before creating the model and parameters.
+        3. Creating parameters.
+        4. Creating the model.
+        5. Fitting the model to the y data.
         """
         mw = get_parent(self.parent, "MainWindow")
         cfg = get_config("texty")["batch_fit"]
         mw.progress.open_progress(cfg, 0)
-        assert mw.drag_widget.get_latest_active_stage() is not None, \
+        assert mw.ui.drag_widget.get_latest_active_stage() is not None, \
             'Cant find latest active stage.'
         static_params = self.prepare_data_fitting()
         method = get_config("fitting")['fitting_methods'][
@@ -270,8 +295,24 @@ class DecompositionBackend:
 
     def prepare_baseline_corrected_spectra(self, data: ObservableDict,
                                            filenames: KeysView) -> dict:
+        """
+        Prepare baseline-corrected spectra.
+
+        Parameters
+        ----------
+        data : ObservableDict
+            Dictionary containing the spectral data.
+        filenames : KeysView
+            Filenames of the spectra to be processed.
+
+        Returns
+        -------
+        dict
+            Baseline-corrected spectra.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        if mw.predict_logic.is_production_project \
+        context = get_parent(self.parent, "Context")
+        if context.predict.is_production_project \
                 and mw.ui.deconvoluted_dataset_table_view.model().rowCount() != 0:
             filenames_in_dataset = list(
                 mw.ui.deconvoluted_dataset_table_view.model().column_data(1).values)
@@ -288,6 +329,21 @@ class DecompositionBackend:
 
     def _fitting_params_batch(self, static_params: list[tuple[int, str, int, str, callable]],
                               arrays: dict[str, list[np.ndarray]]) -> dict:
+        """
+        Set parameters for batch fitting.
+
+        Parameters
+        ----------
+        static_params : list[tuple[int, str, int, str, callable]]
+            List of static parameters for each line.
+        arrays : dict[str, list[np.ndarray]]
+            Dictionary containing arrays of spectral data.
+
+        Returns
+        -------
+        dict
+            Dictionary of fit parameters for each spectrum.
+        """
         try:
             x_axis = next(iter(arrays.values()))[0][:, 0]
         except StopIteration:
@@ -318,11 +374,25 @@ class DecompositionBackend:
 
     def _prepare_batch_fit_data(self, static_params: list[tuple[int, str, int, str, callable]]) \
             -> list[tuple[str, np.ndarray, np.ndarray, Model, dict]]:
+        """
+        Prepare data for batch fitting.
+
+        Parameters
+        ----------
+        static_params : list[tuple[int, str, int, str, callable]]
+            List of static parameters for each line.
+
+        Returns
+        -------
+        list[tuple[str, np.ndarray, np.ndarray, Model, dict]]
+            List of tuples containing key, x-axis, y-axis, model, and interval parameters for each
+            spectrum.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        filenames = (mw.drag_widget.get_latest_active_stage().data.keys()
-                     & mw.ui.input_table.model().filenames())
+        filenames = (mw.ui.drag_widget.get_latest_active_stage().data.keys()
+                     & mw.ui.input_table.model().filenames)
         baseline_corrected_spectra = self.prepare_baseline_corrected_spectra(
-            mw.drag_widget.get_latest_active_stage().data, filenames)
+            mw.ui.drag_widget.get_latest_active_stage().data, filenames)
         splitted_arrays = self.split_array_for_fitting(baseline_corrected_spectra)
         list_params_full = self._fitting_params_batch(static_params, baseline_corrected_spectra)
         x_y_models_params = models_params_splitted_batch(splitted_arrays, list_params_full,
@@ -334,10 +404,18 @@ class DecompositionBackend:
         return key_x_y_models_params
 
     def add_line_params_from_template_batch(self, keys: set[str]) -> None:
+        """
+        Add line parameters from template for batch fitting.
+
+        Parameters
+        ----------
+        keys : set[str]
+            Set of keys corresponding to the spectra to be processed.
+        """
         mw = get_parent(self.parent, "MainWindow")
         key = next(iter(keys))
         self.parent.add_line_params_from_template(key)
-        df_a = mw.ui.fit_params_table.model().dataframe()
+        df_a = mw.ui.fit_params_table.model().dataframe
         tuples = [i for i in df_a.index if i[0] == '']
         df_a = df_a.loc['']
         mi = MultiIndex.from_tuples(tuples, names=('filename', 'line_index', 'param_name'))
@@ -361,10 +439,15 @@ class DecompositionBackend:
     @asyncSlot()
     async def guess(self, line_type: str) -> None:
         """
-        Auto guess lines, finds number of lines and positions x0
+        Auto guess lines, find the number of lines and their positions (x0).
+
+        Parameters
+        ----------
+        line_type : str
+            Type of line to be guessed.
         """
         mw = get_parent(self.parent, "MainWindow")
-        stage = mw.drag_widget.get_latest_active_stage()
+        stage = mw.ui.drag_widget.get_latest_active_stage()
         assert stage is not None, 'Cant find latest active stage.'
         data = stage.data
         if not data:
@@ -410,38 +493,52 @@ class DecompositionBackend:
     @asyncSlot()
     async def do_auto_guess(self, line_type: str) -> None:
         """
-        Автоматический подбор линий к модели. Результат отображается только для шаблона.
-        Peaks are added at position of global extremum of data-baseline with previous peaks
-        subtracted.
-        Таблица параметров для всех спектров очищается. Результаты прошлых fit очищаются.
-        Если на момент начала анализа уже есть линии в таблице линий, то поиск линий начнется не с
-        нуля,
-         а с этого состава.
-        Спектр делится на интервалы.
-        Guess method:
-            Если выбран 'Average', то анализируется только усредненный спектр по всем группам.
-            Если выбран 'Average groups', то анализируются усредненные по каждой отдельной группе
-            Если выбран 'All', то анализируются усредненные по всем спектрам из левой таблицы.
-        Для 'Average groups' и 'All' собираются линии x0. По каждому интервалу анализируется
-        количество линий.
-        Итоговое количество линий для каждого интервала определяется методом кластеризации k-means.
-        На вход в алгоритм k-means подается количество линий
+        Automatically fits lines to the model based on the current data and selected line type.
 
-        После k-means полученный состав линий опять прогоняется через Fit и мы получаем итоговую
-        модель.
+        This asynchronous method performs an automated peak guessing process for the provided line
+        type. The
+        results are displayed only for the template mode. The process involves:
 
-        В процессе анализа на каждый параметр линий накладывается ряд ограничений.
-         a - амплитуда от 0 до максимального значения в интервале. Интервал зависит от x0 и dx
-         x0 - положение максимума линии. Изначально определяется по положению максимума residual
-         +- 1 см-1. Или после
-            k-means границы задаются мин-макс значением в кластере
-         dx, dx_left - полуширина линии левая/правая, максимальное значение задается в Max peak
-         HWHM:, минимальное
-            определяется из наименьшего FWHM CM-1 / 2 в таблице
-        Остальные параметры имеют границы указанные в peak_shape_params_limits
+        - Subtracting previous peaks from the data-baseline to identify the global extrema.
+        - Clearing parameter tables and fit results for all spectra.
+        - Starting the line search from the current composition if lines already exist in the table.
+        - Dividing the spectrum into intervals and analyzing it based on the selected guess method:
+            - 'Average': Analyzes only the averaged spectrum across all groups.
+            - 'Average groups': Analyzes averaged spectra from each group individually.
+            - 'All': Analyzes the averaged spectra from all spectra listed in the left table.
+        - For 'Average groups' and 'All', lines are collected and analyzed per interval.
+        - The number of lines per interval is determined using k-means clustering.
+        - The k-means results are fitted to produce the final model.
 
-        @param line_type: str
-        @return: None
+        During the analysis, constraints are applied to each line parameter:
+        - `a` (amplitude): Ranges from 0 to the maximum value in the interval, dependent on `x0` and
+            `dx`.
+        - `x0` (peak position): Initially set based on the maximum of the residual plus/minus 1 cm⁻¹
+            or defined by the k-means cluster boundaries.
+        - `dx` and `dx_left` (peak width): Maximum values set by 'Max peak HWHM' and minimum values
+            from the smallest FWHM/2 in the table.
+        - Other parameters are constrained according to limits defined in `peak_shape_params_limits`
+
+        Parameters
+        ----------
+        line_type : str
+            The type of peak shape to fit. This should be a valid line type as defined in the peak
+            shape parameters.
+
+        Returns
+        -------
+        None
+            This method does not return a value but updates the deconvolution model and UI based on
+            the results.
+
+        Notes
+        -----
+        - The progress is monitored and updated during the process using the `mw.progress` utility.
+        - The fitting process involves:
+            - Guessing peaks and analyzing results if the guess method is not 'Average'.
+            - Performing a fitting procedure using the guessed model parameters.
+        - The method includes checks to handle user cancellation and updates the undo stack with the
+            results of the guess.
         """
         mw = get_parent(self.parent, "MainWindow")
         cfg = get_config("texty")["guess"]
@@ -450,7 +547,7 @@ class DecompositionBackend:
         n_files = len(sliced_arrays)
         n_files = 0 if n_files == 1 else n_files
         mw.progress.open_progress(cfg, n_files)
-        kwargs = {'n_files': n_files, 'input_parameters': parameters_to_guess,
+        kwargs = {'n_files': n_files, 'in_pars': parameters_to_guess,
                   'break_event_by_user': mw.progress.break_event}
         result = await mw.progress.run_in_executor("guess", guess_peaks, sliced_arrays, **kwargs)
         cancel = mw.progress.close_progress(cfg)
@@ -498,37 +595,46 @@ class DecompositionBackend:
         Parameters
         ---------
         line_type : str
-            {'Gaussian', 'Split Gaussian', ... etc}. Line type chosen by user in Guess button.
+            {'Gaussian', 'Split Gaussian', ... etc.}. Line type chosen by user in Guess button.
              see peak_shapes_params() in default_values.py
 
         Returns
         -------
         out :
             dict with keys:
-            'func': callable; Function for peak shape calculation. Look peak_shapes_params() in default_values.py.
+            'func': callable; Function for peak shape calculation. Look peak_shapes_params() in
+             default_values.py.
             'param_names': list[str]; List of parameter names. Example: ['a', 'x0', 'dx'].
-            'init_model_params': list[float]; Initial values of parameters for a given spectrum and line type.
-            'min_fwhm': float; the minimum value FWHM, determined from the input table (the minimum of all).
+            'init_model_params': list[float]; Initial values of parameters for a given spectrum and
+             line type.
+            'min_fwhm': float; the minimum value FWHM, determined from the input table (the minimum
+             of all).
             'method': str; Optimization method, see fitting_methods() in default_values.py.
-            'params_limits': dict[str, tuple[float, float]]; see peak_shape_params_limits() in default_values.py.
+            'params_limits': dict[str, tuple[float, float]]; see peak_shape_params_limits() in
+             default_values.py.
             'noise_level': float; limit for peak detection.
                 Peaks with amplitude less than noise_level will not be detected.
             'max_dx': float; Maximal possible value for dx. For all peaks.
             'gamma_factor: float;
-                 from 0. to 1. limit for max gamma value set by: max_v = min(dx_left, dx_right) * gamma_factor
+                 from 0. to 1. limit for max gamma value set by: max_v = min(dx_left, dx_right) *
+                  gamma_factor
 
-        # The following parameters are empty if there are no lines. If at the beginning of the analysis there are
+        # The following parameters are empty if there are no lines. If at the beginning of the
+         analysis there are
         # lines already created by the user, then the parameters will be filled.
 
             'func_legend': list[tuple]; - (callable func, legend),
-                func - callable; Function for peak shape calculation. Look peak_shapes_params() in default_values.py.
+                func - callable; Function for peak shape calculation. Look peak_shapes_params() in
+                 default_values.py.
                 legend - prefix for the line in the model. All lines in a heap. As a result,
                     we select only those that belong to the current interval.
             'params': Parameters(); parameters of existing lines.
             'used_legends': list[str]; already used legends (used wave-numbers)
-                ['k977dot15_', 'k959dot68_', 'k917dot49_']. We control it because model cant have lines with duplicate
+                ['k977dot15_', 'k959dot68_', 'k917dot49_']. We control it because model cant have
+                 lines with duplicate
                  legends (same x0 position lines)
-            'used_legends_dead_zone': dict; keys - used_legends, values - tuple (idx - left idx, right idx - idx).
+            'used_legends_dead_zone': dict; keys - used_legends, values - tuple (idx - left idx,
+             right idx - idx).
                 dead zone size to set y_residual to 0.
                 {'k977dot15_': (1, 1), 'k959dot68_': (2, 1), 'k917dot49_': (3, 4)}
         """
@@ -536,11 +642,11 @@ class DecompositionBackend:
         func = peak_shapes_params()[line_type]['func']
         param_names = self._param_names(line_type)
         init_model_params = self._init_model_params(line_type)
-        min_fwhm = mw.ui.input_table.model().min_fwhm()
+        min_fwhm = mw.ui.input_table.model().min_fwhm
         mean_snr = np.mean(mw.ui.input_table.model().get_column('SNR').values)
         method = get_config("fitting")['fitting_methods'][
             mw.ui.fit_opt_method_comboBox.currentText()]
-        params_limits = get_config("fitting")['peak_shape_params_limits']
+        params_limits = peak_shape_params_limits()
         params_limits['l_ratio'] = (0., mw.ui.l_ratio_doubleSpinBox.value())
         # The following parameters are empty if there are no lines. If at the beginning of the
         # analysis there are lines already created by the user, then the parameters will be filled.
@@ -695,7 +801,7 @@ class DecompositionBackend:
         context = get_parent(self.parent, "Context")
         guess_method = mw.ui.guess_method_cb.currentText()
         arrays = {'Average': [self.parent.data.averaged_spectrum]}
-        stage = mw.drag_widget.get_latest_active_stage()
+        stage = mw.ui.drag_widget.get_latest_active_stage()
         assert stage is not None, 'Cant find latest active stage.'
         data = stage.data
         if guess_method == 'Average groups':
@@ -793,8 +899,8 @@ class DecompositionBackend:
             2D array with 2 columns: center of cluster x0 and standard deviation of each cluster
 
         param_names: list[str]
-            Names of peak_shape parameters. Standard params are 'a', 'x0' and 'dx_right'. Other param names given from
-             peak_shapes_params() in default_values.py
+            Names of peak_shape parameters. Standard params are 'a', 'x0' and 'dx_right'. Other
+            param names given from peak_shapes_params() in default_values.py
 
         line_type: str
             {'Gaussian', 'Split Gaussian', ... etc.}. Line type chosen by user in Guess button.
@@ -803,7 +909,8 @@ class DecompositionBackend:
         Returns
         -------
         x_y_models_params: list[tuple[np.ndarray, np.ndarray, Model, Parameters]]
-            tuples with x_axis, y_axis, fitting model, params for fitting model. For each cm-1 range.
+            tuples with x_axis, y_axis, fitting model, params for fitting model. For each cm-1
+            range.
         """
         mw = get_parent(self.parent, "MainWindow")
         sliced_average_array_by_ranges = self.split_array_for_fitting(
@@ -811,9 +918,9 @@ class DecompositionBackend:
         # form static_params for all ranges
         init_params = self.parent.initial_peak_parameters(line_type)
         static_params = (init_params, mw.ui.max_dx_dsb.value(),
-                         mw.ui.input_table.model().min_fwhm() / 2.,
+                         mw.ui.input_table.model().min_fwhm / 2.,
                          peak_shapes_params()[line_type]['func'],
-                         get_config('fitting')['peak_shape_params_limits'], param_names,
+                         peak_shape_params_limits(), param_names,
                          mw.ui.l_ratio_doubleSpinBox.value())
         x_y_model_params = []
         for i, cur_range_clustered_x0_sd in enumerate(all_ranges_clustered_x0_sd):

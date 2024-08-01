@@ -23,6 +23,7 @@ help:
 recent:
   path: recent_files.pkl
 
+
 theme:
   path:
     background: ./material/themes/background/
@@ -59,3 +60,5 @@ n_files_limit:
   uncertain: -1
   fit_model: -1
   optuna: -1
+  shap: -1
+  predict: -1

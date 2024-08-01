@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides various signal smoothing functions for spectral data, including Savitzky-Golay,
 Whittaker,
@@ -316,7 +318,8 @@ def smooth_eemd(item: tuple[str, np.ndarray], noise_first_imfs: int, trials: int
     x_max = abs(max(x_axis))
     x_range = x_max - abs(min(x_axis))
     noise_width = x_range * 3 / (x_axis.shape[0] - 1) ** 2
-    eemd = EEMD(trials=trials, DTYPE=np.float16, spline_kind='akima', noise_width=noise_width, noise_kind='uniform')
+    eemd = EEMD(trials=trials, DTYPE=np.float16, spline_kind='akima', noise_width=noise_width,
+                noise_kind='uniform')
     eemd.noise_seed(481516234)
     e_imfs = eemd.eemd(y_axis, x_axis, max_imf=noise_first_imfs)
     for i in range(noise_first_imfs):

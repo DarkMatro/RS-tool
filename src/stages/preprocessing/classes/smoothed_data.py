@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Module for smoothing data within a preprocessing stage.
 
@@ -14,21 +16,22 @@ CommandSmooth
 """
 
 from copy import deepcopy, copy
+from typing import ItemsView
 
 import numpy as np
-from qtpy.QtWidgets import QMainWindow
-from asyncqtpy import asyncSlot
 import pandas as pd
+from asyncqtpy import asyncSlot
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QMouseEvent
+from qtpy.QtWidgets import QMainWindow
+
 from src.backend.undo_stack import UndoCommand
 from src.data.collections import ObservableDict
-from src.stages.preprocessing.classes.stages import PreprocessingStage
-from src.ui.ui_smooth_widget import Ui_SmoothForm
-from src.data.get_data import get_parent
-from typing import ItemsView
-from qtpy.QtGui import QMouseEvent
-from qtpy.QtCore import Qt
 from src.data.config import get_config
 from src.data.default_values import smoothing_methods
+from src.data.get_data import get_parent
+from src.stages.preprocessing.classes.stages import PreprocessingStage
+from src.ui.ui_smooth_widget import Ui_SmoothForm
 
 
 class SmoothedData(PreprocessingStage):
@@ -73,7 +76,7 @@ class SmoothedData(PreprocessingStage):
         self.ui.reset_btn.clicked.connect(self.reset)
         self.ui.save_btn.clicked.connect(self.save)
         self.ui.activate_btn.clicked.connect(self.activate)
-        self.ui.smooth_btn.clicked.connect(self._smooth_clicked)
+        self.ui.smooth_btn.clicked.connect(self.process_clicked)
         self.ui.smoothing_method_comboBox.currentTextChanged.connect(self.method_changed)
         self.ui.smoothing_method_comboBox.setCurrentText(defaults['smoothing_method_comboBox'])
         self._init_smoothing_method_combo_box()
@@ -132,7 +135,7 @@ class SmoothedData(PreprocessingStage):
             self.parent.update_plot_item('SmoothedData')
         self.activate(True)
 
-    def read(self) -> dict:
+    def read(self, production_export: bool=False) -> dict:
         """
         Read the current attributes' data.
 
@@ -141,8 +144,7 @@ class SmoothedData(PreprocessingStage):
         dict
             A dictionary containing all class attributes data.
         """
-        dt = {"data": self.data.get_data(),
-              'window_length_spinBox': self.ui.window_length_spinBox.value(),
+        dt = {'window_length_spinBox': self.ui.window_length_spinBox.value(),
               'whittaker_lambda_spinBox': self.ui.whittaker_lambda_spinBox.value(),
               'smooth_polyorder_spinBox': self.ui.smooth_polyorder_spinBox.value(),
               'sigma_spinBox': self.ui.sigma_spinBox.value(),
@@ -152,6 +154,8 @@ class SmoothedData(PreprocessingStage):
               'smoothing_method_comboBox': self.ui.smoothing_method_comboBox.currentText(),
               'current_method': self.current_method,
               'active': self.active}
+        if not production_export:
+            dt['data'] = self.data.get_data()
         return dt
 
     def load(self, db: dict) -> None:
@@ -163,7 +167,8 @@ class SmoothedData(PreprocessingStage):
         db : dict
             A dictionary containing all class attributes data.
         """
-        self.data.update(db['data'])
+        if 'data' in db:
+            self.data.update(db['data'])
         self.ui.window_length_spinBox.setValue(db['window_length_spinBox'])
         self.ui.whittaker_lambda_spinBox.setValue(db['whittaker_lambda_spinBox'])
         self.ui.smooth_polyorder_spinBox.setValue(db['smooth_polyorder_spinBox'])
@@ -264,14 +269,14 @@ class SmoothedData(PreprocessingStage):
                 self.ui.eemd_trials_spinBox.setVisible(True)
 
     @asyncSlot()
-    async def _smooth_clicked(self) -> None:
+    async def process_clicked(self) -> None:
         """
         Handle the smooth button click event asynchronously.
         """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if prev_stage is None or not prev_stage.data:
             mw.ui.statusBar.showMessage("No data for smoothing")
             return
@@ -400,7 +405,7 @@ class CommandSmooth(UndoCommand):
         self.method_old = copy(self.stage.current_method)
         self.smoothed_df = {'new': deepcopy(self.create_smoothed_dataset_new()),
                             'old': deepcopy(
-                                self.mw.ui.smoothed_dataset_table_view.model().dataframe())}
+                                self.mw.ui.smoothed_dataset_table_view.model().dataframe)}
 
     def redo_special(self):
         """

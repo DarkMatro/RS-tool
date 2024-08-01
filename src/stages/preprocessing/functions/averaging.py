@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides functionality to compute the average spectrum from a list of Raman spectra
 using either the mean or median method.

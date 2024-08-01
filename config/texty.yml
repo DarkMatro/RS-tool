@@ -128,3 +128,21 @@ optuna:
   state_tooltip_open_msg: 'Optuna optimize...'
   status_bar_cancel_msg: 'Optuna canceled...'
   no_result_msg: 'Optuna error...'
+
+shap:
+  status_bar_open_msg: 'SHAP processing...'
+  state_tooltip_open_msg: 'SHAP processing...'
+  status_bar_cancel_msg: 'SHAP canceled...'
+  no_result_msg: 'SHAP error...'
+
+predict:
+  status_bar_open_msg: 'Predicting...'
+  state_tooltip_open_msg: 'Predicting...'
+  status_bar_cancel_msg: 'Predicting canceled...'
+  no_result_msg: 'Predicting error...'
+
+save:
+  status_bar_open_msg: 'Saving file...'
+  state_tooltip_open_msg: 'Saving file...'
+  status_bar_cancel_msg: 'Saving canceled...'
+  no_result_msg: 'Saving error...'

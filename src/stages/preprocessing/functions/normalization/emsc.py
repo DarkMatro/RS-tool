@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides functions for Extended Multiplicative Scatter Correction (EMSC) of spectral
 data, including Kohler's algorithm and the calculation of scattering extinction values.

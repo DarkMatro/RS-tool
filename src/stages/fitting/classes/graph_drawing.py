@@ -1,17 +1,42 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+Module for managing the drawing and manipulation of graphical representations of spectra and their
+components.
+
+This module provides functionalities for:
+- Initializing and managing the state of graphical elements related to spectral data.
+- Cutting data intervals.
+- Redrawing curves based on index.
+- Adding and updating deconvolution curves on the plot.
+- Assigning styles to different types of curves.
+- Handling various operations on Regions of Interest (ROI) associated with curves.
+
+Classes
+-------
+CurveSelect
+    Data structure to hold information about the currently selected curve.
+GraphDrawing
+    Manages the drawing and updating of spectral curves on a plot widget.
+CommandDeconvLineDragged
+    Undo command
+"""
+
 import dataclasses
 from os import environ
 
 import numpy as np
 import pandas as pd
 from PyQt5.QtCore import Qt
-from qtpy.QtGui import QMouseEvent, QColor
 from pyqtgraph import ROI, PlotCurveItem, mkBrush, mkPen, ErrorBarItem, SignalProxy, InfiniteLine, \
     FillBetweenItem
 from qtpy.QtCore import QObject, QTimer
+from qtpy.QtGui import QMouseEvent, QColor
 
 from qfluentwidgets import MessageBox
 from src import get_parent, UndoCommand
 from src.data.default_values import peak_shapes_params
+from src.data.plotting import get_curve_plot_data_item
 from src.stages import cut_full_spectrum, packed_current_line_parameters
 from src.stages.fitting.functions.plotting import set_roi_size_pos, set_roi_size, \
     deconvolution_data_items_by_idx, curve_pen_brush_by_style, update_curve_style, \
@@ -22,6 +47,18 @@ from src.stages.preprocessing.functions.averaging import get_average_spectrum
 
 @dataclasses.dataclass
 class CurveSelect:
+    """
+    Data structure to hold information about the currently selected curve.
+
+    Attributes
+    ----------
+    timer_fill : QTimer or None
+        Timer for managing ROI fill animations.
+    curve_idx : int or None
+        Index of the currently selected curve.
+    rad : float or None
+        radian
+    """
     timer_fill: QTimer | None
     curve_idx: int | None
     rad: float | None
@@ -29,16 +66,70 @@ class CurveSelect:
 
 class GraphDrawing(QObject):
     """
-    parent - DecompositionStage
+    Manages the drawing and updating of spectral curves on a plot widget.
+
+    Parameters
+    ----------
+    parent : DecompositionStage
+        The parent object managing the decomposition stage of the application.
+
+    Methods
+    -------
+    cut_data_interval
+        Cuts the current data interval based on user-defined start and end values.
+    array_of_current_filename_in_deconvolution
+        Returns the 2D array of the spectrum currently displayed on the graph.
+    redraw_curve_by_index
+        Redraws a curve specified by its index.
+    add_deconv_curve_to_plot
+        Adds a deconvolution curve to the plot with the given parameters and style.
+    update_sigma3_curves
+        Updates the sigma3 curves for the current spectrum.
+    assign_style
+        Assigns a style to a specific type of curve.
+    x_axis_for_line
+        Generates the x-axis values for a line based on its center (x0) and width (dx).
+    curve_y_x_idx
+        Returns the y-axis and x-axis values of a deconvolution line based on its type and
+        parameters.
+    draw_sum_curve
+        Updates the sum curve on the plot.
+    draw_residual_curve
+        Updates the residual curve on the plot.
+    redraw_curve
+        Redraws a specific curve with the provided parameters.
+    draw_all_curves
+        Redraws all lines on the plot.
+    create_roi_curve_add_to_plot
+        Creates an ROI and curve, then adds them to the plot.
+    curve_roi_pos_change_started
+        Handles the event when an ROI position change starts.
+    redraw_curves_for_filename
+        Redraws all curves for the currently selected spectrum.
+    current_filename_lines_parameters
+        Returns the parameters of the lines for the current spectrum.
+    update_single_deconvolution_plot
+        Updates the deconvolution plot with the current spectrum data.
     """
 
     def __init__(self, parent, *args, **kwargs):
+        """
+        Initializes the GraphDrawing object with the given parent.
+
+        Parameters
+        ----------
+        parent : DecompositionStage
+            The parent object managing the decomposition stage of the application.
+        """
         super().__init__(*args, **kwargs)
         self.parent = parent
         self.curve_select = CurveSelect(rad=None, timer_fill=None, curve_idx=None)
         self._initial_deconvolution_plot()
 
     def cut_data_interval(self) -> None:
+        """
+        Cuts the current data interval based on user-defined start and end values.
+        """
         mw = get_parent(self.parent, "MainWindow")
         n_array = self.array_of_current_filename_in_deconvolution()
         if n_array is None:
@@ -50,13 +141,18 @@ class GraphDrawing(QObject):
 
     def array_of_current_filename_in_deconvolution(self) -> np.ndarray | None:
         """
-        @return: 2D массив спектра, который отображается на графике в данный момент
+        Returns the 2D array of the spectrum currently displayed on the graph.
+
+        Returns
+        -------
+        np.ndarray or None
+            The 2D array of the spectrum, or None if not available.
         """
         arr = None
         mw = get_parent(self.parent, "MainWindow")
         context = get_parent(self.parent, "Context")
         averaged_dict = context.preprocessing.stages.av_data.data
-        stage = mw.drag_widget.get_latest_active_stage()
+        stage = mw.ui.drag_widget.get_latest_active_stage()
         assert stage is not None, 'Cant find latest active stage.'
         data = stage.data
         if self.parent.data.is_template:
@@ -67,10 +163,20 @@ class GraphDrawing(QObject):
         elif self.parent.data.current_spectrum_name in data:
             arr = data[self.parent.data.current_spectrum_name]
         else:
-            return
+            return None
         return arr
 
     def redraw_curve_by_index(self, idx: int, update: bool = True) -> None:
+        """
+        Redraws a curve specified by its index.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the curve to redraw.
+        update : bool, optional
+            If True, updates the curve after redrawing.
+        """
         mw = get_parent(self.parent, "MainWindow")
         params = self.parent.current_line_parameters(idx)
         data_items = mw.ui.deconv_plot_widget.getPlotItem().listDataItems()
@@ -86,19 +192,36 @@ class GraphDrawing(QObject):
 
     def add_deconv_curve_to_plot(self, params: dict, idx: int, style: dict, line_type: str) \
             -> None:
+        """
+        Adds a deconvolution curve to the plot with the given parameters and style.
+
+        Parameters
+        ----------
+        params : dict
+            Parameters for the deconvolution curve.
+        idx : int
+            Index of the curve.
+        style : dict
+            Style parameters for the curve.
+        line_type : str
+            Type of the line to add.
+        """
         x0 = params['x0']
         dx = params['dx']
         if 'x_axis' not in params:
             params['x_axis'] = self.x_axis_for_line(x0, dx)
         x_axis = params['x_axis']
         full_amp_line, x_axis, _ = self.curve_y_x_idx(line_type, params, x_axis, idx)
-        self.create_roi_curve_add_to_plot(full_amp_line, x_axis, idx, style, params)
+        self._create_roi_curve_add_to_plot(full_amp_line, x_axis, idx, style, params)
 
     def update_sigma3_curves(self, filename: str | None = None) -> None:
         """
-        Update self.sigma3_top and self.sigma3_bottom for current spectrum
-        @param filename: optional
-        @return: None
+        Updates the sigma3 curves for the current spectrum.
+
+        Parameters
+        ----------
+        filename : str or None, optional
+            The name of the file to update. If None, uses the current spectrum.
         """
         mw = get_parent(self.parent, "MainWindow")
         if filename is None:
@@ -120,6 +243,14 @@ class GraphDrawing(QObject):
                                         y=self.parent.data.sigma3[filename][2])
 
     def assign_style(self, style_type: str):
+        """
+        Assigns a style to a specific type of curve.
+
+        Parameters
+        ----------
+        style_type : str
+            The type of style to assign.
+        """
         match style_type:
             case 'data':
                 style = self.parent.styles.data
@@ -146,33 +277,51 @@ class GraphDrawing(QObject):
             curve.setPen(pen)
 
     def x_axis_for_line(self, x0: float, dx: float) -> np.ndarray:
+        """
+        Generates the x-axis values for a line based on its center (x0) and width (dx).
+
+        Parameters
+        ----------
+        x0 : float
+            Center of the line.
+        dx : float
+            Width of the line.
+
+        Returns
+        -------
+        np.ndarray
+            The x-axis values for the line.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        stage = mw.drag_widget.get_latest_active_stage()
+        stage = mw.ui.drag_widget.get_latest_active_stage()
         assert stage is not None, 'Cant find latest active stage.'
         data = stage.data
         if data:
             return self.parent.get_x_axis()
-        else:
-            return np.array(range(int(x0 - dx * 20), int(x0 + dx * 20)))
+        return np.array(range(int(x0 - dx * 20), int(x0 + dx * 20)))
 
     def curve_y_x_idx(self, line_type: str, params: dict | None, x_axis: np.ndarray = None,
                       idx: int = 0) \
             -> tuple[np.ndarray, np.ndarray, int]:
-        """Returns y-axis and x_axis of deconvolution line
+        """
+        Returns the y-axis and x-axis values of a deconvolution line based on its type and
+        parameters.
 
-        Inputs
-        ------
+        Parameters
+        ----------
         line_type : str
-            name of line from self.deconv_line_params.keys()
-        params : dict
-            with parameters value - a, x0, dx and etc.
-        x_axis : np.ndarray
-            corresponding x_axis of y_axis line
+            The type of the line.
+        params : dict, optional
+            Parameters of the line.
+        x_axis : np.ndarray, optional
+            X-axis values for the line.
+        idx : int, optional
+            Index of the line.
 
         Returns
         -------
-        out : tuple[np.ndarray, np.ndarray]
-            y, x axis signal
+        tuple[np.ndarray, np.ndarray, int]
+            The y-axis and x-axis values, and the index of the line.
         """
         mw = get_parent(self.parent, "MainWindow")
         dx, x0 = params['dx'], params['x0']
@@ -201,11 +350,7 @@ class GraphDrawing(QObject):
     # region draw
     def draw_sum_curve(self) -> None:
         """
-            Update sum curve
-
-            Returns
-            -------
-            out : None
+        Updates the sum curve on the plot.
         """
         if self.parent.curves.sum is None:
             return
@@ -215,22 +360,31 @@ class GraphDrawing(QObject):
 
     def draw_residual_curve(self) -> None:
         """
-            Update residual curve after sum curve updated.
-            Residual = data - sum
-
-            Returns
-            -------
-            out : None
+        Updates the residual curve on the plot.
         """
         if self.parent.curves.residual is None:
             return
-        x_axis, y_axis = self.residual_array()
+        x_axis, y_axis = self._residual_array()
         self.parent.curves.residual.setData(x=x_axis, y=y_axis.T)
         self.assign_style('residual')
 
     def redraw_curve(self, params: dict | None = None, curve: PlotCurveItem = None,
                      line_type: str | None = None,
                      idx: int | None = None) -> None:
+        """
+        Redraws a specific curve with the provided parameters.
+
+        Parameters
+        ----------
+        params : dict, optional
+            Parameters for the curve.
+        curve : PlotCurveItem, optional
+            The curve item to redraw.
+        line_type : str, optional
+            Type of the line.
+        idx : int, optional
+            Index of the curve.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if params is None and idx is not None:
             params = self.parent.current_line_parameters(idx)
@@ -254,11 +408,10 @@ class GraphDrawing(QObject):
 
     def draw_all_curves(self) -> None:
         """
-        Отрисовка всех линий
-        @return: None
+        Redraws all lines on the plot.
         """
         mw = get_parent(self.parent, "MainWindow")
-        line_indexes = mw.ui.deconv_lines_table.model().dataframe().index
+        line_indexes = mw.ui.deconv_lines_table.model().dataframe.index
         model = mw.ui.deconv_lines_table.model()
         filename = "" if (self.parent.data.is_template
                           or self.parent.data.current_spectrum_name == '') \
@@ -271,22 +424,38 @@ class GraphDrawing(QObject):
             result.append(res)
 
         for full_amp_line, x_axis, idx in result:
-            self.create_roi_curve_add_to_plot(full_amp_line, x_axis, idx,
-                                              model.cell_data_by_idx_col_name(idx, 'Style'),
-                                              cur_all_lines_params[idx])
+            self._create_roi_curve_add_to_plot(full_amp_line, x_axis, idx,
+                                               model.cell_data_by_idx_col_name(idx, 'Style'),
+                                               cur_all_lines_params[idx])
         self.draw_sum_curve()
         self.draw_residual_curve()
 
-    def create_roi_curve_add_to_plot(self, full_amp_line: np.ndarray | None,
-                                     x_axis: np.ndarray | None, idx: int,
-                                     style: dict, params: dict) -> None:
+    def _create_roi_curve_add_to_plot(self, full_amp_line: np.ndarray | None,
+                                      x_axis: np.ndarray | None, idx: int,
+                                      style: dict, params: dict) -> None:
+        """
+        Creates an ROI and curve, then adds them to the plot.
+
+        Parameters
+        ----------
+        full_amp_line : np.ndarray or None
+            Full amplitude of the line.
+        x_axis : np.ndarray or None
+            X-axis values.
+        idx : int
+            Index of the curve.
+        style : dict
+            Style parameters.
+        params : dict
+            Curve parameters.
+        """
         mw = get_parent(self.parent, "MainWindow")
         a, x0, dx = params['a'], params['x0'], params['dx']
         if full_amp_line is None:
             return
         n_array = np.vstack((x_axis, full_amp_line)).T
         curve = get_curve_for_deconvolution(n_array, idx, style)
-        curve.sigClicked.connect(self.curve_clicked)
+        curve.sigClicked.connect(self._curve_clicked)
         plot_item = mw.ui.deconv_plot_widget.getPlotItem()
         plot_item.addItem(curve)
         roi = ROI([x0, 0], [dx, a], resizable=False, removable=True, rotatable=False, movable=False,
@@ -299,16 +468,23 @@ class GraphDrawing(QObject):
         if not mw.ui.deconv_lines_table.model().checked()[idx] and roi is not None:
             roi.setVisible(False)
         roi.sigRegionChangeStarted.connect(
-            lambda checked=None, index=idx: self.curve_roi_pos_change_started(index,
-                                                                              roi))
+            lambda checked=None, index=idx: self._curve_roi_pos_change_started(index, roi))
         roi.sigRegionChangeFinished.connect(
-            lambda checked=None, index=idx: self.curve_roi_pos_change_finished(index,
-                                                                                             roi))
+            lambda checked=None, index=idx: self._curve_roi_pos_change_finished(index, roi))
         roi.sigRegionChanged.connect(
-            lambda checked=None, index=idx: self.curve_roi_pos_changed(index, roi,
-                                                                                     curve))
+            lambda checked=None, index=idx: self._curve_roi_pos_changed(index, roi, curve))
 
-    def curve_roi_pos_change_started(self, index: int, roi: ROI) -> None:
+    def _curve_roi_pos_change_started(self, index: int, roi: ROI) -> None:
+        """
+        Handles the event when an ROI position change starts.
+
+        Parameters
+        ----------
+        index : int
+            Index of the ROI.
+        roi : ROI
+            The ROI being changed.
+        """
         params = self.parent.current_line_parameters(index)
         if not params:
             return
@@ -320,8 +496,7 @@ class GraphDrawing(QObject):
 
     def redraw_curves_for_filename(self) -> None:
         """
-        Redraw all curves by parameters of current selected spectrum.
-        Also add ErrorBarItem.
+        Redraws all curves for the currently selected spectrum.
         """
         mw = get_parent(self.parent, "MainWindow")
         plot_item = mw.ui.deconv_plot_widget.getPlotItem()
@@ -339,10 +514,8 @@ class GraphDrawing(QObject):
                        "The composition of the lines in this spectrum differs from the template."
                        " Some lines will not be drawn correctly.", mw, {'Ok'}).exec()
             line_indexes = filename_lines_indexes
-        params = self.current_filename_lines_parameters(list(line_indexes), fn, line_types)
-        if params is None or not params:
-            return
-        if len(line_indexes) == 0:
+        params = self._current_filename_lines_parameters(list(line_indexes), fn, line_types)
+        if params is None or not params or len(line_indexes) == 0:
             return
         items = {i.name(): (i, i.parentItem()) for i in plot_item.listDataItems()
                  if i.name() in list(line_indexes)}
@@ -381,8 +554,25 @@ class GraphDrawing(QObject):
                           pen=mkPen(color='black', width=2))
         plot_item.addItem(eb)
 
-    def current_filename_lines_parameters(self, indexes: list[int], filename,
-                                          line_types: pd.Series) -> dict | None:
+    def _current_filename_lines_parameters(self, indexes: list[int], filename,
+                                           line_types: pd.Series) -> dict | None:
+        """
+        Returns the parameters of the lines for the current spectrum.
+
+        Parameters
+        ----------
+        indexes : list of int
+            List of indexes of the lines.
+        filename : str
+            Name of the file containing the spectrum data.
+        line_types : pd.Series
+            containing the types of the lines.
+
+        Returns
+        -------
+        dict or None
+            Dictionary containing the parameters of the lines, or None if not available.
+        """
         mw = get_parent(self.parent, "MainWindow")
         df_params = mw.ui.fit_params_table.model().get_df_by_multiindex(filename)
         if df_params.empty:
@@ -397,15 +587,20 @@ class GraphDrawing(QObject):
                                          is_template: bool = False,
                                          is_averaged_or_group: bool = False) -> None:
         """
-        Change current data spectrum in deconv_plot_widget
-        set self.isTemplate
+        Updates the deconvolution plot with the current spectrum data.
 
-        isTemplate - True if current spectrum is averaged or group's averaged
-        isAveraged_or_Group
+        Parameters
+        ----------
+        current_spectrum_name : str
+            The name of the current spectrum.
+        is_template : bool, optional
+            Indicates if the current spectrum is a template.
+        is_averaged_or_group : bool, optional
+            Indicates if the current spectrum is averaged or grouped.
         """
         mw = get_parent(self.parent, "MainWindow")
         context = get_parent(self.parent, "Context")
-        stage = mw.drag_widget.get_latest_active_stage()
+        stage = mw.ui.drag_widget.get_latest_active_stage()
         assert stage is not None, 'Cant find latest active stage.'
         data = stage.data
         if not data:
@@ -441,15 +636,13 @@ class GraphDrawing(QObject):
             plot_item.removeItem(self.parent.curves.sum)
         if self.parent.curves.residual:
             plot_item.removeItem(self.parent.curves.residual)
-        self.parent.curves.data = mw.get_curve_plot_data_item(arr,
-                                                              color=self.parent.styles.data[
-                                                                  'color'], name='data')
-        self.parent.curves.sum = mw.get_curve_plot_data_item(
-            np.vstack((self.parent.sum_array())).T,
-            color=self.parent.styles.sum['color'], name='sum')
-        self.parent.curves.residual = mw.get_curve_plot_data_item(
-            np.vstack((self.residual_array())).T,
-            color=self.parent.styles.residual['color'], name='residual')
+        self.parent.curves.data = get_curve_plot_data_item(
+            arr, self.parent.styles.data['color'], name='data')
+        self.parent.curves.sum = get_curve_plot_data_item(
+            np.vstack((self.parent.sum_array())).T, self.parent.styles.sum['color'], name='sum')
+        self.parent.curves.residual = get_curve_plot_data_item(
+            np.vstack((self._residual_array())).T,
+            self.parent.styles.residual['color'], name='residual')
         self.parent.curves.data.setVisible(mw.ui.data_checkBox.isChecked())
         self.parent.curves.sum.setVisible(mw.ui.sum_checkBox.isChecked())
         self.parent.curves.residual.setVisible(mw.ui.residual_checkBox.isChecked())
@@ -463,15 +656,15 @@ class GraphDrawing(QObject):
         plot_item.getViewBox().updateAutoRange()
         mw.ui.deconv_plot_widget.setTitle(new_title)
 
-    def residual_array(self) -> tuple[np.ndarray, np.ndarray]:
+    def _residual_array(self) -> tuple[np.ndarray, np.ndarray]:
         """
-            Return x, y arrays of residual spectra.
-            Residual = data - sum
+        Return x, y arrays of residual spectra.
+        Residual = data - sum
 
-            Returns
-            -------
-            out : tuple[np.ndarray, np.ndarray]
-                x_axis, y_axis of residual curve
+        Returns
+        -------
+        out : tuple[np.ndarray, np.ndarray]
+            x_axis, y_axis of residual curve
         """
         x_data, y_data = self.parent.curves.data.getData()
         _, y_sum = self.parent.curves.sum.getData()
@@ -482,7 +675,17 @@ class GraphDrawing(QObject):
     # endregion
 
     # region curve_select
-    def curve_roi_pos_change_finished(self, index: int, roi: ROI) -> None:
+    def _curve_roi_pos_change_finished(self, index: int, roi: ROI) -> None:
+        """
+        Handle the event when the position change of a curve ROI is finished.
+
+        Parameters
+        ----------
+        index : int
+            Index of the ROI.
+        roi : ROI
+            The ROI object representing the curve.
+        """
         params = self.parent.current_line_parameters(index)
         if not params:
             return
@@ -502,7 +705,19 @@ class GraphDrawing(QObject):
                 self.parent.plotting.dragged_line_parameters)
             self.parent.plotting.dragged_line_parameters = a, x0, dx
 
-    def curve_roi_pos_changed(self, index: int, roi: ROI, curve: PlotCurveItem) -> None:
+    def _curve_roi_pos_changed(self, index: int, roi: ROI, curve: PlotCurveItem) -> None:
+        """
+        Handle the event when the position of a curve ROI changes.
+
+        Parameters
+        ----------
+        index : int
+            Index of the ROI.
+        roi : ROI
+            The ROI object representing the curve.
+        curve : PlotCurveItem
+            The plot curve item associated with the ROI.
+        """
         dx, x0 = roi.size().x(), roi.pos().x()
         new_height = roi.pos().y() + roi.size().y()
         params = self.parent.current_line_parameters(index)
@@ -541,14 +756,25 @@ class GraphDrawing(QObject):
         self.parent.graph_drawing.redraw_curve(params, curve, line_type)
 
     def start_fill_timer(self, idx: int) -> None:
+        """
+        Start a timer to fill the curve in real-time.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the curve to fill.
+        """
         mw = get_parent(self.parent, "MainWindow")
         self.curve_select.rad = 0.
         self.curve_select.curve_idx = idx
         self.curve_select.timer_fill = QTimer(mw)
-        self.curve_select.timer_fill.timeout.connect(self.update_curve_fill_realtime)
+        self.curve_select.timer_fill.timeout.connect(self._update_curve_fill_realtime)
         self.curve_select.timer_fill.start(10)
 
-    def update_curve_fill_realtime(self):
+    def _update_curve_fill_realtime(self):
+        """
+        Update the curve fill in real-time.
+        """
         self.curve_select.rad += 0.02
         idx = self.curve_select.curve_idx
         mw = get_parent(self.parent, "MainWindow")
@@ -570,7 +796,15 @@ class GraphDrawing(QObject):
             return
         curve.setBrush(brush)
 
-    def select_curve(self, idx: int) -> None:
+    def _select_curve(self, idx: int) -> None:
+        """
+        Select a curve by its index.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the curve to select.
+        """
         mw = get_parent(self.parent, "MainWindow")
         row = mw.ui.deconv_lines_table.model().row_by_index(idx)
         mw.ui.deconv_lines_table.selectRow(row)
@@ -578,6 +812,9 @@ class GraphDrawing(QObject):
         self.start_fill_timer(idx)
 
     def deselect_selected_line(self) -> None:
+        """
+        Deselect the currently selected line.
+        """
         if self.curve_select.timer_fill is None:
             return
         self.curve_select.timer_fill.stop()
@@ -591,27 +828,40 @@ class GraphDrawing(QObject):
             update_curve_style(self.curve_select.curve_idx, curve_style, data_items)
             self.curve_select.curve_idx = None
 
-    def curve_clicked(self, curve: PlotCurveItem, _event: QMouseEvent) -> None:
+    def _curve_clicked(self, curve: PlotCurveItem, _event: QMouseEvent) -> None:
+        """
+        Handle the event when a curve is clicked.
+
+        Parameters
+        ----------
+        curve : PlotCurveItem
+            The plot curve item that was clicked.
+        _event : QMouseEvent
+            The mouse event associated with the click.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        if (self.curve_select.curve_idx is not None \
+        if (self.curve_select.curve_idx is not None
                 and self.curve_select.curve_idx
-                in mw.ui.deconv_lines_table.model().dataframe().index):
+                in mw.ui.deconv_lines_table.model().dataframe.index):
             curve_style = mw.ui.deconv_lines_table.model().cell_data_by_idx_col_name(
                 self.curve_select.curve_idx, 'Style')
             data_items = mw.ui.deconv_plot_widget.getPlotItem().listDataItems()
             update_curve_style(self.curve_select.curve_idx, curve_style, data_items)
         idx = int(curve.name())
-        self.select_curve(idx)
+        self._select_curve(idx)
     # endregion
 
     def _initial_deconvolution_plot(self) -> None:
+        """
+        Initialize the deconvolution plot.
+        """
         mw = get_parent(self.parent, "MainWindow")
         plot_item = mw.ui.deconv_plot_widget.getPlotItem()
-        mw.ui.deconv_plot_widget.scene().sigMouseClicked.connect(self.fit_plot_mouse_clicked)
+        mw.ui.deconv_plot_widget.scene().sigMouseClicked.connect(self._fit_plot_mouse_clicked)
         mw.crosshair_update_deconv = SignalProxy(
             mw.ui.deconv_plot_widget.scene().sigMouseMoved,
             rateLimit=60,
-            slot=mw.update_crosshair_deconv_plot,
+            slot=self._update_crosshair_deconv_plot,
         )
         mw.ui.deconv_plot_widget.setAntialiasing(1)
         plot_item.enableAutoRange()
@@ -638,18 +888,70 @@ class GraphDrawing(QObject):
         plot_item.addItem(self.parent.curves.sigma3_fill)
         self.parent.curves.sigma3_fill.setVisible(False)
 
-    def fit_plot_mouse_clicked(self, event):
+    def _update_crosshair_deconv_plot(self, point_event) -> None:
+        """
+        Updates the crosshair display in the deconvolution plot based on the mouse position.
+
+        This method is triggered by mouse events to update the crosshair lines and display
+        the coordinates of the cursor within the deconvolution plot widget. It adjusts the
+        position of the crosshair lines and updates the plot title to show the x and y
+        coordinates of the mouse point.
+
+        Parameters
+        ----------
+        point_event : QPointF
+            The mouse event point containing the coordinates of the cursor within the plot scene.
+
+        Returns
+        -------
+        None
+            This method does not return a value but updates the plot's visual elements.
+
+        Notes
+        -----
+        - The method checks if the mouse point is within the bounds of the plot's scene.
+        - Updates the plot title to display the x and y coordinates of the mouse cursor with
+          a specific font size, family, and color.
+        - Moves the vertical and horizontal crosshair lines to align with the mouse cursor's
+          x and y coordinates respectively.
+        - The crosshair visibility is controlled by the state of the `crosshairBtn` button.
+        """
+        mw = get_parent(self.parent, "MainWindow")
+        coordinates = point_event[0]
+        if (mw.ui.deconv_plot_widget.sceneBoundingRect().contains(coordinates)
+                and mw.ui.crosshairBtn.isChecked()):
+            mouse_point = mw.ui.deconv_plot_widget.plotItem.vb.mapSceneToView(coordinates)
+            mw.ui.deconv_plot_widget.setTitle(
+                f"<span style='font-size: 12pt; font-family: AbletonSans; color: "
+                f"{environ["secondaryColor"]}"
+                + f"'>x={mouse_point.x():.1f}, <span style=>y={mouse_point.y():.1f}</span>"
+            )
+            mw.ui.deconv_plot_widget.vertical_line.setPos(mouse_point.x())
+            mw.ui.deconv_plot_widget.horizontal_line.setPos(mouse_point.y())
+
+    def _fit_plot_mouse_clicked(self, event):
+        """
+        Handle the event when the deconvolution plot is clicked.
+
+        Parameters
+        ----------
+        event : QMouseEvent
+            The mouse event associated with the click.
+        """
         if event.button() == Qt.MouseButton.RightButton:
             self.deselect_selected_line()
 
     def initial_deconv_plot_color(self) -> None:
+        """
+        Set the initial color scheme for the deconvolution plot.
+        """
         mw = get_parent(self.parent, "MainWindow")
-        mw.ui.deconv_plot_widget.setBackground(mw.plot_background_color)
+        mw.ui.deconv_plot_widget.setBackground(mw.attrs.plot_background_color)
         plot_item = mw.ui.deconv_plot_widget.getPlotItem()
-        plot_item.getAxis("bottom").setPen(mw.plot_text_color)
-        plot_item.getAxis("left").setPen(mw.plot_text_color)
-        plot_item.getAxis("bottom").setTextPen(mw.plot_text_color)
-        plot_item.getAxis("left").setTextPen(mw.plot_text_color)
+        plot_item.getAxis("bottom").setPen(mw.attrs.plot_text_color)
+        plot_item.getAxis("left").setPen(mw.attrs.plot_text_color)
+        plot_item.getAxis("bottom").setTextPen(mw.attrs.plot_text_color)
+        plot_item.getAxis("left").setTextPen(mw.attrs.plot_text_color)
 
 
 class CommandDeconvLineDragged(UndoCommand):
@@ -657,17 +959,29 @@ class CommandDeconvLineDragged(UndoCommand):
     UNDO/REDO change position of line ROI
 
     Parameters
-    -------
-    data: tuple[float, float, float, tuple, ROI]
+    ----------
+    data : tuple[float, float, float, tuple, ROI]
         'a', 'x0', 'dx', dragged_line_parameters, ROI
-    parent: Context
+    parent : Context
         Backend context class
-    text: str
-        description
+    text : str
+        Description of the command.
     """
 
     def __init__(self, data: tuple[float, float, float, tuple[float, float, float], ROI],
                  parent, text: str, *args, **kwargs) -> None:
+        """
+        Initialize the CommandDeconvLineDragged class.
+
+        Parameters
+        ----------
+        data : tuple[float, float, float, tuple[float, float, float], ROI]
+            'a', 'x0', 'dx', dragged_line_parameters, ROI
+        parent : Context
+            Backend context class
+        text : str
+            Description of the command.
+        """
         super().__init__(data, parent, text, *args, **kwargs)
         self._params = data[0], data[1], data[2]
         self._old_params = data[3]

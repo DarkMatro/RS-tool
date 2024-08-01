@@ -1,6 +1,19 @@
+# pylint: disable=no-name-in-module, too-many-lines, invalid-name, import-error,
+# relative-beyond-top-level
+"""
+Module for managing the input table, handling initialization, data loading,
+user interactions, and undo functionality.
+
+This module integrates with a Qt-based GUI to provide functionalities for
+managing the input table in the application. It includes classes and methods
+to reset the table, handle item changes, manage context menus, and support
+undo operations.
+"""
+import asyncio
 from asyncio import create_task, wait
 
 import pandas as pd
+from qtpy.QtGui import QMouseEvent
 from asyncqtpy import asyncSlot
 from qtpy.QtCore import QObject, QModelIndex, Qt
 from qtpy.QtWidgets import QHeaderView, QLineEdit, QMenu
@@ -12,29 +25,21 @@ from ..pandas_tables import InputPandasTable
 
 class InputTable(QObject):
     """
-    Class for Input table control.
-
-    This class manages the groups table widget, including initialization, data loading, and
-    handling user interactions such as clicks and selections.
+    Manages the input table, including initialization, data loading,
+    and handling user interactions.
 
     Parameters
     ----------
-    parent: Context
+    parent : Context
         The parent context in which this table operates.
-
-    Attributes
-    ----------
-    parent: Context
-        The parent context.
-    mw: MainWindow
-        Reference to the main window.
-    table_widget: QTableWidget
-        The table widget for displaying groups.
+    *args : tuple
+        Additional arguments.
+    **kwargs : dict
+        Additional keyword arguments.
     """
-
     def __init__(self, parent, *args, **kwargs):
         """
-        Initialize the GroupTable instance.
+        Initialize the InputTable instance.
 
         Parameters
         ----------
@@ -52,6 +57,7 @@ class InputTable(QObject):
         self.table_widget = self.mw.ui.input_table
         self.previous_group_of_item = None
         self._init_table()
+        self.table_widget.model().dataChanged.connect(self.mw.decide_vertical_scroll_bar_visible)
 
     def _init_table(self) -> None:
         """
@@ -77,13 +83,14 @@ class InputTable(QObject):
             5, QHeaderView.ResizeMode.Interactive)
         self.table_widget.horizontalHeader().resizeSection(5, 90)
         self.table_widget.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.table_widget.selectionModel().selectionChanged.connect(
-            self.input_table_selection_changed)
+        self.table_widget.mouseDoubleClickEvent = self.sync_input_table_selection_changed
         self.table_widget.verticalScrollBar().valueChanged.connect(self.mw.move_side_scrollbar)
         self.table_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table_widget.moveEvent = self.mw.decide_vertical_scroll_bar_visible
         self.table_widget.model().dataChanged.connect(self.input_table_item_changed)
-        self.table_widget.rowCountChanged = self.mw.decide_vertical_scroll_bar_visible
+        self.table_widget.rowCountChanged = self.input_table_rows_changed
+        self.table_widget.rowsInserted = self.input_table_rows_changed
+        self.table_widget.rowsRemoved = self.input_table_rows_changed
         self.table_widget.horizontalHeader().sectionClicked.connect(
             self._input_table_header_clicked
         )
@@ -103,12 +110,15 @@ class InputTable(QObject):
         self.table_widget.setSortingEnabled(True)
         self.table_widget.setModel(model)
 
+    def sync_input_table_selection_changed(self, event: QMouseEvent):
+        # Call the async function using ensure_future
+        asyncio.ensure_future(self.input_table_selection_changed(event))
+
     @asyncSlot()
-    async def input_table_selection_changed(self):
+    async def input_table_selection_changed(self, _: QMouseEvent):
         """
-        When selected item in input_table.
-        Saving self.previous_group_of_item
-        or update import_plot
+        Handle changes in table selection, updating plots or saving previous
+        group information as needed.
         """
         current_index = self.table_widget.selectionModel().currentIndex()
         if current_index:
@@ -118,13 +128,32 @@ class InputTable(QObject):
                 self.table_widget.model().cell_data_by_index(current_index)
             )
         elif self.mw.ui.by_one_control_button.isChecked():  # names
-            tasks = [create_task(
-                self.parent.preprocessing.stages.input_data.despike_history_remove_plot()),
-                create_task(self.mw.update_plots_for_single())]
-            await wait(tasks)
+            await self.parent.preprocessing.stages.input_data.despike_history_remove_plot()
+            await self.mw.update_plots_for_single()
+
+    def input_table_rows_changed(self):
+        """
+        Update dec_table.
+        """
+        print('input_table_rows_changed')
+        self.mw.decide_vertical_scroll_bar_visible()
+        self.mw.ui.dec_table.model().clear_dataframe()
+        self.mw.ui.dec_table.model().concat_deconv_table(
+            filename=self.table_widget.model().dataframe.index)
 
     def input_table_item_changed(self, top_left: QModelIndex = None, _: QModelIndex = None) -> None:
-        """You can change only group column"""
+        """
+        Handle changes to items in the input table, specifically allowing
+        changes to the group column.
+
+        Parameters
+        ----------
+        top_left : QModelIndex, optional
+            The top-left index of the changed item (default is None).
+        _ : QModelIndex, optional
+            Unused parameter (default is None).
+        """
+        print('input_table_item_changed')
         if self.table_widget.selectionModel().currentIndex().column() != 2:
             return
         try:
@@ -142,23 +171,48 @@ class InputTable(QObject):
             self.table_widget.model().setData(top_left, self.previous_group_of_item, Qt.EditRole)
 
     def _input_table_header_clicked(self, idx: int):
-        df = self.mw.ui.input_table.model().dataframe()
+        """
+        Handle clicks on the table header to sort the table.
+
+        Parameters
+        ----------
+        idx : int
+            The index of the clicked header.
+        """
+        print('_input_table_header_clicked')
+        df = self.mw.ui.input_table.model().dataframe
         column_names = df.columns.values.tolist()
         current_name = column_names[idx]
         self._ascending_input_table = not self._ascending_input_table
         self.mw.ui.input_table.model().sort_values(current_name, self._ascending_input_table)
 
     def _input_table_context_menu_event(self, a0) -> None:
-        line = QLineEdit(self)
+        """
+        Show context menu on right-click event in the input table.
+
+        Parameters
+        ----------
+        a0 : QContextMenuEvent
+            The context menu event triggering the function.
+        """
+        line = QLineEdit(self.mw)
         menu = QMenu(line)
         menu.addAction("Sort by index ascending",
-                       lambda: self.mw.ui.input_table.model().sort_index())
+                       lambda: self.table_widget.model().sort_index())
         menu.addAction("Sort by index descending",
-                       lambda: self.mw.ui.input_table.model().sort_index(ascending=False))
+                       lambda: self.table_widget.model().sort_index(ascending=False))
         menu.move(a0.globalPos())
         menu.show()
 
     def _input_table_key_pressed(self, key_event) -> None:
+        """
+        Handle key press events in the input table, such as deleting rows.
+
+        Parameters
+        ----------
+        key_event : QKeyEvent
+            The key event triggering the function.
+        """
         if (key_event.key() == Qt.Key.Key_Delete
                 and self.mw.ui.input_table.selectionModel().currentIndex().row() > -1
                 and len(self.mw.ui.input_table.selectionModel().selectedIndexes())):
@@ -170,7 +224,7 @@ class InputTable(QObject):
 
 class CommandChangeGroupCell(UndoCommand):
     """
-    for changing group number of 1 row in input_table
+    Command for changing the group number of a row in the input table.
 
     Parameters
     ----------
@@ -190,7 +244,7 @@ class CommandChangeGroupCell(UndoCommand):
         Parameters
         ----------
         data : tuple
-            The new style, old style, and group index.
+            The index and new group number.
         parent : Context
             The parent object.
         text : str
@@ -204,7 +258,7 @@ class CommandChangeGroupCell(UndoCommand):
 
     def redo_special(self):
         """
-        Redo the command, applying the new style.
+        Redo the command, applying the new group number.
         """
         self.mw.ui.input_table.model().change_cell_data(self.index.row(), self.index.column(),
                                                         self.new_value)
@@ -213,7 +267,7 @@ class CommandChangeGroupCell(UndoCommand):
 
     def undo_special(self):
         """
-        UUndo the command, reverting to the old style.
+        Undo the command, reverting to the previous group number.
         """
         self.mw.ui.input_table.model().setData(self.index.row(), self.index.column(),
                                                self.previous_value)
@@ -221,13 +275,26 @@ class CommandChangeGroupCell(UndoCommand):
         self.update_datasets(filename, self.previous_value)
 
     def stop_special(self) -> None:
-        prev_stage = self.mw.drag_widget.get_previous_stage(self)
+        """
+        Handle any special cleanup after stopping the command.
+        """
+        prev_stage = self.mw.ui.drag_widget.get_previous_stage(self)
         if prev_stage is not None and prev_stage.data:
             self.parent.preprocessing.stages.av_data.update_averaged(self.mw, prev_stage.data)
-        self.parent.preprocessing.update_plot_item(self.mw.drag_widget.get_current_widget_name())
+        self.parent.preprocessing.update_plot_item(self.ui.mw.drag_widget.get_current_widget_name())
         self.parent.set_modified()
 
     def update_datasets(self, filename, value):
+        """
+        Update datasets with the new group number.
+
+        Parameters
+        ----------
+        filename : str
+            The filename of the dataset to update.
+        value : int
+            The new group number.
+        """
         for model in (self.mw.ui.smoothed_dataset_table_view.model(),
                       self.mw.ui.baselined_dataset_table_view.model(),
                       self.mw.ui.deconvoluted_dataset_table_view.model()):
@@ -238,12 +305,12 @@ class CommandChangeGroupCell(UndoCommand):
 
 class CommandDeleteInputSpectrum(UndoCommand):
     """
-    for delete/undo_add rows in input_table, all dicts and input plot, rebuild plots
+    Command for deleting rows in the input table, including managing
+    associated data and plots.
 
     Parameters
     ----------
     data : None
-
     parent : Context
         The parent object.
     text : str
@@ -257,8 +324,7 @@ class CommandDeleteInputSpectrum(UndoCommand):
 
         Parameters
         ----------
-        data : tuple
-            The new style, old style, and group index.
+        data : None
         parent : Context
             The parent object.
         text : str
@@ -277,15 +343,18 @@ class CommandDeleteInputSpectrum(UndoCommand):
                             decomp_data.sigma3, decomp_data.params_stderr)
         self.prepare()
         self.d = self.old_data_stores[0]
-        self.df = self.mw.ui.fit_params_table.model().query_result_with_list(
-            'filename == @input_list', list(self.d.keys()))
+        values_list = list(self.d.keys())
+        self.df = self.mw.ui.fit_params_table.model().dataframe.query('filename in @values_list')
 
-        self.dfs = {'smoothed': self.mw.ui.smoothed_dataset_table_view.model().dataframe(),
-                    'baselined': self.mw.ui.baselined_dataset_table_view.model().dataframe(),
-                    'deconvoluted': self.mw.ui.deconvoluted_dataset_table_view.model().dataframe(),
-                    'input': self.table.dataframe()}
+        self.dfs = {'smoothed': self.mw.ui.smoothed_dataset_table_view.model().dataframe,
+                    'baselined': self.mw.ui.baselined_dataset_table_view.model().dataframe,
+                    'deconvoluted': self.mw.ui.deconvoluted_dataset_table_view.model().dataframe,
+                    'input': self.table.dataframe}
 
     def prepare(self) -> None:
+        """
+        Prepare data for deletion.
+        """
         self.old_data_stores = []
         for d in self.data_stores:
             old_data = {}
@@ -299,7 +368,7 @@ class CommandDeleteInputSpectrum(UndoCommand):
 
     def redo_special(self):
         """
-        Redo the command, applying the new style.
+        Redo the command, applying the deletion.
         """
         self.table.delete_rows(self.d.keys())
         self.mw.ui.dec_table.model().delete_rows(self.d.keys())
@@ -311,7 +380,7 @@ class CommandDeleteInputSpectrum(UndoCommand):
 
     def undo_special(self):
         """
-        UUndo the command, reverting to the old style.
+        Undo the command, restoring the deleted rows.
         """
         self.table.set_dataframe(self.dfs['input'])
         self.mw.ui.dec_table.model().concat_deconv_table(self.d.keys())
@@ -330,14 +399,20 @@ class CommandDeleteInputSpectrum(UndoCommand):
                 model.sort_index()
 
     def stop_special(self) -> None:
+        """
+        Handle any special cleanup after stopping the command.
+        """
         self.mw.decide_vertical_scroll_bar_visible()
-        prev_stage = self.mw.drag_widget.get_previous_stage(self)
+        prev_stage = self.mw.ui.drag_widget.get_previous_stage(self)
         if prev_stage is not None and prev_stage.data:
             self.parent.preprocessing.stages.av_data.update_averaged(self.mw, prev_stage.data)
-        self.parent.preprocessing.update_plot_item(self.mw.drag_widget.get_current_widget_name())
+        self.parent.preprocessing.update_plot_item(self.mw.ui.drag_widget.get_current_widget_name())
         self.parent.set_modified()
 
     def update_datasets(self):
+        """
+        Update datasets after deletion or restoration.
+        """
         for model in (self.mw.ui.smoothed_dataset_table_view.model(),
                       self.mw.ui.baselined_dataset_table_view.model(),
                       self.mw.ui.deconvoluted_dataset_table_view.model()):
@@ -347,12 +422,27 @@ class CommandDeleteInputSpectrum(UndoCommand):
                 model.sort_index()
 
     def _del_row(self, key: str) -> None:
+        """
+        Delete a row from the datasets.
+
+        Parameters
+        ----------
+        key : str
+            The key identifying the row to delete.
+        """
         for d in self.data_stores:
-            print(type(d))
             if key in d:
                 del d[key]
 
     def _add_row(self, key: str) -> None:
+        """
+        Add a row back to the datasets.
+
+        Parameters
+        ----------
+        key : str
+            The key identifying the row to add.
+        """
         for data, old_data in zip(self.data_stores, self.old_data_stores):
             if key in old_data:
                 data[key] = old_data[key]

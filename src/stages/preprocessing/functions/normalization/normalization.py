@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides several normalization functions for spectral data, including methods such as
 Standard Normal Variate (SNV), Area normalization, Trapezoidal Area normalization, Max

@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Module for normalizing spectral data in the preprocessing workflow.
 
@@ -15,22 +17,22 @@ CommandNormalize
 """
 
 from copy import deepcopy, copy
+from typing import ItemsView
 
 import numpy as np
-from qtpy.QtWidgets import QMainWindow
 from asyncqtpy import asyncSlot
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QMouseEvent
+from qtpy.QtWidgets import QMainWindow
 
-from src.stages.preprocessing.functions.normalization import get_emsc_average_spectrum
 from src.backend.undo_stack import UndoCommand
 from src.data.collections import ObservableDict
-from src.stages.preprocessing.classes.stages import PreprocessingStage
-from src.ui.ui_normalize_widget import Ui_NormalizeForm
-from src.data.get_data import get_parent
-from typing import ItemsView
-from qtpy.QtGui import QMouseEvent
-from qtpy.QtCore import Qt
 from src.data.config import get_config
 from src.data.default_values import normalize_methods
+from src.data.get_data import get_parent
+from src.stages.preprocessing.classes.stages import PreprocessingStage
+from src.stages.preprocessing.functions.normalization import get_emsc_average_spectrum
+from src.ui.ui_normalize_widget import Ui_NormalizeForm
 
 
 class NormalizedData(PreprocessingStage):
@@ -88,7 +90,7 @@ class NormalizedData(PreprocessingStage):
         self.ui.reset_btn.clicked.connect(self.reset)
         self.ui.save_btn.clicked.connect(self.save)
         self.ui.activate_btn.clicked.connect(self.activate)
-        self.ui.normalize_btn.clicked.connect(self._normalize_clicked)
+        self.ui.normalize_btn.clicked.connect(self.process_clicked)
         self.ui.emsc_pca_n_spinBox.mouseDoubleClickEvent = lambda event: \
             self.reset_field(event, 'emsc_pca_n_spinBox')
         self.ui.normalizing_method_comboBox.currentTextChanged.connect(self.method_changed)
@@ -111,7 +113,7 @@ class NormalizedData(PreprocessingStage):
             self.parent.update_plot_item('NormalizedData')
         self.activate(True)
 
-    def read(self) -> dict:
+    def read(self, production_export: bool=False) -> dict:
         """
         Read and return the attributes' data.
 
@@ -120,11 +122,12 @@ class NormalizedData(PreprocessingStage):
         dict
             Dictionary containing all class attributes data.
         """
-        dt = {"data": self.data.get_data(),
-              'emsc_pca_n_spinBox': self.ui.emsc_pca_n_spinBox.value(),
+        dt = {'emsc_pca_n_spinBox': self.ui.emsc_pca_n_spinBox.value(),
               'normalizing_method_comboBox': self.ui.normalizing_method_comboBox.currentText(),
               'current_method': self.current_method,
               'active': self.active}
+        if not production_export:
+            dt['data'] = self.data.get_data()
         return dt
 
     def load(self, db: dict) -> None:
@@ -136,7 +139,8 @@ class NormalizedData(PreprocessingStage):
         db : dict
             Dictionary containing all class attributes data.
         """
-        self.data.update(db['data'])
+        if 'data' in db:
+            self.data.update(db['data'])
         self.ui.emsc_pca_n_spinBox.setValue(db['emsc_pca_n_spinBox'])
         self.ui.normalizing_method_comboBox.setCurrentText(db['normalizing_method_comboBox'])
         self.current_method = db['current_method']
@@ -194,14 +198,14 @@ class NormalizedData(PreprocessingStage):
         self.ui.emsc_pca_n_spinBox.setVisible(current_text == 'EMSC')
 
     @asyncSlot()
-    async def _normalize_clicked(self) -> None:
+    async def process_clicked(self) -> None:
         """
         Handle the event when the normalize button is clicked.
         """
         mw = get_parent(self.parent, "MainWindow")
         if mw.progress.time_start is not None:
             return
-        prev_stage = mw.drag_widget.get_previous_stage(self)
+        prev_stage = mw.ui.drag_widget.get_previous_stage(self)
         if not prev_stage.data:
             mw.ui.statusBar.showMessage("No data to normalization")
             return
@@ -221,18 +225,18 @@ class NormalizedData(PreprocessingStage):
         """
         n_files = len(data)
         cfg = get_config("texty")["normalization"]
-
+        context = get_parent(self.parent, "Context")
         mw.progress.open_progress(cfg, n_files)
         method = self.ui.normalizing_method_comboBox.currentText()
         func, n_limit = self.normalize_methods[method]
         args = []
         kwargs = {'n_files': n_files, 'n_limit': n_limit}
         if method == 'EMSC':
-            if mw.predict_logic.is_production_project:
-                np_y_axis = mw.predict_logic.y_axis_ref_EMSC
+            if context.predict.is_production_project:
+                np_y_axis = context.predict.y_axis_ref_emsc
             else:
                 np_y_axis = get_emsc_average_spectrum(data.values())
-                mw.predict_logic.y_axis_ref_EMSC = np_y_axis
+                context.predict.y_axis_ref_emsc = np_y_axis
             args.extend([np_y_axis, self.ui.emsc_pca_n_spinBox.value()])
         result: list[tuple[str, np.ndarray]] = await mw.progress.run_in_executor(
             "normalization", func, data.items(), *args, **kwargs

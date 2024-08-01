@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Curve Properties Window Module
 ==============================
@@ -17,6 +19,7 @@ CurvePropertiesWindow(QWidget)
 from PyQt5.QtCore import pyqtSignal
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QWidget, QMainWindow
+
 from src.ui import ui_curve_properties
 from src.ui.style import color_dialog
 

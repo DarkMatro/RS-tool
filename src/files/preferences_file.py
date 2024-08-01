@@ -24,6 +24,22 @@ def read_preferences() -> None:
         environ[k] = str(v)
 
 
+def save_preferences() -> None:
+    """
+    Read setting from environ and write into preferences.json
+    """
+    _check_preferences_file()
+    keys = _standard_settings().keys()
+    path = get_config()['preferences']['path']
+    with open(path, 'r+', encoding="utf-8") as f:
+        data = json.load(f)
+        for k in keys:
+            data[k] = environ[k]
+        f.seek(0)
+        json.dump(data, f)
+        f.truncate()
+
+
 def _check_preferences_file() -> None:
     """
     Check that preferences exists. If it is not - create new.

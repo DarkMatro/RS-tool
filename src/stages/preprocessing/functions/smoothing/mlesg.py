@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides functions for Maximum Likelihood Estimation of Signal (MLESG)
 in Raman spectroscopy, including core computation and utility functions.

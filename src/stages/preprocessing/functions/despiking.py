@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Module for removing strong spikes in spectral data.
 
@@ -25,7 +27,7 @@ Functions:
     _get_cosmic_spikes: Identifies and fits cosmic spikes in the spectrum.
 """
 
-from math import ceil as ceil
+from math import ceil
 from os import environ
 
 import numpy as np

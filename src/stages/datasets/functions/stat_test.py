@@ -1,6 +1,16 @@
+"""
+stat_test.py
+
+This module provides functions for performing various statistical tests and analyses on
+multivariate data sets. It includes methods for checking normality, computing the Hotelling
+T-squared statistic with PCA, conducting permutation tests, performing the Mann-Whitney U
+test, and executing bootstrap resampling and comparison. The module also includes
+visualization of bootstrap results using KDE plots.
+"""
+
 import numpy as np
 import pandas as pd
-from scipy.stats import shapiro, f, mannwhitneyu, norm
+from scipy.stats import shapiro, f, mannwhitneyu
 from seaborn import kdeplot
 from sklearn.decomposition import PCA
 
@@ -258,7 +268,7 @@ def multivariate_bootstrap_comparison(df1, df2, plot_widget, n_iterations=1000, 
     p_value = np.mean(boot_stats >= mean_diff_stat)
 
     # Plot the bootstrap distribution and confidence intervals
-    ax = plot_widget.canvas.axes
+    ax = plot_widget.canvas.gca()
     ax.cla()
     ax = kdeplot(boot_stats, fill=True, ax=ax)
     ax.set_title('Bootstrap Distribution of Test Statistic')

@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 Input data with import, interpolate, and despike functionalities.
 
@@ -7,26 +9,28 @@ InputData : PreprocessingStage
     Handles importing files, interpolation, and despiking of data.
 """
 
-from pathlib import Path
 from collections import Counter
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from asyncqtpy import asyncSlot
 from pyqtgraph import ArrowItem
-from qtpy.QtGui import QMouseEvent
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QMouseEvent
 from qtpy.QtWidgets import QFileDialog, QMainWindow
+
 from src import get_config
-from src.data.work_with_arrays import nearest_idx
 from src.backend.undo_stack import UndoCommand
+from src.data.collections import ObservableDict
 from src.data.get_data import get_parent
+from src.data.plotting import get_curve_plot_data_item
+from src.data.work_with_arrays import nearest_idx
 from src.ui.ui_import_widget import Ui_ImportForm
+from .stages import PreprocessingStage
+from ..functions.despiking import despike
 from ..functions.importing import import_spectrum
 from ..functions.interpolating import interpolate
-from ..functions.despiking import despike
-
-from src.data.collections import ObservableDict
-from .stages import PreprocessingStage
 
 
 class InputData(PreprocessingStage):
@@ -69,7 +73,6 @@ class InputData(PreprocessingStage):
         """
         ranges = self._check_ranges()
         self.ranges = {str(k): k for k in ranges.keys()}
-        print(ranges)
         self.ui.interp_combo_box.clear()
         self.ui.interp_combo_box.addItems(self.ranges.keys())
         if len(ranges) > 0:
@@ -89,7 +92,7 @@ class InputData(PreprocessingStage):
         self.ui.order_spin_box.setValue(defaults['order_spin_box'])
         self.ui.spike_fwhm_spin_box.setValue(defaults['spike_fwhm_spin_box'])
 
-    def read(self) -> dict:
+    def read(self, production_export: bool=False) -> dict:
         """
         Read attributes data.
 
@@ -98,10 +101,11 @@ class InputData(PreprocessingStage):
         dict
             Dictionary containing all class attributes data.
         """
-        dt = {"data": self.data.get_data(),
-              'before_despike_data': self.before_despike_data.get_data(),
+        dt = {'before_despike_data': self.before_despike_data.get_data(),
               'order_spin_box': self.ui.order_spin_box.value(),
               'spike_fwhm_spin_box': self.ui.spike_fwhm_spin_box.value()}
+        if not production_export:
+            dt['data'] = self.data.get_data()
         return dt
 
     def load(self, db: dict) -> None:
@@ -113,7 +117,8 @@ class InputData(PreprocessingStage):
         db : dict
             Dictionary containing all class attributes data.
         """
-        self.data.update(db['data'])
+        if 'data' in db:
+            self.data.update(db['data'])
         self.before_despike_data.update(db['before_despike_data'])
         self.ui.order_spin_box.setValue(db['order_spin_box'])
         self.ui.spike_fwhm_spin_box.setValue(db['spike_fwhm_spin_box'])
@@ -134,9 +139,9 @@ class InputData(PreprocessingStage):
         self.ui.save_btn.clicked.connect(self.save)
         self.ui.interp_combo_box.setEnabled(False)
         self.ui.interp_btn.setEnabled(False)
-        self.ui.interp_btn.clicked.connect(self._interpolate_clicked)
+        self.ui.interp_btn.clicked.connect(self.interpolate_clicked)
         self.ui.despike_gb.setEnabled(False)
-        self.ui.despike_btn.clicked.connect(self._despike_clicked)
+        self.ui.despike_btn.clicked.connect(self.despike_clicked)
         self.ui.order_spin_box.mouseDoubleClickEvent = lambda event: \
             self.reset_field(event, 'order_spin_box')
         self.ui.spike_fwhm_spin_box.mouseDoubleClickEvent = lambda event: \
@@ -190,7 +195,7 @@ class InputData(PreprocessingStage):
         file_path = fd.getOpenFileNames(
             parent=main_window,
             caption="Select files with Raman data",
-            directory=main_window.latest_file_path,
+            directory=main_window.attrs.latest_file_path,
             filter="Text files (*.txt *.asc)",
         )
         if not file_path[0]:
@@ -201,7 +206,7 @@ class InputData(PreprocessingStage):
             filenames = list(file_path[0])
         else:
             filenames = [x for x in file_path[0] if Path(x).name not in self.data]
-        main_window.latest_file_path = str(Path(filenames[0]).parent)
+        main_window.attrs.latest_file_path = str(Path(filenames[0]).parent)
         await self.import_files(filenames)
 
     @asyncSlot()
@@ -253,10 +258,10 @@ class InputData(PreprocessingStage):
             return
         fd = QFileDialog(mw)
         file_path = fd.getSaveFileName(
-            mw, "Save input nm. data into csv table", mw.latest_file_path, "CSV (*.csv)")
+            mw, "Save input nm. data into csv table", mw.attrs.latest_file_path, "CSV (*.csv)")
         if not file_path[0]:
             return
-        mw.latest_file_path = file_path[0]
+        mw.attrs.latest_file_path = file_path[0]
 
         x_axis = next(iter(self.data.values()))[:, 0]
         nm_params = [str(np.round(i, 2)) for i in x_axis]
@@ -290,15 +295,20 @@ class InputData(PreprocessingStage):
         return cnt
 
     @asyncSlot()
-    async def _interpolate_clicked(self) -> None:
+    async def interpolate_clicked(self) -> None:
         """
         Handle interpolate button clicked event.
         """
         mw = get_parent(self.parent, "MainWindow")
+        context = get_parent(self.parent, "Context")
         if mw.progress.time_start is not None or len(self.data) < 2:
             return
         range_nm = self.ranges[self.ui.interp_combo_box.currentText()]
-        reference_x_axis = self._get_ref_x_axis(range_nm)
+        if context.predict.is_production_project:
+            reference_x_axis = context.predict.interp_ref_x_axis
+        else:
+            reference_x_axis = self._get_ref_x_axis(range_nm)
+            context.predict.interp_ref_x_axis = reference_x_axis
         if reference_x_axis is None:
             return
         filenames = {k for k, spectrum in self.data.items()
@@ -340,10 +350,10 @@ class InputData(PreprocessingStage):
             new_range = (x_axis[0], x_axis[-1])
             if new_range == target_range_nm:
                 return x_axis
-        return
+        return None
 
     @asyncSlot()
-    async def _despike_clicked(self) -> None:
+    async def despike_clicked(self) -> None:
         """
         Handle despike button clicked event.
         """
@@ -415,12 +425,14 @@ class InputData(PreprocessingStage):
         """
         # selected spectrum despiked
         mw = get_parent(self.parent, "MainWindow")
+        context = get_parent(self.parent, "Context")
         current_index = mw.ui.input_table.selectionModel().currentIndex()
         group_number = mw.ui.input_table.model().cell_data(current_index.row(), 2)
         arr = self.before_despike_data[current_spectrum_name]
         if self.despiked_one_curve:
             mw.ui.preproc_plot_widget.getPlotItem().removeItem(self.despiked_one_curve)
-        self.despiked_one_curve = mw.get_curve_plot_data_item(arr, group_number)
+        color = context.group_table.get_color_by_group_number(group_number)
+        self.despiked_one_curve = get_curve_plot_data_item(arr, color)
         mw.ui.preproc_plot_widget.getPlotItem().addItem(self.despiked_one_curve,
                                                         kargs=['ignoreBounds', 'skipAverage'])
 
@@ -442,6 +454,7 @@ class InputData(PreprocessingStage):
         """
         Remove old history before despike plot item and arrows.
         """
+        print('despike_history_remove_plot')
         mw = get_parent(self.parent, "MainWindow")
         plot_item = mw.ui.preproc_plot_widget.getPlotItem()
         if self.despiked_one_curve:
@@ -507,22 +520,23 @@ class CommandImportFiles(UndoCommand):
         """
         self.mw.ui.input_table.move(0, 1)
         self.parent.preprocessing.update_plot_item("InputData")
+        self.parent.input_table.input_table_rows_changed()
         self.mw.ui.input_table.move(0, -1)
         self.mw.decide_vertical_scroll_bar_visible()
 
 
 class CommandInterpolate(UndoCommand):
     """
-    Change data for interpolated spectra.
+    Command for storing interpolated spectra into InputData.
 
     Parameters
-    -------
-    data: list[tuple[str, np.ndarray]
-        indexes: 0 - filename, 1 - array
-    parent: Context
-        Backend context class
-    text: str
-        description
+    ----------
+    data : list of tuple
+        List containing interpolated data information.
+    parent : Context
+        Backend context class.
+    text : str
+        Description of the command.
     """
 
     def __init__(
@@ -540,19 +554,27 @@ class CommandInterpolate(UndoCommand):
 
     def redo_special(self):
         """
-        Update data.
+        Update input table and input data with interpolated values.
         """
         self.parent.preprocessing.stages.input_data.data.update(self.new_data)
         self.change_cells_input_table(self.new_data)
 
     def undo_special(self):
         """
-        Update data for old values before change.
+        Revert input table and input data to previous state before interpolation.
         """
         self.parent.preprocessing.stages.input_data.data.update(self.old_data)
         self.change_cells_input_table(self.old_data)
 
     def change_cells_input_table(self, data: dict):
+        """
+        Update data in input table.
+
+        Parameters
+        ----------
+        data : dict
+            new or old data
+        """
         model = self.mw.ui.input_table.model()
         for k, spectrum in data.items():
             x_axis = spectrum[:, 0]
@@ -601,7 +623,7 @@ class CommandDespike(UndoCommand):
 
     def redo_special(self):
         """
-        Update data.
+        Update input table and input data with despiked values.
         """
         self.input_data.data.update(self.new_data)
         for k, arr in self.old_data.items():
@@ -617,8 +639,8 @@ class CommandDespike(UndoCommand):
 
     def undo_special(self):
         """
-        Update data for old values before change.
-        """
+         Revert input table and input data to previous state before despiking.
+         """
         self.input_data.data.update(self.old_data)
         for k in self.new_data.keys():
             if k not in self.before_despike_old_keys:

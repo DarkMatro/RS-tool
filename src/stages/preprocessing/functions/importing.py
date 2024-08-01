@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides functions for importing and processing spectral data from files.
 
@@ -8,9 +10,11 @@ Functions:
 - get_result_square_brackets: Helper function to find group numbers enclosed in square brackets.
 """
 
-import numpy as np
 from pathlib import Path
 from re import findall
+
+import numpy as np
+
 from src.stages.preprocessing.functions.converting import get_laser_peak_fwhm
 
 

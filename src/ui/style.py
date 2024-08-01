@@ -23,9 +23,9 @@ from qtpy.QtGui import QFontDatabase, QColor
 from qtpy.QtWidgets import QApplication, QColorDialog
 
 from qfluentwidgets import toggle_theme
-from src.mutual_functions.static_functions import show_error_msg
 from src.ui.resourse_generator import ResourceGenerator
 from ..data.config import get_config
+from ..data.get_data import show_error_msg
 from ..widgets.drag_items import DragItem
 
 

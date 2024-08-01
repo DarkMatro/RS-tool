@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 QPushButton objects aren't usually draggable, so to handle the mouse movements and initiate a drag
 we need to implement a subclass.
@@ -10,6 +12,7 @@ This module contains the following classes:
 """
 from os import environ
 from typing import Any
+
 from PyQt5.QtCore import pyqtSignal
 from qtpy.QtCore import Qt, QMimeData, QObject
 from qtpy.QtGui import QDrag, QMouseEvent, QPixmap
@@ -347,6 +350,24 @@ class DragWidget(QWidget):
                 return w.backend_instance
 
     def get_previous_stage(self, current_stage: QObject) -> QObject | None:
+        """
+        Retrieve the previous active stage in the layout before the specified current stage.
+
+        This method iterates through the widgets in the layout in reverse order to find
+        the widget associated with the `current_stage`. It then continues searching backwards
+        to locate the previous active stage (if any).
+
+        Parameters
+        ----------
+        current_stage : QObject
+            The current stage whose predecessor is to be found.
+
+        Returns
+        -------
+        QObject or None
+            The previous active stage before the specified `current_stage`, or `None`
+            if no such stage is found.
+        """
         current_id = -1
         for i in range(self.w_layout.count() - 1, 0, -1):
             w = self.w_layout.itemAt(i).widget()
@@ -363,6 +384,18 @@ class DragWidget(QWidget):
         return None
 
     def get_latest_active_stage(self):
+        """
+        Retrieve the latest active stage in the layout.
+
+        This method iterates through the widgets in the layout in reverse order (excluding
+        the last widget) to find the most recently active stage. The search stops as soon as
+        the first active stage is found.
+
+        Returns
+        -------
+        QObject or None
+            The latest active stage found in the layout, or `None` if no active stage is found.
+        """
         for i in range(self.w_layout.count() - 2, 0, -1):
             w = self.w_layout.itemAt(i).widget()
             if not isinstance(w, DragItem):
@@ -371,6 +404,24 @@ class DragWidget(QWidget):
                 return w.backend_instance
 
     def get_next_stage(self, current_stage: QObject) -> QObject | None:
+        """
+        Retrieve the next stage in the layout after the given stage.
+
+        This method iterates through the widgets in the layout in reverse order to find the
+        given `current_stage`. After finding it, the method attempts to retrieve the next stage
+        in the layout. If the next stage exists and is of type `DragItem`, it returns the
+        associated backend instance.
+
+        Parameters
+        ----------
+        current_stage : QObject
+            The stage after which to find the next stage.
+
+        Returns
+        -------
+        QObject or None
+            The next stage in the layout after `current_stage`, or `None` if no next stage is found.
+        """
         ans = -1
         for i in range(self.w_layout.count() - 1, 0, -1):
             w = self.w_layout.itemAt(i).widget()
@@ -381,24 +432,44 @@ class DragWidget(QWidget):
                 break
         return None if ans == -1 else self.w_layout.itemAt(ans).widget().backend_instance
 
-    def get_widgets_order(self) -> list[str]:
+    def get_widgets_order(self, return_names: bool = True) -> list[str]:
         """
-        Returns widget's names ordered.
+        Retrieve the ordered names or instances of active widgets in the layout.
+
+        Parameters
+        ----------
+        return_names : bool, optional
+            If True, return the names of the widgets; otherwise, return the widget instances.
+            The default is True.
 
         Returns
         -------
-        order: list[str]
-            names ordered as it is positioned
+        list[str]
+            A list of widget names or instances, ordered as they are positioned in the layout.
         """
         order = []
         for i in range(self.w_layout.count()):
             w = self.w_layout.itemAt(i).widget()
-            if not isinstance(w, DragItem):
+            if not isinstance(w, DragItem) or not w.backend_instance.active:
                 continue
-            order.append(w.backend_instance.name)
+            order.append(w.backend_instance.name if return_names else w.backend_instance)
         return order
 
     def get_position_idx(self, class_name: str) -> int:
+        """
+        Find the index of the widget with the specified class name in the layout.
+
+        Parameters
+        ----------
+        class_name : str
+            The name of the widget to find.
+
+        Returns
+        -------
+        int
+            The index of the widget with the specified class name in the layout.
+            Returns -1 if no such widget is found.
+        """
         idx = -1
         for i in range(self.w_layout.count()):
             w = self.w_layout.itemAt(i).widget()
@@ -409,6 +480,19 @@ class DragWidget(QWidget):
         return idx
 
     def get_widget_by_name(self, class_name: str) -> DragItem | None:
+        """
+        Retrieve the widget with the specified class name from the layout.
+
+        Parameters
+        ----------
+        class_name : str
+            The name of the widget to retrieve.
+
+        Returns
+        -------
+        DragItem or None
+            The widget with the specified class name if found, otherwise None.
+        """
         for i in range(self.w_layout.count()):
             w = self.w_layout.itemAt(i).widget()
             if not isinstance(w, DragItem):
@@ -439,6 +523,17 @@ class DragWidget(QWidget):
             idx += 1
 
     def set_standard_order(self):
+        """
+        Set the layout order of widgets to a predefined standard sequence.
+
+        This method arranges the widgets in the layout according to the following standard order:
+        ['InputData', 'ConvertData', 'CutData', 'BaselineData', 'SmoothedData',
+        'NormalizedData', 'TrimData'].
+
+        Returns
+        -------
+        None
+        """
         self.set_order(['InputData', 'ConvertData', 'CutData', 'BaselineData', 'SmoothedData',
                         'NormalizedData', 'TrimData'])
 

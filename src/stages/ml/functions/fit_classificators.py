@@ -1,30 +1,51 @@
-import copy
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+This module provides functionality for fitting various machine learning models,
+performing dimensionality reduction, and evaluating model performance.
+
+Functions
+---------
+- `scorer_metrics()`: Returns a dictionary of custom scoring metrics for model evaluation.
+- `fit_lda(x_train, y_train, best_params, rnd)`: Fits a Linear Discriminant Analysis model.
+- `fit_lr(x_train, y_train, best_params, rnd)`: Fits a Logistic Regression model.
+- `fit_svc(x_train, y_train, best_params, rnd)`: Fits a Support Vector Classifier model.
+- `fit_dt(x_train, y_train, best_params, rnd)`: Fits a Decision Tree Classifier model.
+- `fit_rf(x_train, y_train, best_params, rnd)`: Fits a Random Forest Classifier model.
+- `fit_xgboost(x_train, y_train, best_params, rnd)`: Fits an XGBoost Classifier model.
+- `fit_pca(x_train, y_train, x_test, y_test)`: Applies PCA for dimensionality reduction.
+- `clf_predict(item, x)`: Makes predictions using a provided classifier model.
+- `dim_reduction(x_train, x_test, y_train)`: Applies PCA for dimensionality reduction on training
+    and test data.
+"""
 
 import numpy as np
 import pandas as pd
-from pandas import DataFrame
-from sklearn.experimental import enable_halving_search_cv  # noqa
+
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, VotingClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, fbeta_score, \
-    hamming_loss, jaccard_score, classification_report, make_scorer, \
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, make_scorer, \
     log_loss, roc_auc_score
-from sklearn.model_selection import GridSearchCV, HalvingGridSearchCV
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler, scale
-from sklearn.svm import NuSVC
+from sklearn.preprocessing import scale
+from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.utils import compute_class_weight
 from xgboost import XGBClassifier
-from hyperopt import STATUS_OK
-from joblib import parallel_backend
 
 
 def scorer_metrics() -> dict:
+    """
+    Returns a dictionary of custom scoring metrics for model evaluation.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are metric names and values are sklearn `make_scorer` objects.
+        Includes 'precision_score', 'recall_score', 'accuracy_score', 'f1_score', 'auc', and
+        'log_loss'.
+    """
     return {'precision_score': make_scorer(precision_score, average='micro'),
             'recall_score': make_scorer(recall_score, average='micro'),
             'accuracy_score': make_scorer(accuracy_score, average='micro'),
@@ -34,497 +55,262 @@ def scorer_metrics() -> dict:
             }
 
 
-def scorer_metric_for_halving_grid_search(scorer: str) -> str:
-    metrics = {'precision_score': 'precision',
-               'recall_score': 'recall',
-               'accuracy_score': 'accuracy',
-               'f1_score': 'f1',
-               'jaccard_score': 'jaccard',
-               'auc': 'roc_auc',
-               'balanced_accuracy_score': 'balanced_accuracy',
-               'brier_score_loss': 'neg_brier_score',
-               'log_loss': 'neg_log_loss',
-               }
-    return metrics[scorer]
-
-
-def gscv_score(cv_results: dict) -> str:
+def fit_lda(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict, rnd: int):
     """
-    Function returns CV metrics result of GridSearchCV for report.
+    Fits a Linear Discriminant Analysis (LDA) model to the training data.
+
     Parameters
     ----------
-    cv_results: dict
-        A dict with keys as column headers and values as columns
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : pd.Series
+        The target values for the training data.
+    best_params : dict
+        Parameters to initialize the LDA model.
+    rnd : int
+        Random seed for reproducibility.
+
     Returns
     -------
-    text: str
-        with precision, recall, accuracy, F1-score results for report
+    LinearDiscriminantAnalysis
+        The fitted LDA model.
     """
-    scorers = scorer_metrics().keys()
-    text = ''
-    for sc in scorers:
-        v_mean = cv_results['mean_test_%s' % sc]
-        v_mean = v_mean[~np.isnan(v_mean)].mean()
-        sd_mean = cv_results['std_test_%s' % sc]
-        sd_mean = sd_mean[~np.isnan(sd_mean)].mean()
-        text += "CV test %s = %0.2f ± %0.2f" % (sc, v_mean, sd_mean) + '\n'
-    return text
-
-
-def hgscv_score(cv_results: dict) -> str:
-    """
-    Function returns CV metrics result of HalvingGridSearchCV for report.
-    Parameters
-    ----------
-    cv_results: dict
-        A dict with keys as column headers and values as columns
-    Returns
-    -------
-    text: str
-        with 1 metric results for report
-    """
-    text = ''
-    v_mean = cv_results['mean_test_score']
-    v_mean = v_mean[~np.isnan(v_mean)].mean()
-    sd_mean = cv_results['std_test_score']
-    sd_mean = sd_mean[~np.isnan(sd_mean)].mean()
-    text += "CV test score = %0.2f ± %0.2f" % (v_mean, sd_mean) + '\n'
-    v_mean = cv_results['mean_train_score']
-    v_mean = v_mean[~np.isnan(v_mean)].mean()
-    sd_mean = cv_results['std_train_score']
-    sd_mean = sd_mean[~np.isnan(sd_mean)].mean()
-    text += "CV train score = %0.2f ± %0.2f" % (v_mean, sd_mean) + '\n'
-    return text
-
-
-def fit_lda(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict):
     model = LinearDiscriminantAnalysis(**best_params)
     model.fit(x_train, y_train)
     return model
 
 
-def fit_lda_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-                params: dict) -> dict:
+def fit_lr(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict, rnd: int):
     """
-    Fit LDA estimator.
+    Fits a Logistic Regression model to the training data.
 
     Parameters
     ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : pd.Series
+        The target values for the training data.
+    best_params : dict
+        Parameters to initialize the Logistic Regression model.
+    rnd : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    LogisticRegression
+        The fitted Logistic Regression model.
     """
-    model = LinearDiscriminantAnalysis()
-    if params['use_GridSearchCV']:
-        model = GridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3,
-                             scoring=scorer_metrics(),
-                             refit=params['refit'], cv=3)
-    else:
-        model = HalvingGridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3,
-                                    cv=3,
-                                    scoring=scorer_metric_for_halving_grid_search(params['refit']))
-
-    with parallel_backend('multiprocessing', n_jobs=-1):
-        model.fit(x_train, y_true_train)
-        if params['use_GridSearchCV']:
-            cv_scores = gscv_score(model.cv_results_)
-        else:
-            cv_scores = hgscv_score(model.cv_results_)
-
-        # 2d_model for DecisionBoundaryDisplay
-        transformed_2d = model.transform(x_train)
-        if transformed_2d.shape[1] > 1:
-            transformed_2d = transformed_2d[:, [0, 1]]
-        transformed_2d_test = model.transform(x_test)
-        if transformed_2d_test.shape[1] > 1:
-            transformed_2d_test = transformed_2d_test[:, [0, 1]]
-        model_2d = copy.deepcopy(model)
-        features_in_2d = np.concatenate((transformed_2d, transformed_2d_test))
-        model_2d.fit(transformed_2d, y_true_train)
-        y_predicted_2d = model_2d.predict(features_in_2d)
-
-        y_predicted_train = model.predict(x_train)
-        accuracy_score_train = accuracy_score(y_true_train, y_predicted_train)
-        accuracy_score_train = np.round(accuracy_score_train, 5) * 100.
-        y_predicted_test = model.predict(x_test)
-        y_predicted = np.concatenate((y_predicted_train, y_predicted_test))
-        y_train_plus_test = np.concatenate((y_true_train, y_test))
-        misclassified = y_train_plus_test != y_predicted
-        y_score = model.predict_proba(x_test)
-        y_score_dec_func = model.decision_function(x_test)
-    return {'model': model, 'features_in_2d': features_in_2d, 'misclassified': misclassified,
-            'y_score': y_score, 'y_score_dec_func': y_score_dec_func,
-            'accuracy_score_train': accuracy_score_train,
-            'model_2d': model_2d, 'cv_scores': cv_scores, 'y_pred_2d': y_predicted_2d,
-            'y_train_plus_test': y_train_plus_test, 'y_pred_test': y_predicted_test}
+    params = {}
+    for key, value in best_params.items():
+        if 'solver' in key:
+            key = 'solver'
+        params[key] = value
+    model = LogisticRegression(class_weight='balanced', random_state=rnd, max_iter=1000,
+                               **params)
+    model.fit(x_train, y_train)
+    return model
 
 
-def fit_classificator(model, x_train, y_true_train, x_test, y_test, params):
-    have_decision_function = 'decision_function' in model.__dir__()
-    if params['use_GridSearchCV']:
-        model = GridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3,
-                             scoring=scorer_metrics(),
-                             refit=params['refit'], cv=3)
-    else:
-        model = HalvingGridSearchCV(model, params['grid_search_parameters'], n_jobs=-1, verbose=3,
-                                    cv=3,
-                                    scoring=scorer_metric_for_halving_grid_search(params['refit']))
+def fit_svc(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict, rnd: int):
+    """
+    Fits a Support Vector Classifier (SVC) model to the training data.
 
-    with parallel_backend('multiprocessing', n_jobs=-1):
-        model.fit(x_train, y_true_train)
-        if params['use_GridSearchCV']:
-            cv_scores = gscv_score(model.cv_results_)
-        else:
-            cv_scores = hgscv_score(model.cv_results_)
+    Parameters
+    ----------
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : pd.Series
+        The target values for the training data.
+    best_params : dict
+        Parameters to initialize the SVC model.
+    rnd : int
+        Random seed for reproducibility.
 
-        # 2d_model for DecisionBoundaryDisplay
-        transformed_2d, features_in_2d, explained_variance_ratio = dim_reduction(x_train, x_test,
-                                                                                 y_true_train)
-        model_2d = make_pipeline(StandardScaler(), copy.deepcopy(model))
-        model_2d.fit(transformed_2d, y_true_train)
-        y_predicted_2d = model_2d.predict(features_in_2d)
-
-        y_predicted_train = model.predict(x_train)
-        accuracy_score_train = accuracy_score(y_true_train, y_predicted_train)
-        accuracy_score_train = np.round(accuracy_score_train, 5) * 100.
-        y_predicted_test = model.predict(x_test)
-        y_predicted = np.concatenate((y_predicted_train, y_predicted_test))
-        y_train_plus_test = np.concatenate((y_true_train, y_test))
-        misclassified = y_train_plus_test != y_predicted
-        y_score = model.predict_proba(x_test)
-        if have_decision_function:
-            y_score_dec_func = model.decision_function(x_test)
-    res = {'model': model, 'features_in_2d': features_in_2d, 'misclassified': misclassified,
-           'y_score': y_score,
-           'accuracy_score_train': accuracy_score_train, 'model_2d': model_2d,
-           'cv_scores': cv_scores, 'y_pred_2d': y_predicted_2d,
-           'y_train_plus_test': y_train_plus_test,
-           'y_pred_test': y_predicted_test, 'explained_variance_ratio': explained_variance_ratio}
-    if have_decision_function:
-        res['y_score_dec_func'] = y_score_dec_func
-    return res
+    Returns
+    -------
+    SVC
+        The fitted SVC model.
+    """
+    model = SVC(class_weight='balanced', random_state=rnd, probability=True, kernel='linear',
+                **best_params)
+    model.fit(x_train, y_train)
+    return model
 
 
-def fit_lr_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-               params: dict) \
+def fit_dt(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict, rnd: int):
+    """
+    Fits a Decision Tree Classifier model to the training data.
+
+    Parameters
+    ----------
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : pd.Series
+        The target values for the training data.
+    best_params : dict
+        Parameters to initialize the Decision Tree model.
+    rnd : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    DecisionTreeClassifier
+        The fitted Decision Tree Classifier model.
+    """
+    model = DecisionTreeClassifier(class_weight='balanced', random_state=rnd, **best_params)
+    model.fit(x_train, y_train)
+    return model
+
+
+def fit_rf(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict, rnd: int):
+    """
+    Fits a Random Forest Classifier model to the training data.
+
+    Parameters
+    ----------
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : pd.Series
+        The target values for the training data.
+    best_params : dict
+        Parameters to initialize the Random Forest model.
+    rnd : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    RandomForestClassifier
+        The fitted Random Forest Classifier model.
+    """
+    model = RandomForestClassifier(class_weight='balanced', random_state=rnd, **best_params)
+    model.fit(x_train, y_train)
+    return model
+
+
+def fit_xgboost(x_train: pd.DataFrame, y_train: pd.Series, best_params: dict, rnd: int):
+    """
+    Fits an XGBoost Classifier model to the training data.
+
+    Parameters
+    ----------
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : pd.Series
+        The target values for the training data.
+    best_params : dict
+        Parameters to initialize the XGBoost model.
+    rnd : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    XGBClassifier
+        The fitted XGBoost Classifier model.
+    """
+    class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train),
+                                         y=y_train)
+    class_weight_dict = {i: class_weights[i] for i in range(len(class_weights))}
+    model = XGBClassifier(
+        eval_metric="auc",
+        random_state=rnd,
+        scale_pos_weight=class_weight_dict[0],
+        enable_categorical=True,
+        device="cpu",
+        **best_params
+    )
+    model.fit(x_train, y_train)
+    return model
+
+
+def fit_pca(x_train: pd.DataFrame, y_train: list[int], x_test: pd.DataFrame, y_test: list[int]) \
         -> dict:
     """
-    LogisticRegression
+    Applies Principal Component Analysis (PCA) to the combined training and test data.
 
     Parameters
     ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = LogisticRegression(max_iter=10_000, n_jobs=-1, random_state=params['random_state'],
-                               class_weight='balanced')
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
+    x_train : pd.DataFrame
+        The features of the training data.
+    y_train : list of int
+        The target values for the training data.
+    x_test : pd.DataFrame
+        The features of the test data.
+    y_test : list of int
+        The target values for the test data.
 
-
-def fit_svc_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-                params: dict) -> dict:
-    """
-    NuSVC with linear kernel
-
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = NuSVC(kernel='linear', probability=True, random_state=params['random_state'],
-                  class_weight='balanced')
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_nn_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-               params: dict) -> dict:
-    """
-    Nearest Neighbors
-
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = KNeighborsClassifier(n_jobs=-1)
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_dt_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-               params: dict) -> dict:
-    """
-    DecisionTreeClassifier
-
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = DecisionTreeClassifier(random_state=params['random_state'], class_weight='balanced')
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_nb_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-               params: dict) -> dict:
-    """
-    GaussianNB
-
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = GaussianNB()
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_rf_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-               params: dict) -> dict:
-    """
-    Random forest
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = RandomForestClassifier(random_state=params['random_state'], class_weight='balanced',
-                                   n_jobs=-1)
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_ab_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-               params: dict) -> dict:
-    """
-    AdaBoostClassifier
-
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = AdaBoostClassifier(random_state=params['random_state'])
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_mlp_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-                params: dict) -> dict:
-    """
-    MLP Multi-layer Perceptron classifier
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = MLPClassifier(random_state=params['random_state'], max_iter=params['max_epoch'],
-                          learning_rate='adaptive')
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_pca(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame, y_test: list[int],
-            params: dict) -> dict:
-    """
-    PCA
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
+    Returns
+    -------
+    dict
+        A dictionary containing:
+            - 'model': The fitted PCA model.
+            - 'features_2d': Transformed features in 2D space.
+            - 'y_train_test': Combined target values from training and test sets.
+            - 'explained_variance_ratio': The amount of variance explained by each PCA component.
     """
     model = PCA(n_components=2)
     x_data = np.concatenate((x_train.values, x_test.values))
-    y_data = np.concatenate((y_true_train, y_test))
+    y_data = np.concatenate((y_train, y_test))
     model.fit(x_data, y_data)
-    features_in_2d = scale(model.transform(x_data))
-    explained_variance_ratio = model.explained_variance_ratio_
-    return {'model': model, 'features_in_2d': features_in_2d,
-            'explained_variance_ratio': explained_variance_ratio}
+    features_2d = scale(model.transform(x_data))
+    return {'model': model, 'features_2d': features_2d, 'y_train_test': y_data,
+            'explained_variance_ratio': model.explained_variance_ratio_}
 
 
-def fit_xgboost_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame,
-                    y_test: list[int],
-                    params: dict) -> dict:
+def clf_predict(item: tuple, x: pd.DataFrame) -> dict:
     """
-    XGBoost
+    Makes predictions using a provided classifier model.
 
     Parameters
     ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
+    item : tuple
+        A tuple where the first element is the classifier model and the second is the classifier's
+        name.
+    x : pd.DataFrame
+        The features of the data to predict.
+
+    Returns
+    -------
+    dict
+        A dictionary containing:
+            - 'y_pred': Predicted labels.
+            - 'y_score': Prediction probabilities.
+            - 'clf_name': The name of the classifier used.
     """
-    model = XGBClassifier(random_state=params['random_state'], n_jobs=-1)
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def fit_voting_clf(x_train: DataFrame, y_true_train: list[int], x_test: DataFrame,
-                   y_test: list[int],
-                   params: dict) -> dict:
-    """
-    VotingClassifier
-
-    Parameters
-    ----------
-    x_train: array-like of shape (n_samples, n_features)
-            Training data.
-    y_true_train: array-like of shape (n_samples,)
-            Target values.
-    x_test: array-like of shape (n_samples, n_features)
-            Testing data
-    y_test: array-like of shape (n_samples,)
-    params: dict
-    """
-    model = VotingClassifier(estimators=params['estimators'], voting='soft', n_jobs=-1)
-    return fit_classificator(model, x_train, y_true_train, x_test, y_test, params)
-
-
-def objective(space):
-    X_train = space['X_train']
-    X_test = space['X_test']
-    y_train = space['y_train']
-    y_test = space['y_test']
-    clf = XGBClassifier(eta=space['n_estimators'], n_estimators=space['n_estimators'],
-                        max_depth=int(space['max_depth']), gamma=space['gamma'],
-                        reg_alpha=int(space['reg_alpha']),
-                        min_child_weight=int(space['min_child_weight']),
-                        colsample_bytree=int(space['colsample_bytree']))
-
-    evaluation = [(X_train, y_train), (X_test, y_test)]
-
-    clf.fit(X_train, y_train, eval_set=evaluation, verbose=False)
-
-    pred = clf.predict(X_test)
-    print(y_test)
-    print(pred)
-    print(pred > 0.5)
-    accuracy = accuracy_score(y_test, pred)
-    print("SCORE:", accuracy)
-    return {'loss': -accuracy, 'status': STATUS_OK}
-
-
-def model_metrics(y_true: list[int], y_pred: list[int], y_score: list[float], binary: bool,
-                  target_names) -> dict:
-    average_func = 'binary' if binary else 'micro'
-    if np.max(y_true) != np.max(y_pred) and np.min(y_true) != np.min(y_pred):
-        y_true = np.array(y_true)
-        y_true -= 1
-    c_r = classification_report(y_true, y_pred, target_names=target_names) \
-        if len(target_names) == len(np.unique(y_true)) else None
-    pos_label = np.sort(np.unique(y_true))[0]
-    try:
-        auc_score = roc_auc_score(y_true, y_score[:, 1] if binary else y_score, multi_class='ovr',
-                                  average='micro')
-    except ValueError:
-        auc_score = -1.
-    res = {'accuracy_score': np.round(accuracy_score(y_true, y_pred), 4) * 100,
-           'precision_score': np.round(precision_score(y_true, y_pred, average=average_func,
-                                                       pos_label=pos_label), 4) * 100,
-           'recall_score': np.round(recall_score(y_true, y_pred, average=average_func,
-                                                 pos_label=pos_label), 4) * 100,
-           'f1_score': np.round(f1_score(y_true, y_pred, average=average_func,
-                                         pos_label=pos_label), 4) * 100,
-           'fbeta_score': np.round(fbeta_score(y_true, y_pred, average=average_func, beta=0.5,
-                                               pos_label=pos_label), 4) * 100,
-           'hamming_loss': np.round(hamming_loss(y_true, y_pred), 4) * 100,
-           'jaccard_score': np.round(
-               jaccard_score(y_true, y_pred, average=average_func, pos_label=pos_label), 4) * 100,
-           'AUC': auc_score,
-           'classification_report': c_r}
-    return res
-
-
-def class_labels(row_index, pred, class_count):
-    return [f'Class {i + 1} ({pred[row_index, i].round(2):.2f})' for i in range(class_count)]
-
-
-def clf_predict(X, model, clf_name) -> dict:
-    if isinstance(model, GridSearchCV) or isinstance(model, HalvingGridSearchCV):
-        model = model.best_estimator_
-    predicted = model.predict(X)
-    predicted_proba = model.predict_proba(X)
-    return {'predicted': predicted, 'predicted_proba': predicted_proba, 'clf_name': clf_name}
-
-
-def plsda_y_data_trick(y_data):
-    classes = np.unique(y_data)
-    lists_trick = []
-    for i in classes:
-        y_class = np.where(y_data == i, 1, 0)
-        lists_trick.append(y_class)
-    return np.array(lists_trick).T
+    model, clf_name = item
+    y_pred = model.predict(x)
+    y_score = model.predict_proba(x)
+    return {'y_pred': y_pred, 'y_score': y_score, 'clf_name': clf_name}
 
 
 def dim_reduction(x_train, x_test, y_train):
-    if isinstance(x_train, DataFrame):
+    """
+    Applies Principal Component Analysis (PCA) to reduce dimensionality of the training and test
+    data.
+
+    Parameters
+    ----------
+    x_train : array-like
+        The features of the training data. Can be either a DataFrame or numpy array.
+    x_test : array-like
+        The features of the test data. Can be either a DataFrame or numpy array.
+    y_train : array-like
+        The target values for the training data.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+            - transformed_2d: The training data transformed into 2D space.
+            - features_in_2d: Combined training and test data transformed into 2D space.
+            - explained_variance_ratio: The amount of variance explained by each PCA component.
+    """
+    if isinstance(x_train, pd.DataFrame):
         x_train = x_train.values
-    if isinstance(x_test, DataFrame):
+    if isinstance(x_test, pd.DataFrame):
         x_test = x_test.values
     pca = PCA(n_components=2)
     pca.fit(x_train, y_train)
     transformed_2d = scale(pca.transform(x_train))
     features_in_2d = scale(pca.transform(np.concatenate((x_train, x_test))))
-    explained_variance_ratio = pca.explained_variance_ratio_
 
-    return transformed_2d, features_in_2d, explained_variance_ratio
+    return transformed_2d, features_in_2d, pca.explained_variance_ratio_

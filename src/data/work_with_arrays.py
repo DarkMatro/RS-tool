@@ -1,3 +1,42 @@
+"""
+This module contains various utility functions for numerical computations and data manipulation
+using NumPy and Numba.
+
+Functions
+---------
+- nearest_idx(array: np.ndarray, value: float) -> int
+  Find the index of the value in the array that is nearest to the given value.
+
+- find_nearest(array: np.ndarray, value: float, take_left_value: bool = False) -> float
+  Find the value in the array that is nearest to the given value, with an option to select the
+    left-side value.
+
+- normalize_between_0_1(x: np.ndarray) -> np.ndarray
+  Normalize the values in the input array to be within the range [0, 1].
+
+- diff(x: np.ndarray) -> np.ndarray
+  Calculate the first discrete difference of the input array.
+
+- extend_bool_mask(x: list[bool], window_size: int = 2) -> list[bool]
+  Extend False values to True if they are within a specified window size of True values in the list.
+
+- extend_bool_mask_two_sided(x: list[int], window_size: int = 2) -> list[int]
+  Extend False values to True if they are within a specified window size of True values in the list,
+    considering both sides.
+
+- find_nearest_by_idx(array: np.ndarray, idx: int, take_left_value: bool = False) -> float
+  Find the nearest value in the array to the value at a specified index, with an option to select
+    the left-side value.
+
+Notes
+-----
+- The functions utilize NumPy arrays for efficient computation.
+- The `nearest_idx`, `normalize_between_0_1`, and `diff` functions are optimized with Numba's
+    Just-In-Time (JIT) compilation for performance improvements.
+- Functions `extend_bool_mask` and `extend_bool_mask_two_sided` operate on lists of boolean or
+    integer values to modify the data based on surrounding values.
+"""
+
 import numpy as np
 from numba import njit
 
@@ -164,7 +203,8 @@ def extend_bool_mask(x: list[bool], window_size: int = 2) -> list[bool]:
 
 def extend_bool_mask_two_sided(x: list[int], window_size: int = 2) -> list[int]:
     """
-    Makes False value with True if near this value +- window_size in the list True stored for both sides.
+    Makes False value with True if near this value +- window_size in the list True stored for both
+    sides.
 
     Parameters
     ----------
@@ -195,9 +235,29 @@ def extend_bool_mask_two_sided(x: list[int], window_size: int = 2) -> list[int]:
 
 
 def find_nearest_by_idx(array: np.ndarray, idx: int, take_left_value: bool = False) -> float:
+    """
+    Find the nearest value in the array to the value at a specified index.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The input array in which to find the nearest value.
+    idx : int
+        The index of the value in the array to use as the reference point.
+    take_left_value : bool, optional
+        If True and the nearest value is greater than the reference value, return the value to the
+        left of the nearest value.
+        If False, or if the nearest value is less than or equal to the reference value, return the
+        nearest value. Default is False.
+
+    Returns
+    -------
+    float
+        The nearest value in the array to the value at the specified index, adjusted based on the
+        `take_left_value` flag.
+    """
     value = array[idx]
     idx = np.abs(array - value).argmin()
     if take_left_value and array[idx] > value and idx != 0:
         return array[idx - 1]
-    else:
-        return array[idx]
+    return array[idx]

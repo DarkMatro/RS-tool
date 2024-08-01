@@ -171,7 +171,7 @@ class CommandFitIntervalChanged(UndoCommand):
         self.model = kwargs.pop('model')
         super().__init__(data, parent, text, *args, **kwargs)
         self.new_value = data
-        self.df = self.mw.ui.fit_borders_TableView.model().dataframe().copy()
+        self.df = self.mw.ui.fit_borders_TableView.model().dataframe.copy()
 
     def redo_special(self):
         """

@@ -1,3 +1,4 @@
+# pylint: disable=no-name-in-module, relative-beyond-top-level, import-error
 """
 Module for managing the groups table in a GUI application.
 
@@ -12,7 +13,7 @@ Classes:
     CommandAddGroup: Command for adding a new group to the table.
     CommandDeleteGroup: Command for deleting a group from the table.
 """
-
+from asyncio import get_event_loop
 from gc import get_objects
 from os import environ
 
@@ -24,12 +25,12 @@ from qtpy.QtGui import QColor
 from qtpy.QtWidgets import QHeaderView, QAbstractItemView
 
 from src.backend.undo_stack import UndoCommand
+from src.ui.style import color_dialog
 from ..data.get_data import get_parent
+from ..data.plotting import random_rgb
 from ..pandas_tables import GroupsTableModel
 from ..ui.MultiLine import MultiLine
 from ..widgets.curve_properties_window import CurvePropertiesWindow
-from ..data.plotting import random_rgb
-from src.ui.style import color_dialog
 
 
 class GroupTable(QObject):
@@ -100,7 +101,7 @@ class GroupTable(QObject):
         pd.DataFrame
             The dataframe representing the current state of the table.
         """
-        return self.table_widget.model().dataframe()
+        return self.table_widget.model().dataframe
 
     def load(self, df: pd.DataFrame) -> None:
         """
@@ -125,17 +126,6 @@ class GroupTable(QObject):
         """
         return self.table_widget.model().rowCount()
 
-    def groups_list(self) -> list:
-        """
-        Get the list of groups from the table.
-
-        Returns
-        -------
-        list
-            A list of groups.
-        """
-        return self.table_widget.model().groups_list()
-
     def target_names(self, classes: list[str]) -> list[str]:
         """
         Get the target names for specified classes.
@@ -150,7 +140,7 @@ class GroupTable(QObject):
         list of str
             The target names corresponding to the specified classes.
         """
-        return self.table_widget.model().dataframe().loc[classes]["Group name"].values
+        return self.table_widget.model().dataframe.loc[classes]["Group name"].values
 
     @asyncSlot()
     async def _group_table_cell_clicked(self) -> None:
@@ -174,7 +164,8 @@ class GroupTable(QObject):
             await self._change_group_for_many_rows(selected_input_table_idx)
         elif current_column == 0 and self.mw.ui.by_group_control_button.isChecked():
             # show group's spectrum only in plot
-            await self.mw.loop.run_in_executor(
+            loop = get_event_loop()
+            await loop.run_in_executor(
                 None, self.parent.preprocessing.stages.input_data.despike_history_remove_plot
             )
             await self.mw.update_plots_for_group(None)
@@ -422,7 +413,7 @@ class CommandChangeGroupCellsBatch(UndoCommand):
         """
         Override this function
         """
-        # TODO  self.rs.preprocessing.update_averaged()
+        self.parent.preprocessing.stages.av_data.average_clicked()
         self.parent.preprocessing.update_plot_item()
 
 
@@ -472,7 +463,7 @@ class CommandAddGroup(UndoCommand):
         """
         Override this function
         """
-        # TODO  self.rs.preprocessing.update_averaged()
+        self.parent.preprocessing.stages.av_data.average_clicked()
         self.parent.preprocessing.update_plot_item()
 
 
@@ -517,5 +508,5 @@ class CommandDeleteGroup(UndoCommand):
         """
         Override this function
         """
-        # TODO  self.rs.preprocessing.update_averaged()
+        self.parent.preprocessing.stages.av_data.average_clicked()
         self.parent.preprocessing.update_plot_item()

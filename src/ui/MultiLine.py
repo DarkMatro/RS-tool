@@ -31,11 +31,12 @@ def _fourierTransform(x_in: np.ndarray, y_in: np.ndarray) -> tuple[np.ndarray, n
     return np.array(x_out), np.array(y_out)
 
 
-def apply_log_mapping(x: np.ndarray, y: np.ndarray, log_mode: tuple[bool, bool]) -> tuple[np.ndarray, np.ndarray]:
+def apply_log_mapping(x: np.ndarray, y: np.ndarray, log_mode: tuple[bool, bool]) \
+        -> tuple[np.ndarray, np.ndarray]:
     """
     Applies a logarithmic mapping transformation (base 10) if requested for the respective axis.
-    This replaces the internal data. Values of ``-inf`` resulting from zeros in the original dataset are
-    replaced by ``np.NaN``.
+    This replaces the internal data. Values of ``-inf`` resulting from zeros in the original
+    dataset are replaced by ``np.NaN``.
 
     Parameters
     ----------
@@ -84,8 +85,10 @@ class MultiLine(QGraphicsPathItem):
         self.path = arrayToQPath(x.flatten(), y.flatten(), connect.flatten(), finiteCheck=False)
         QGraphicsPathItem.__init__(self, self.path)
         self._originalPath = self.path  # will hold a PlotDataset for the original data
-        self._modifiedPath = None  # will hold a PlotDataset for data after mapping transforms (e.g. log scale)
-        self._datasetDisplay = None  # will hold a PlotDataset for data downsampled and limited for display
+        # will hold a PlotDataset for data after mapping transforms (e.g. log scale)
+        self._modifiedPath = None
+        # will hold a PlotDataset for data downsampled and limited for display
+        self._datasetDisplay = None
         self.opts = {
             'alphaHint': 1.0,
             'alphaMode': False,
@@ -125,7 +128,6 @@ class MultiLine(QGraphicsPathItem):
         self.setPath(path)
         color = self._style['color']
         color.setAlphaF(1.0)
-        print(self._style)
         pen = mkPen(color=color, style=self._style['style'], width=self._style['width'])
         self.setPen(pen)
 
@@ -220,8 +222,8 @@ class MultiLine(QGraphicsPathItem):
 
     def getModifiedPath(self) -> QPainterPath:
         """
-        Returns a :class:`PlotDataset <pyqtgraph.PlotDataset>` object that contains data suitable for display
-        (after mapping and data reduction) as ``dataset.x`` and ``dataset.y``.
+        Returns a :class:`PlotDataset <pyqtgraph.PlotDataset>` object that contains data suitable
+        for display (after mapping and data reduction) as ``dataset.x`` and ``dataset.y``.
         Intended for internal use.
         """
 
@@ -229,7 +231,8 @@ class MultiLine(QGraphicsPathItem):
                   self.opts['logMode'][0], self.opts['logMode'][1],
                   self.opts['derivativeMode'],
                   self.opts['phasemapMode'],
-                  self.opts['downsample'], self.opts['autoDownsample'], self.opts['downsampleMethod'],
+                  self.opts['downsample'], self.opts['autoDownsample'],
+                  self.opts['downsampleMethod'],
                   self.opts['autoDownsampleFactor'],
                   self.opts['clipToView']]
         if self._params and self._modifiedPath and params == self._params:
@@ -257,7 +260,8 @@ class MultiLine(QGraphicsPathItem):
             y = np.diff(self._y) / np.diff(self._x)
 
         if True in self.opts['logMode']:
-            x, y = apply_log_mapping(x, y, self.opts['logMode'])  # Apply log scaling for x and/or y-axis
+            # Apply log scaling for x and/or y-axis
+            x, y = apply_log_mapping(x, y, self.opts['logMode'])
 
         # apply processing that affects the on-screen display of data:
         ds = self.opts['downsample']
@@ -291,7 +295,8 @@ class MultiLine(QGraphicsPathItem):
                     x_ = x[0]
                     # find first in-view value (left edge) and first out-of-view value (right edge)
                     # since we want the curve to go to the edge of the screen, we need to preserve
-                    # one down-sampled point on the left and one of the right, so we extend the interval
+                    # one down-sampled point on the left and one of the right, so we extend the
+                    # interval
                     x0 = np.searchsorted(x_, view_range.left()) - ds
                     x0 = clip_scalar(x0, 0, len(x_))  # workaround
                     # x0 = np.clip(x0, 0, len(x))
@@ -313,7 +318,8 @@ class MultiLine(QGraphicsPathItem):
         self._modifiedPath = new_path
         return new_path
 
-    def get_x_y_downsampled(self, x: np.ndarray, y: np.ndarray, ds: int) -> tuple[np.ndarray, np.ndarray]:
+    def get_x_y_downsampled(self, x: np.ndarray, y: np.ndarray, ds: int) \
+            -> tuple[np.ndarray, np.ndarray]:
         if self.opts['downsampleMethod'] == 'subsample':
             x = x.T[::ds].T
             y = y.T[::ds].T

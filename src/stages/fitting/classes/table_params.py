@@ -1,6 +1,17 @@
-from qtpy.QtWidgets import QHeaderView, QAbstractItemView, QLineEdit, QMenu
-from qtpy.QtCore import QPointF
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+This module provides functionality for handling parameter tables in a graphical user interface.
+
+The main class, TableParams, manages the initialization, resetting, and updating of the parameter
+table used for curve fitting in spectral analysis. The class handles interactions between the table
+and the plot widget, updates parameters based on user input, and provides context menu actions for
+copying line parameters from templates.
+"""
+
 from pandas import MultiIndex, DataFrame
+from qtpy.QtCore import QPointF
+from qtpy.QtWidgets import QHeaderView, QAbstractItemView, QLineEdit, QMenu
 
 from qfluentwidgets import MessageBox
 from src import get_parent
@@ -10,12 +21,40 @@ from src.stages.fitting.functions.plotting import deconvolution_data_items_by_id
 
 
 class TableParams:
+    """
+    A class to manage the parameter table for curve fitting in a GUI.
+
+    This class handles the initialization, resetting, and updating of the parameter table used for
+    curve fitting in spectral analysis. It manages the interactions between the table and the plot
+    widget, updates parameters based on user input, and provides context menu actions for copying
+    line parameters from templates.
+
+    Parameters
+    ----------
+    parent : object
+        The parent object, typically the main window of the application.
+    """
     def __init__(self, parent):
+        """
+        Initialize the TableParams instance.
+
+        This method sets up the initial state of the parameter table and the user interface.
+
+        Parameters
+        ----------
+        parent : object
+            The parent object, typically the main window of the application.
+        """
         self.parent = parent
         self.reset()
         self.set_ui()
 
     def reset(self):
+        """
+        Reset the parameter table.
+
+        This method clears the parameter table and sets up a new empty model.
+        """
         mw = get_parent(self.parent, "MainWindow")
         multi_index = MultiIndex.from_tuples(
             [("", 0, "a")], names=("filename", "line_index", "param_name")
@@ -28,6 +67,11 @@ class TableParams:
         mw.ui.fit_params_table.model().clear_dataframe()
 
     def set_ui(self):
+        """
+        Set up the user interface for the parameter table.
+
+        This method configures the table delegates, headers, selection behavior, and context menu.
+        """
         mw = get_parent(self.parent, "MainWindow")
         dsb_delegate = DoubleSpinBoxDelegate(mw)
         for i in range(1, 4):
@@ -49,6 +93,20 @@ class TableParams:
         mw.ui.fit_params_table.verticalHeader().setVisible(False)
 
     def curve_parameter_changed(self, value: float, line_index: int, param_name: str) -> None:
+        """
+        Handle changes to curve parameters.
+
+        This method updates the corresponding ROI and curve based on the changed parameter.
+
+        Parameters
+        ----------
+        value : float
+            The new value of the parameter.
+        line_index : int
+            The index of the line whose parameter is being changed.
+        param_name : str
+            The name of the parameter being changed.
+        """
         mw = get_parent(self.parent, "MainWindow")
         data_items = mw.ui.deconv_plot_widget.getPlotItem().listDataItems()
         items_matches = deconvolution_data_items_by_idx(line_index, data_items)
@@ -84,6 +142,16 @@ class TableParams:
         self.parent.graph_drawing.redraw_curve(params, curve, line_type)
 
     def _deconv_params_table_context_menu_event(self, a0) -> None:
+        """
+        Handle context menu event for the parameter table.
+
+        This method displays a context menu for copying line parameters from a template.
+
+        Parameters
+        ----------
+        a0 : QContextMenuEvent
+            The context menu event.
+        """
         mw = get_parent(self.parent, "MainWindow")
         if self.parent.data.is_template:
             return
@@ -97,6 +165,21 @@ class TableParams:
     def copy_line_parameters_from_template(self, idx: int | None = None,
                                            filename: str | None = None,
                                            redraw: bool = True) -> None:
+        """
+        Copy line parameters from a template.
+
+        This method copies parameters for a selected line from a template and updates the table and
+        plot.
+
+        Parameters
+        ----------
+        idx : int, optional
+            The index of the line to copy parameters to. If None, the current selected line is used.
+        filename : str, optional
+            The filename associated with the line. If None, the current spectrum name is used.
+        redraw : bool, optional
+            Whether to redraw the curve after copying parameters. Default is True.
+        """
         mw = get_parent(self.parent, "MainWindow")
         filename = self.parent.data.current_spectrum_name if filename is None else filename
         model = self.parent.ui.fit_params_table.model()

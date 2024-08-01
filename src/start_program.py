@@ -1,3 +1,5 @@
+# pylint: disable=no-name-in-module, import-error
+
 """
 Start program.
 
@@ -9,7 +11,7 @@ import sys
 import warnings
 from asyncio import set_event_loop
 from ctypes import windll
-from logging import basicConfig, info
+from logging import basicConfig, info, DEBUG, FileHandler, StreamHandler, getLogger, WARNING
 from os import environ, getenv
 from pathlib import Path
 from traceback import format_exception
@@ -21,26 +23,25 @@ from qtpy.QtCore import Qt
 from qtpy.QtGui import QIcon
 from qtpy.QtWidgets import QApplication
 from seaborn import set_style as sns_set_style
+from shap import initjs
 
 from qfluentwidgets import MessageBox
-from src.mutual_functions.static_functions import show_error_msg
 from src.data.config import get_config
+from src.data.get_data import show_error_msg
 from src.files.help import action_help
 from src.files.preferences_file import read_preferences
 from src.pages.main_window import MainWindow
 from src.ui.style import apply_stylesheet, get_theme_colors
 from src.widgets import SplashScreen
-import dill, multiprocessing
 
 
 def start_program() -> None:
     """
     Setup environ and many others, create app and main window widget.
     """
-    # dill.Pickler.dumps, dill.Pickler.loads = dill.dumps, dill.loads
-    # multiprocessing.reduction.ForkingPickler = dill.Pickler
-    # multiprocessing.reduction.dump = dill.dump
-    # multiprocessing.queues._ForkingPickler = dill.Pickler
+    warnings.filterwarnings("ignore")
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    initjs()
     cfg = get_config()
     cfg_env = cfg["environ"]
     read_preferences()
@@ -63,7 +64,7 @@ def start_program() -> None:
 
     # Create main window.
     splash.show_message("Initializing main window..")
-    frame = MainWindow(loop)
+    frame = MainWindow()
 
     splash.show_message("Start logging...")
     _check_rs_tool_folder()
@@ -78,9 +79,9 @@ def start_program() -> None:
     splash.finish(frame)
     # Open help manual for first launch.
     if (
-        Path("examples/demo_project.zip").exists()
-        and len(frame.project.recent_list) == 0
-        and MessageBox("Open demo project?", "", frame, {"Yes", "Cancel"}).exec() == 1
+            Path("examples/demo_project.zip").exists()
+            and len(frame.project.recent_list) == 0
+            and MessageBox("Open demo project?", "", frame, {"Yes", "Cancel"}).exec() == 1
     ):
         frame.project.open_demo_project()
         action_help()
@@ -151,9 +152,15 @@ def _start_logging() -> None:
     """
     cfg = get_config()["logging"]
     path = getenv("APPDATA") + cfg["folder"] + cfg["filename"]
-    basicConfig(
-        filename=path, filemode="w", format="%(asctime)s %(levelname)s %(message)s"
-    )
+    numba_logger = getLogger('numba')
+    numba_logger.setLevel(WARNING)
+    basicConfig(level=DEBUG, datefmt='%Y-%m-%d %H:%M:%S',
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                handlers=[  # Define handlers
+                    FileHandler(path),  # Log to a file
+                    StreamHandler()  # Log to console
+                ]
+                )
     info("Logging started.")
 
 
@@ -167,10 +174,10 @@ def _check_rs_tool_folder() -> None:
 
 
 def _except_hook(
-    exc_type: type[BaseException] | None,
-    exc_value: BaseException | None,
-    exc_tb: TracebackType | None,
-    **kwargs
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_tb: TracebackType | None,
+        **kwargs
 ) -> None:
     """
     Catch exception and show error message.

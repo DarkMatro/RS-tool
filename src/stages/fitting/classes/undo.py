@@ -1,5 +1,35 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
+"""
+Module containing classes and functions for undo operations related to fitting and deconvolution.
+
+This module includes the following:
+- Fitting metrics calculation.
+- Command classes for adding deconvolution lines, handling post-fitting updates, and batch fitting.
+- Data classes for caching fitting results.
+
+Classes
+-------
+CommandAddDeconvLine
+    Command to add a deconvolution line.
+FitCache
+    Data class to cache fit results.
+CommandAfterFitting
+    Command to handle operations after fitting.
+CommandAfterGuess
+    Command to handle operations after guessing.
+BatchCache
+    Data class to cache batch fit results.
+CommandAfterBatchFitting
+    Command to handle operations after batch fitting.
+
+Functions
+---------
+fitting_metrics(fit_results)
+    Calculate fitting metrics and uncertainty bounds.
+"""
+
 import dataclasses
-from collections import defaultdict
 from copy import deepcopy
 from gc import collect
 from logging import debug
@@ -16,6 +46,22 @@ from src.stages.fitting.functions.plotting import random_line_style
 
 
 def fitting_metrics(fit_results: list[ModelResult]) -> tuple[str, np.ndarray, np.ndarray]:
+    """
+    Calculate fitting metrics and uncertainty bounds.
+
+    Parameters
+    ----------
+    fit_results : list[ModelResult]
+        List of fit results from model fitting.
+
+    Returns
+    -------
+    tuple[str, np.ndarray, np.ndarray]
+        A tuple containing:
+        - Average fit statistics text (str).
+        - Upper uncertainty bounds (np.ndarray).
+        - Lower uncertainty bounds (np.ndarray).
+    """
     ranges, chisqr_av, redchi_av, aic_av, bic_av, rsquared_av, av_text = 0, [], [], [], [], [], ''
     sigma3_top, sigma3_bottom = np.array([]), np.array([])
     for z in fit_results:
@@ -45,17 +91,16 @@ def fitting_metrics(fit_results: list[ModelResult]) -> tuple[str, np.ndarray, np
 
 class CommandAddDeconvLine(UndoCommand):
     """
-    add row to self.ui.deconv_lines_table
-    add curve to deconvolution_plotItem
+    Command to add a deconvolution line.
 
     Parameters
-    -------
-    data: tuple[int, str]
-        idx, line_type
-    parent: Context
-        Backend context class
-    text: str
-        description
+    ----------
+    data : tuple[int, str]
+        Tuple containing index and line type.
+    parent : Context
+        Backend context class.
+    text : str
+        Description text for the command.
     """
 
     def __init__(self, data: tuple[int, str], parent, text: str, *args, **kwargs) -> None:
@@ -68,7 +113,10 @@ class CommandAddDeconvLine(UndoCommand):
 
     def redo_special(self):
         """
-        Update data and input table columns
+        Update data and input table columns.
+
+        This method is called to redo the action of adding a deconvolution line,
+        updating the deconvolution lines table and fit parameters table.
         """
         self.mw.ui.deconv_lines_table.model().append_row(self._legend, self._line_type, self._style,
                                                          self._idx)
@@ -82,7 +130,10 @@ class CommandAddDeconvLine(UndoCommand):
 
     def undo_special(self):
         """
-        Undo data and input table columns
+        Undo data and input table columns.
+
+        This method is called to undo the action of adding a deconvolution line,
+        reverting the changes made to the deconvolution lines table and fit parameters table.
         """
         self.mw.ui.deconv_lines_table.model().delete_row(self._idx)
         self.parent.decomposition.tables.decomp_lines.delete_deconv_curve(self._idx)
@@ -90,7 +141,9 @@ class CommandAddDeconvLine(UndoCommand):
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements.
+
+        This method is called to stop the special action, updating the UI elements accordingly.
         """
         d = self.parent.decomposition
         d.graph_drawing.draw_sum_curve()
@@ -100,6 +153,28 @@ class CommandAddDeconvLine(UndoCommand):
 
 @dataclasses.dataclass
 class FitCache:
+    """
+    Data class to cache fit results.
+
+    Attributes
+    ----------
+    sum_ar : np.ndarray
+        Array of sum values.
+    sigma3_top : np.ndarray
+        Upper uncertainty bounds.
+    sigma3_bottom : np.ndarray
+        Lower uncertainty bounds.
+    report_text : str
+        Text for the fit report.
+    fit_report : str
+        Fit report.
+    params_stderr_for_filename_new : NestedDefaultDict
+        Standard errors for new parameters.
+    params_stderr_for_filename_old : NestedDefaultDict
+        Standard errors for old parameters.
+    df : pd.DataFrame
+        of fit parameters.
+    """
     sum_ar: np.ndarray
     sigma3_top: np.ndarray
     sigma3_bottom: np.ndarray
@@ -112,20 +187,22 @@ class FitCache:
 
 class CommandAfterFitting(UndoCommand):
     """
-    1. Set parameters value
-    2. Update graph
-    3. Show report
+    Command to handle operations after fitting.
 
     Parameters
     ----------
-    rs
-        Main window class
-    results : list[ModelResult]
+    data : list[ModelResult]
+        List of model fit results.
+    parent : Context
+        Backend context class.
+    text : str
+        Description text for the command.
+    stage : Stage
+        of the fitting process.
     static_params : list[tuple[int, str, int, str, callable]]
+        Static parameters for the fitting.
     filename : str
-        self.current_spectrum_deconvolution_name - current spectrum
-    description : str
-        Description to set in tooltip
+        Name of the current spectrum file.
     """
 
     def __init__(self, data: list[ModelResult], parent, text: str, *args, **kwargs) -> None:
@@ -149,6 +226,12 @@ class CommandAfterFitting(UndoCommand):
         self.prepare_data()
 
     def prepare_data(self) -> None:
+        """
+        Prepare data for fitting.
+
+        This method calculates average fit statistics and prepares data for fitting,
+        including uncertainty bounds and fit reports.
+        """
         av_text, self.attrs.sigma3_top, self.attrs.sigma3_bottom = fitting_metrics(self.data)
         for r in self.data:
             self.attrs.fit_report += self.edited_fit_report(r) + '\n' + '\n'
@@ -172,7 +255,10 @@ class CommandAfterFitting(UndoCommand):
 
     def redo_special(self):
         """
-        Update data and input table columns
+        Update data and input table columns.
+
+        This method is called to redo the fitting operation, updating the fit parameters
+        table and the UI elements accordingly.
         """
         if self.filename != '':
             self.mw.ui.fit_params_table.model().delete_rows_by_filenames([self.filename])
@@ -189,7 +275,10 @@ class CommandAfterFitting(UndoCommand):
 
     def undo_special(self):
         """
-        Undo data and input table columns
+        Undo data and input table columns.
+
+        This method is called to undo the fitting operation, reverting the changes made
+        to the fit parameters table and the UI elements.
         """
         self.mw.ui.fit_params_table.model().delete_rows_by_filenames([self.filename])
         self.mw.ui.fit_params_table.model().concat_df(self.attrs.df)
@@ -209,7 +298,9 @@ class CommandAfterFitting(UndoCommand):
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements.
+
+        This method is called to stop the special action, updating the UI elements accordingly.
         """
         self.stage.show_all_roi()
         self.mw.ui.fit_params_table.model().sort_index()
@@ -224,6 +315,19 @@ class CommandAfterFitting(UndoCommand):
         collect(2)
 
     def edited_fit_report(self, res: ModelResult) -> str:
+        """
+        Edit the fit report for better readability.
+
+        Parameters
+        ----------
+        res : ModelResult
+            The result of the model fit.
+
+        Returns
+        -------
+        str
+            The edited fit report.
+        """
         fit_report = res.fit_report(show_correl=False)
         param_legend = []
         line_types = self.mw.ui.deconv_lines_table.model().get_visible_line_types()
@@ -241,23 +345,22 @@ class CommandAfterFitting(UndoCommand):
 
 class CommandAfterGuess(UndoCommand):
     """
-    1. deconv_lines_table clear and add new from guess result
-    2. fit_params_table clear and add params for ''
-    3. update fit_report
-    4. delete all lines from plot and create new
-    5. update sum, residual, sigma3 data
+    Command to handle operations after guessing.
 
     Parameters
     ----------
-    mw : MainWindow
-        Main window class
-    result : list[ModelResult]
+    data : list[ModelResult]
+        List of model fit results after guessing.
+    parent : Context
+        Backend context class.
+    text : str
+        Description text for the command.
+    stage : Stage
+        of the fitting process.
     line_type : str
-        Gaussian, Lorentzian... etc.
+        Type of the line (e.g., Gaussian, Lorentzian).
     n_params : int
-        count of line parameters
-    description : str
-        Description to set in tooltip
+        Number of line parameters.
     """
 
     def __init__(self, data: list[ModelResult], parent, text: str, *args, **kwargs) -> None:
@@ -266,15 +369,18 @@ class CommandAfterGuess(UndoCommand):
         self.n_params: int = kwargs.pop('n_params')
         super().__init__(data, parent, text, *args, **kwargs)
         self._fit_report = ''
-        self._df = {'lines_old': self.mw.ui.deconv_lines_table.model().dataframe().copy(),
-                    'params_old': self.mw.ui.fit_params_table.model().dataframe().copy()}
+        self._df = {'lines_old': self.mw.ui.deconv_lines_table.model().dataframe.copy(),
+                    'params_old': self.mw.ui.fit_params_table.model().dataframe.copy()}
         self.report_result_old = self.stage.data.report_result[''] \
             if '' in self.stage.data.report_result else ''
         self.sigma3_old = self.stage.data.sigma3[''] if '' in self.stage.data.sigma3 else None
 
     def redo_special(self):
         """
-        f
+        Redo the guess operation.
+
+        This method is called to redo the guessing operation, updating the deconvolution lines
+        table, fit parameters table, and the UI elements accordingly.
         """
         self.mw.ui.deconv_lines_table.model().clear_dataframe()
         self.mw.ui.fit_params_table.model().clear_dataframe()
@@ -303,7 +409,10 @@ class CommandAfterGuess(UndoCommand):
 
     def undo_special(self):
         """
-        Undo data
+        Undo the guess operation.
+
+        This method is called to undo the guessing operation, reverting the changes made
+        to the deconvolution lines table, fit parameters table, and the UI elements.
         """
         self.mw.ui.deconv_lines_table.model().set_dataframe(self._df['lines_old'])
         self.mw.ui.fit_params_table.model().set_dataframe(self._df['params_old'])
@@ -322,12 +431,25 @@ class CommandAfterGuess(UndoCommand):
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements.
+
+        This method is called to stop the special action, updating the UI elements accordingly.
         """
         self.stage.set_rows_visibility()
         self.parent.set_modified()
 
     def process_result(self, fit_result: ModelResult) -> None:
+        """
+        Process the fit result.
+
+        This method processes the fit result, adding fit lines and fit parameters
+        to the deconvolution lines table and fit parameters table.
+
+        Parameters
+        ----------
+        fit_result : ModelResult
+            The result of the model fit.
+        """
         params = fit_result.params
         idx, line_params = 0, {}
         rnd_style = random_line_style()
@@ -350,6 +472,19 @@ class CommandAfterGuess(UndoCommand):
 
     @staticmethod
     def edited_fit_report(fit_report: str) -> str:
+        """
+        Edit the fit report for better readability.
+
+        Parameters
+        ----------
+        fit_report : str
+            The original fit report.
+
+        Returns
+        -------
+        str
+            The edited fit report.
+        """
         if '[[Fit Statistics]]' in fit_report:
             idx = fit_report.find('[[Fit Statistics]]')
             fit_report = fit_report[idx:]
@@ -360,6 +495,50 @@ class CommandAfterGuess(UndoCommand):
 
 @dataclasses.dataclass
 class BatchCache:
+    """
+    Data class to cache batch fit results.
+
+    Attributes
+    ----------
+    keys : set
+        of keys for the batch fit results.
+    sum_ar : np.ndarray
+        Array of sum values.
+    sigma3_conc_up : dict
+        Dictionary of upper uncertainty bounds for each fit.
+    sigma3_conc_bottom : dict
+        Dictionary of lower uncertainty bounds for each fit.
+    fit_reports : dict
+        Dictionary of fit reports for each fit.
+    chisqr_av : dict
+        Dictionary of average chi-square values for each fit.
+    redchi_av : dict
+        Dictionary of average reduced chi-square values for each fit.
+    aic_av : dict
+        Dictionary of average AIC values for each fit.
+    bic_av : dict
+        Dictionary of average BIC values for each fit.
+    rsquared_av : dict
+        Dictionary of average R-squared values for each fit.
+    params_stderr_new : NestedDefaultDict
+        Standard errors for new parameters.
+    params_stderr_old : NestedDefaultDict
+        Standard errors for old parameters.
+    report_text : dict
+        Dictionary of report texts for each fit.
+    av_text : str
+        Average fit statistics text.
+    dataset_new : pd.DataFrame | None
+        DataFrame of new fit parameters.
+    df_fit_params : pd.DataFrame
+        of fit parameters.
+    report_result_old : dict
+        Dictionary of old report results.
+    sigma3 : dict
+        Dictionary of uncertainty bounds.
+    dataset_old : pd.DataFrame
+        of old fit parameters.
+    """
     keys: set
     sum_ar: np.ndarray
     sigma3_conc_up: dict
@@ -383,19 +562,23 @@ class BatchCache:
 
 class CommandAfterBatchFitting(UndoCommand):
     """
-    1. Set parameters value
-    2. Update graph
-    3. Update / Show report
+    Command to handle operations after batch fitting.
 
     Parameters
     ----------
     data : list[tuple[str, ModelResult]]
-    idx_type_param_count_legend_func : list[tuple[int, str, int, str, callable]]
-    description : str
-        Description to set in tooltip
-
+        List of tuples containing filename and model fit results.
+    parent : Context
+        Backend context class.
+    text : str
+        Description text for the command.
+    stage : Stage
+        of the fitting process.
+    static_params : list[tuple[int, str, int, str, callable]]
+        Static parameters for the fitting.
+    dely : list[tuple[str, np.ndarray]]
+        List of uncertainty bounds for each fit.
     """
-
     def __init__(self, data: list[tuple[str, ModelResult]], parent, text: str, *args, **kwargs) \
             -> None:
         self.stage = kwargs.pop('stage')
@@ -408,15 +591,21 @@ class CommandAfterBatchFitting(UndoCommand):
                                 params_stderr_new=NestedDefaultDict(),
                                 av_text='', dataset_new=None,
                                 df_fit_params=deepcopy(
-                                    self.mw.ui.fit_params_table.model().dataframe()),
+                                    self.mw.ui.fit_params_table.model().dataframe),
                                 report_result_old=deepcopy(self.stage.data.report_result),
                                 sigma3=deepcopy(self.stage.data.sigma3),
                                 dataset_old=deepcopy(
-                                    self.mw.ui.deconvoluted_dataset_table_view.model().dataframe()),
+                                    self.mw.ui.deconvoluted_dataset_table_view.model().dataframe),
                                 params_stderr_old=self.stage.data.params_stderr)
         self.prepare_data()
 
     def prepare_data(self) -> None:
+        """
+        Prepare data for batch fitting.
+
+        This method calculates average fit statistics and prepares data for batch fitting,
+        including uncertainty bounds and fit reports.
+        """
         self.cache.keys = {x for x, _ in self.data}
         for key in self.cache.keys:
             self.cache.fit_reports[key], self.cache.rsquared_av[key] = '', []
@@ -436,11 +625,7 @@ class CommandAfterBatchFitting(UndoCommand):
             self.cache.aic_av[key].append(res.aic)
             if res.bic != -np.inf:
                 self.cache.bic_av[key].append(res.bic)
-            # try:
             self.cache.rsquared_av[key].append(res.rsquared)
-            # except Exception:
-            #     debug("fit_result.rsquared error")
-            # Find stderr for all parameters.
             if not res.errorbars:
                 continue
             for k, v in res.params.items():
@@ -469,7 +654,10 @@ class CommandAfterBatchFitting(UndoCommand):
         self.create_av_text()
 
     def create_report_text(self):
-        ranges = int(len(self.data) / len(self.cache.bic_av))
+        if len(self.cache.bic_av) == 0:
+            ranges = 0
+        else:
+            ranges = int(len(self.data) / len(self.cache.bic_av))
         for key in self.cache.keys:
             if ranges > 1:
                 av_text = "[[Average For Spectrum Fit Statistics]]" + '\n' \
@@ -507,7 +695,10 @@ class CommandAfterBatchFitting(UndoCommand):
 
     def redo_special(self):
         """
-        f
+        Update data and input table columns.
+
+        This method is called to redo the batch fitting operation, updating the fit parameters
+        table and the UI elements accordingly.
         """
         self.stage.data.report_result.clear()
         self.mw.ui.fit_params_table.model().delete_rows_by_filenames(self.cache.keys)
@@ -533,7 +724,10 @@ class CommandAfterBatchFitting(UndoCommand):
 
     def undo_special(self):
         """
-        Undo data
+        Undo data and input table columns.
+
+        This method is called to undo the batch fitting operation, reverting the changes made
+        to the fit parameters table and the UI elements.
         """
         self.mw.ui.fit_params_table.model().set_dataframe(self.cache.df_fit_params)
         self.stage.data.report_result = deepcopy(self.cache.report_result_old)
@@ -547,7 +741,9 @@ class CommandAfterBatchFitting(UndoCommand):
 
     def stop_special(self) -> None:
         """
-        Update ui elements.
+        Update UI elements.
+
+        This method is called to stop the special action, updating the UI elements accordingly.
         """
         self.stage.graph_drawing.redraw_curves_for_filename()
         self.stage.graph_drawing.draw_sum_curve()
@@ -562,6 +758,19 @@ class CommandAfterBatchFitting(UndoCommand):
 
     @staticmethod
     def edited_fit_report(fit_result: ModelResult, line_types: pd.DataFrame) -> str:
+        """
+        Edit the fit report for better readability.
+
+        Parameters
+        ----------
+        res : ModelResult
+            The result of the model fit.
+
+        Returns
+        -------
+        str
+            The edited fit report.
+        """
         fit_report = fit_result.fit_report(show_correl=False)
         param_legend = []
         for key in fit_result.best_values.keys():

@@ -1,3 +1,5 @@
+# pylint: disable=too-many-lines, no-name-in-module, import-error, relative-beyond-top-level
+# pylint: disable=unnecessary-lambda, invalid-name, redefined-builtin
 """
 This module provides various functions for performing baseline correction on spectral data using
 different polynomial fitting techniques. The primary goal is to accurately remove the baseline from
