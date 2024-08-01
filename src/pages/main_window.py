@@ -181,7 +181,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.context.preprocessing.active_stage = w.backend_instance
         self.context.preprocessing.update_plot_item(w.backend_instance.name)
 
-    def dragEnterEvent(self, e):
+    def dragEnterEvent(self, e) -> None:
         """
         Handle drag enter event.
 

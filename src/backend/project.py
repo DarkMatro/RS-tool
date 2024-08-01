@@ -1,17 +1,21 @@
 # pylint: disable=no-name-in-module, too-many-lines, invalid-name, import-error,
-# relative-beyond-top-level
+# relative-beyond-top-level, relative-beyond-top-level
 """
 Control projects
 
 classes:
     * Project
 """
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from gc import collect
+from logging import error, info
 from os import environ
 from pathlib import Path
 from shelve import open as shelve_open
 from zipfile import ZipFile, ZIP_DEFLATED
 
+import psutil
 from qtpy.QtWidgets import QMainWindow, QFileDialog
 
 from qfluentwidgets import MessageBox
@@ -117,7 +121,7 @@ class Project:
             if file_path[0] == "":
                 return
             self.parent.attrs.latest_file_path = str(Path(file_path[0]).parent)
-            self.update_project_title(file_path[0])
+            self._update_project_title(file_path[0])
 
         self.save_project(self.project_path)
 
@@ -158,7 +162,7 @@ class Project:
         self.clear_all_parameters()
         self.parent.decide_vertical_scroll_bar_visible()
 
-    def update_project_title(self, path: str) -> None:
+    def _update_project_title(self, path: str) -> None:
         """
         Update the project title in the UI.
 
@@ -184,16 +188,8 @@ class Project:
             The path to the project file.
         """
         self.parent.attrs.latest_file_path = str(Path(path).parent)
-        self.update_project_title(path)
+        self._update_project_title(path)
         self.clear_all_parameters()
-        self.load_params(path)
-
-    def open_demo_project(self) -> None:
-        """
-        Open the demo project.
-        """
-        path = get_config()['help']['demo_project_path']
-        self.open_project(path)
         self.load_params(path)
 
     def load_params(self, path: str) -> None:
@@ -246,7 +242,12 @@ class Project:
         """
         db_files = self.get_db_files()
         for f in db_files:
-            f.unlink()
+            time.sleep(0.05)
+            try:
+                f.unlink()
+                info(f"File {f} deleted successfully.")
+            except PermissionError as e:
+                error(f"Failed to delete the file: {e}")
 
     def update_recent_menu(self):
         """
@@ -295,6 +296,7 @@ class Project:
         self.parent.progress.close_progress(cfg)
         self.parent.progress.time_start = None
         self.parent.context.set_modified(False)
+        self._update_project_title(path)
 
     def unzip_project_file(self, path: str) -> None:
         """
@@ -444,3 +446,69 @@ class Project:
         if result == 0:
             return False
         return True
+
+
+def is_file_open_by_process(file_path, proc):
+    """
+    Checks if the specified file is open by the given process.
+
+    Parameters
+    ----------
+    file_path : str
+        The path to the file that you want to check.
+    proc : psutil.Process
+        The process to check.
+
+    Returns
+    -------
+    bool
+        True if the file is open by the process, False otherwise.
+    """
+    try:
+        for file in proc.open_files():
+            if file.path == file_path:
+                return True
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+    return False
+
+
+def kill_process_using_file(file_path):
+    """
+    Terminates processes that are currently using the specified file.
+
+    This function iterates through all running processes and terminates any process
+    that has the specified file open. It handles cases where the process or access
+    to the process might no longer be available.
+
+    Parameters
+    ----------
+    file_path : str
+        The path to the file that you want to check for open processes.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    - This function requires the `psutil` library.
+    - Running this function may require administrator privileges depending on the system's
+      security settings and the access rights of the running processes.
+    - If a process cannot be accessed or no longer exists, it will be ignored and the
+      function will continue with the next process.
+
+    Examples
+    --------
+    >>> kill_process_using_file('path/to/your/file.txt')
+    """
+    with ThreadPoolExecutor() as executor:
+        future_to_proc = {executor.submit(is_file_open_by_process, file_path, proc): proc
+                          for proc in psutil.process_iter(['pid', 'name'])}
+        for future in as_completed(future_to_proc):
+            proc = future_to_proc[future]
+            if future.result():
+                try:
+                    proc.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue

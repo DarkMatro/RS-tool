@@ -96,7 +96,7 @@ class SettingWindow(QWidget):
         self.setWindowTitle('Preferences')
         add_menu_combobox(self.ui_form.ThemeComboBox_Bckgrnd)
         add_menu_combobox(self.ui_form.ThemeComboBox_Color, False)
-        self.ui_form.ThemeComboBox_Bckgrnd.setCurrentText(os.environ['theme'])
+        self.ui_form.ThemeComboBox_Bckgrnd.setCurrentText(os.environ['theme_bckgrnd'])
         self.ui_form.ThemeComboBox_Color.setCurrentText(os.environ['theme_color'])
         self.ui_form.recent_limit_spinBox.setValue(int(os.environ['recent_limit']))
         self.ui_form.undo_limit_spinBox.setValue(parent.context.undo_stack.undoLimit())
@@ -124,7 +124,7 @@ class SettingWindow(QWidget):
         """
         Save parameter's values to environ.
         """
-        settings = {'theme': self.ui_form.ThemeComboBox_Bckgrnd.currentText(),
+        settings = {'theme_bckgrnd': self.ui_form.ThemeComboBox_Bckgrnd.currentText(),
                     'theme_color': self.ui_form.ThemeComboBox_Color.currentText(),
                     'recent_limit': str(self.ui_form.recent_limit_spinBox.value()),
                     'undo_limit': str(self.parent.context.undo_stack.undoLimit()),
@@ -139,11 +139,9 @@ class SettingWindow(QWidget):
         Handle theme background color changed event.
         """
         mw = self.parent
-        os.environ['bckgrnd_theme'] = theme_name
+        os.environ['theme_bckgrnd'] = theme_name
         update_theme_event(mw, theme_bckgrnd=theme_name, theme_color=os.environ['theme_color'])
-        os.environ['theme'] = theme_name
         mw.update_icons()
-        mw.theme_colors = get_theme_colors(theme_name, os.environ['theme_color'])
         bckgrnd_color = QColor(os.environ['plotBackground'])
         mw.ui.preproc_plot_widget.setBackground(bckgrnd_color)
         mw.ui.deconv_plot_widget.setBackground(bckgrnd_color)
@@ -153,10 +151,9 @@ class SettingWindow(QWidget):
         Handle theme color changed event.
         """
         parent = self.parent
-        os.environ['theme'] = theme_name
+        os.environ['theme_color'] = theme_name
         update_theme_event(parent, theme_bckgrnd=os.environ['bckgrnd_theme'],
                            theme_color=theme_name)
-        os.environ['theme_color'] = theme_name
         parent.update_icons()
 
     def undo_limit_spin_box_changed(self, limit: int) -> None:

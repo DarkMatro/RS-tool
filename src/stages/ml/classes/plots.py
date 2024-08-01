@@ -14,6 +14,7 @@ from os import environ
 
 import numpy as np
 import optuna
+from optuna.visualization import _contour
 import pandas as pd
 import xgboost
 from qtpy.QtCore import QObject
@@ -775,7 +776,11 @@ class Plots(QObject):
         ax.cla()
         max_num_features = mw.ui.feature_display_max_spinBox.value() \
             if mw.ui.feature_display_max_checkBox.isChecked() else None
-        xgboost.plot_importance(model, ax, max_num_features=max_num_features, grid=False)
+        try:
+            xgboost.plot_importance(model, ax, max_num_features=max_num_features, grid=False)
+        except ValueError as e:
+            error(e)
+            return
         try:
             plot_widget.canvas.figure.tight_layout()
             plot_widget.canvas.draw()

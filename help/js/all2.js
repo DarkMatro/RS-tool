@@ -240,6 +240,10 @@ DR_EXPLAIN.dataManager = (function() {
             return data_search.DREXPLAIN_ERROR_LOCAL_SEARCH;
         },
 
+        getErrorInRemoteSearch: function(code) {
+            return data_search.DREXPLAIN_ERROR_REMOTE_SEARCH.replace('{0}', code.toString());
+        },
+
         getSearchTextEmptyString: function() {
             return data_search.DREXPLAIN_EMPTY_STRING;
         },
@@ -350,7 +354,6 @@ DR_EXPLAIN.dom = {
         this.$pageContent = $( "#pageContent" );
         this.$pageContentHeader = $( "#pageContentHeader" );
         this.$pageContentFooter = $( "#pageContentFooter" );
-        this.$pageContentArticleSide = $( "#pageContentArticleSide" );
         this.$pageContentLeft = $( "#pageContentLeft" );
         this.$pageContentRight = $( "#pageContentRight" );
 
@@ -361,7 +364,7 @@ DR_EXPLAIN.dom = {
         this.$articlePreWrapper = this.$article.children( ".b-article__preWrapper" );
         this.$articleWrapper = this.$article.find( ".b-article__wrapper" );
         this.$articleInnerWrapper = this.$article.find( ".b-article__innerWrapper" );
-        this.$articleGeneratorCopyright = this.$article.find( ".b-article__generatorCopyright" );
+        this.$articleGeneratorCopyright = this.$article.find(".b-article__generatorCopyright");
 
         this.$headerSide__nav = $("#headerSide__nav");
         this.$headerSide__nav__breadCrumbs = $("#headerSide__nav__breadCrumbs");
@@ -379,8 +382,6 @@ DR_EXPLAIN.dom = {
 
         this.$workZoneSideArticleContent = $( "#workZone_article__content" );
 
-        this.$tabsWrapperItems = $( "#tabsWrapperItems" );
-
 
         this.tabs = {};
 
@@ -388,20 +389,23 @@ DR_EXPLAIN.dom = {
         this.tabs.menu.$selectorItem = $( "#tabSelector_menu" );
         this.tabs.menu.$wrapperItem = $( "#tabWrapper_menu" );
         this.tabs.menu.$wrapperItemInner = this.tabs.menu.$wrapperItem.children( ".b-tabs__wrapperItemInner" );
-        this.tabs.menu.$tree = this.tabs.menu.$wrapperItemInner.children( ".b-tree" );
+        this.tabs.menu.$wrapperItemInnerViewport = this.tabs.menu.$wrapperItemInner.find('.os-viewport');
+        this.tabs.menu.$tree = this.tabs.menu.$wrapperItemInner.find( ".b-tree" );
 
         this.tabs.index = {};
         this.tabs.index.$selectorItem = $( "#tabSelector_index" );
         this.tabs.index.$wrapperItem = $( "#tabWrapper_index" );
         this.tabs.index.$wrapperItemInner = this.tabs.index.$wrapperItem.children( ".b-tabs__wrapperItemInner" );
-        this.tabs.index.$tree = this.tabs.index.$wrapperItemInner.children( ".b-tree" );
+        this.tabs.index.$wrapperItemInnerViewport = this.tabs.index.$wrapperItemInner.find('.os-viewport');
+        this.tabs.index.$tree = this.tabs.index.$wrapperItemInner.find( ".b-tree" );
 
 
         this.tabs.search = {};
         this.tabs.search.$selectorItem = $( "#tabSelector_search" );
         this.tabs.search.$wrapperItem = $( "#tabWrapper_search" );
         this.tabs.search.$wrapperItemInner = this.tabs.search.$wrapperItem.children( ".b-tabs__wrapperItemInner" );
-        this.tabs.search.$tree = this.tabs.search.$wrapperItemInner.children( ".b-tree" );
+        this.tabs.search.$wrapperItemInnerViewport = this.tabs.search.$wrapperItemInner.find('.os-viewport');
+        this.tabs.search.$tree = this.tabs.search.$wrapperItemInner.find( ".b-tree" );
 
 
 
@@ -427,10 +431,6 @@ DR_EXPLAIN.dom = {
         this.$tabSearchSubmit = $( "#tabs_searchSubmit" );
         this.$tabSearchInput = $( "#tabs_searchInput" );
         this.$tabSearchInputLabel = $( "#tabs_searchInput_label" );
-
-        this.$workZoneSearchSubmit = $( "#workZone_searchSubmit" );
-        this.$workZoneSearchInput = $( "#workZone_searchInput" );
-        this.$workZoneSearchInputLabel = $( "#workZone_searchInput_label" );
 
 
         this.$keywordContextMenu = $( "#keywordContextMenu" );
@@ -597,7 +597,7 @@ DR_EXPLAIN.wordSplitter = (function() {
         var rangeElements = ranges.split(/[-,]/);
         if (rangeElements.length % 2 != 0)
         {
-            alert("Error #398, please report it to support@drexplain.com");
+            alert("Error #398, please report it to help@drexplain.com");
             return;
         }
         for (var i = 0; i < rangeElements.length; i += 2)
@@ -791,10 +791,9 @@ DR_EXPLAIN.wordSplitter = (function() {
 /*js/drexplain/drexplain.search-engine.js*/
 DR_EXPLAIN.namespace( 'DR_EXPLAIN.searchEngine' );
 DR_EXPLAIN.searchEngine = (function() {
-    function isLocalSearch()
+    function isRemoteSearch()
     {
-        var local = /file:/i;
-        return local.test(dirname());
+        return window.location.protocol === 'https:' || window.location.protocol === 'http:';
     }
     /**
     * Append a tag to the properties of an object for each item in an array
@@ -947,43 +946,38 @@ DR_EXPLAIN.searchEngine = (function() {
     function ID()
     {
         if (!SearchResults.length) getSearchResultOutput();
-        var sID = dirname() + "/de_search/ids.txt";
+        var sID = dirname() + "/de_search/ids.json";
         request.open("GET", sID, true);
         request.onreadystatechange = function()
         {
             if (request.readyState == 4)
             if (request.status == 200 || request.status == 0)
             {
-                var arrFileId = (request.responseText).split(/\s*\n\s*/);
-                var h;
+                var arrFileId;
+                try
+                {
+                    arrFileId = JSON.parse(request.responseText);
+                }
+                catch(e)
+                {
+                    //Something is wrong, abort search
+                    SearchResults = new Array();
+                    SearchResults[0] = new Array();
+                    SearchResults[0][0] = "Error!";
+                    SearchResults[0][1] = "mailto:help@drexplain.com";
+                    getSearchResultOutput();
+                    return;
+                }
+
+                var id;
                 for (var i = 0; i < SearchResults.length; i++)
                 {
-                    h = (SearchResults[i] - 1) * 3;
+                    id = SearchResults[i];
                     SearchResults[i] = new Array();
-
-                    if (!arrFileId[h + 1] || !arrFileId[h + 2])
-                    {
-                        if (!!arrFileId[h + 2])
-                        {
-                            SearchResults[i][0] = arrFileId[h + 2];
-                            SearchResults[i][1] = arrFileId[h + 2];
-                        }
-                        else
-                        {
-                            //Something is wrong, abort search
-                            SearchResults = new Array();
-                            SearchResults[0] = new Array();
-                            SearchResults[0][0] = "Error!";
-                            SearchResults[0][1] = "mailto:support@drexplain.com";
-                            getSearchResultOutput();
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        SearchResults[i][0] = arrFileId[h + 1];
-                        SearchResults[i][1] = arrFileId[h + 2];
-                    }
+                    SearchResults[i][0] = arrFileId[id][0];
+                    SearchResults[i][1] = arrFileId[id][1];
+                    if (arrFileId[id].length > 2)
+                        SearchResults[i][2] = arrFileId[id][2];
                 }
                 getSearchResultOutput();
             }
@@ -1002,20 +996,26 @@ DR_EXPLAIN.searchEngine = (function() {
         if (request.readyState != 4) return;
         if (request.status != 200 && request.status != 0)  return;
 
-        var arrFileStrings  = (request.responseText).split(/\s*\r\n\s*/);
+        var arrFileStrings;
+        try
+        {
+            arrFileStrings = JSON.parse(request.responseText);
+        }
+        catch(e)
+        {
+            return;
+        }
+
         var stToSearch      = StringPairArray[iStringToSearch][0];
 
         var isFirstIteration = true;
         var wasFound        = false;
         var curResults = new Array();
-        for (var i = 0; i < arrFileStrings.length; i += 2)
+        for (var i = 0; i < arrFileStrings.length; i++)
         {
-
-            if (arrFileStrings[i].indexOf(stToSearch) == 0)
+            if (arrFileStrings[i].s.indexOf(stToSearch) == 0)
             {
-                var pages = arrFileStrings[i + 1];
-                pages = pages.split(/\s*,\s*/);
-                curResults = unite(curResults, pages);
+                curResults = unite(curResults, arrFileStrings[i].p);
                 wasFound = true;
             }
         }
@@ -1126,30 +1126,43 @@ DR_EXPLAIN.searchEngine = (function() {
         SearchForNextString();
     }
 
-    //Downloads prefixes.txt
+    //Downloads prefixes.json
     //Fills IndexOfFiles array
     function GetIndex()
     {
         SearchResults=new Array();
         NextStringToSearch=0; //?
-        var sURL = dirname() + "/de_search/prefixes.txt";
+        var sURL = dirname() + "/de_search/prefixes.json";
         request.open("GET", sURL);
         request.onreadystatechange = function() {
-            if (request.readyState == 4)
-                if(request.status == 200 || request.status == 0)
+            if (request.readyState === 4)
+            {
+                if (request.status === 200 || request.status === 0 && request.responseText !== '')
                 {
-                    var arPrefixes = (request.responseText).split(/\s*\r\n\s*/);
-                    var j = 0;
-                    for (var i = 0; i + 2 < arPrefixes.length; i+=3)
+                    try
                     {
-                        IndexOfFiles[j] = new Object();
-                        IndexOfFiles[j].fileName = arPrefixes[i] + ".txt";
-                        IndexOfFiles[j].first = arPrefixes[i+1];
-                        IndexOfFiles[j].last = arPrefixes[i+2];
-                        ++j;
+                        IndexOfFiles = JSON.parse(request.responseText);
+                    }
+                    catch(e)
+                    {
+                        $(document).trigger("searchError");
+                        if (isRemoteSearch())
+                            DR_EXPLAIN.searchManager.showRemoteSearchError(-34);
+                        else
+                            DR_EXPLAIN.searchManager.showLocalSearchError();
+                        return;
                     }
                     AttachFilesToStrings();
                 }
+                else
+                {
+                    $(document).trigger("searchError");
+                    if (isRemoteSearch())
+                        DR_EXPLAIN.searchManager.showRemoteSearchError(request.status);
+                    else
+                        DR_EXPLAIN.searchManager.showLocalSearchError();
+                }
+            }
         };
         request.send(null);
     }
@@ -1188,17 +1201,8 @@ DR_EXPLAIN.searchEngine = (function() {
         return false;
     }
 
-    function  DoesNotOperaSupportLocalSearch()
-    {
-        var version = jQuery.browser.version || "0";
-        var splitVersion = version.split('.');
-        return $.browser.opera && ((parseInt(splitVersion[0]) > 12) || ((parseInt(splitVersion[0]) == 12) && (parseInt(splitVersion[1]) >= 2)))
-    }
-
     function searchmain(str)
     {
-        if (isLocalSearch() && ($.browser.chrome || DoesNotOperaSupportLocalSearch()  ) )
-            throw Error("LocalSearchNotSupportedInCurrentBrowser");
         $( document ).trigger( "searchBegin" );
         SearchResults=new Array();
         iStringToSearch=0;
@@ -1209,10 +1213,10 @@ DR_EXPLAIN.searchEngine = (function() {
         for (var i = 0; i < strs.length; ++i)
             if (!isEmpty(strs[i]))
                 StringsForSearch.push(strs[i]);
-            //Download index.txt asynchronously and fill array of indexes
-            GetIndex();
+        //Download index.txt asynchronously and fill array of indexes
+        GetIndex();
 
-            return 1;
+        return 1;
     }
 
     function max(a,b){
@@ -1289,9 +1293,6 @@ DR_EXPLAIN.searchManager = (function(){
         },
 
         runCustomButtons: function() {
-            var searchInWorkZone = new CustomButton( this.dom.$workZoneSearchSubmit );
-            searchInWorkZone.run();
-
             var searchInTab = new CustomButton( this.dom.$tabSearchSubmit );
             searchInTab.run();
         },
@@ -1299,21 +1300,12 @@ DR_EXPLAIN.searchManager = (function(){
         runInputPlaceholders: function() {
             var searchInTabPlaceholder = new InputPlaceholder( this.dom.$tabSearchInput, this.dom.$tabSearchInputLabel, true );
             searchInTabPlaceholder.run();
-
-            var searchInWorkZonePlaceholder = new InputPlaceholder( this.dom.$workZoneSearchInput, this.dom.$workZoneSearchInputLabel, true );
-            searchInWorkZonePlaceholder.run();
         },
 
         runInputSync: function() {
-            var that = this;
-
-            var $inputArr = this.dom.$tabSearchInput.add( this.dom.$workZoneSearchInput );
+            var $inputArr = this.dom.$tabSearchInput;
             var inputSync = new InputSync( $inputArr );
             inputSync.run();
-
-            this.dom.$workZoneSearchSubmit.on( "click",function() {
-                that.dom.$tabSelectorSearch.click();
-            });
         },
 
         doSetNavTreeSearch: function() {
@@ -1323,8 +1315,7 @@ DR_EXPLAIN.searchManager = (function(){
         doSetDom: function() {
             this.dom = DR_EXPLAIN.dom;
             this.elementsArr = [
-                                { $input: this.dom.$tabSearchInput, $submit: this.dom.$tabSearchSubmit },
-                                { $input: this.dom.$workZoneSearchInput, $submit: this.dom.$workZoneSearchSubmit }
+                                { $input: this.dom.$tabSearchInput, $submit: this.dom.$tabSearchSubmit }
                             ];
         },
 
@@ -1429,19 +1420,7 @@ DR_EXPLAIN.searchManager = (function(){
             if (queryArray.length == 0 || queryArray[0] == '')
                 this.showSearchTextEmptyString();
             else
-            {
-                try {
-                    this.searchEngine.doSearch(s);
-                }
-                catch(e){
-                    if (e.message == "LocalSearchNotSupportedInCurrentBrowser")
-                    {
-                        var $msg = $( '<div class="b-tree__searchResultText">' + this.dataManager.getErrorInLocalSearch() + '</div>' );
-                        this.dom.tabs.search.$tree.html( $msg );
-                        $( document ).trigger( "searchCompleteBuildTree" );
-                    }
-                }
-            }
+                this.searchEngine.doSearch(s);
         },
 
         searchComplete: function() {
@@ -1475,6 +1454,20 @@ DR_EXPLAIN.searchManager = (function(){
         showSearchTextEmptyString: function() {
             this.highlightManager.hide();
             var $msg = $( '<div class="b-tree__searchResultText">' + this.dataManager.getSearchTextEmptyString() + '</div>' );
+            this.dom.tabs.search.$tree.html( $msg );
+            $( document ).trigger( "searchCompleteBuildTree" );
+        },
+
+        showLocalSearchError: function() {
+            this.highlightManager.hide();
+            var $msg = $( '<div class="b-tree__searchResultText">' + this.dataManager.getErrorInLocalSearch() + '</div>' );
+            this.dom.tabs.search.$tree.html( $msg );
+            $( document ).trigger( "searchCompleteBuildTree" );
+        },
+
+        showRemoteSearchError: function(code) {
+            this.highlightManager.hide();
+            var $msg = $( '<div class="b-tree__searchResultText">' + this.dataManager.getErrorInRemoteSearch(code) + '</div>' );
             this.dom.tabs.search.$tree.html( $msg );
             $( document ).trigger( "searchCompleteBuildTree" );
         },
@@ -1542,6 +1535,14 @@ DR_EXPLAIN.searchManager = (function(){
 
         doSearchIfQueryStringNotEmpty: function() {
             _class.doSearchIfQueryStringNotEmpty();
+        },
+
+        showLocalSearchError: function() {
+            _class.showLocalSearchError();
+        },
+
+        showRemoteSearchError: function(code) {
+            _class.showRemoteSearchError(code);
         }
     };
 
@@ -1617,6 +1618,7 @@ DR_EXPLAIN.tabController = (function(){
         DREX_SHOW_MENU: 1,
         DREX_SHOW_SEARCH: 1,
         DREX_SHOW_INDEX: 1,
+        DREXPLAIN_MAKE_TAB_COUNT: 3,
 
         tabArr: [],
         urlEncoder: null,
@@ -1644,11 +1646,11 @@ DR_EXPLAIN.tabController = (function(){
 
         doAddTabs: function() {
             if (this.DREX_SHOW_MENU)
-                this.addTab( this.dom.tabs.menu.$selectorItem , this.dom.tabs.menu.$wrapperItem, this.dom.tabs.menu.$wrapperItemInner );
+                this.addTab( this.dom.tabs.menu.$selectorItem , this.dom.tabs.menu.$wrapperItem, this.dom.tabs.menu.$wrapperItemInnerViewport );
             if (this.DREX_SHOW_INDEX)
-                this.addTab( this.dom.tabs.index.$selectorItem , this.dom.tabs.index.$wrapperItem, this.dom.tabs.index.$wrapperItemInner );
+                this.addTab( this.dom.tabs.index.$selectorItem , this.dom.tabs.index.$wrapperItem, this.dom.tabs.index.$wrapperItemInnerViewport );
             if (this.DREX_SHOW_SEARCH)
-                this.addTab( this.dom.tabs.search.$selectorItem , this.dom.tabs.search.$wrapperItem, this.dom.tabs.search.$wrapperItemInner );
+                this.addTab( this.dom.tabs.search.$selectorItem , this.dom.tabs.search.$wrapperItem, this.dom.tabs.search.$wrapperItemInnerViewport );
         },
 
         doSetUrlEncoder: function() {
@@ -1698,7 +1700,7 @@ DR_EXPLAIN.tabController = (function(){
                     var $selectedTreeElem = this.dom.tabs.menu.$tree.find( ".m-tree__itemContent__selected" );
                     if ( $selectedTreeElem.length > 0 ) {
                         var selectedTreeElemTop = ( $selectedTreeElem.offset() ).top - ( this.dom.$tabWrapperItems.offset() ).top - $selectedTreeElem.height() / 2;
-                        this.dom.tabs.menu.$wrapperItemInner.scrollTop( selectedTreeElemTop  ).trigger( "scroll" );
+                        this.dom.tabs.menu.$wrapperItemInnerViewport.scrollTop( selectedTreeElemTop  ).trigger( "scroll" );
                     }
                 }
             }
@@ -1757,14 +1759,10 @@ DR_EXPLAIN.tabController = (function(){
             var $selectorItems = this.tabArr[ 0 ].$selector.parent();
 
             $selectorItems.on( "mouseenter", ".b-tabs__selectorItem", function(){
-                if ( $( this ).hasClass( "m-tabs__selectorItem__selected") )
-                    return false;
                 $( this ).addClass( "m-tabs__selectorItem__hovered" );
             });
 
             $selectorItems.on( "mouseleave", ".b-tabs__selectorItem", function(){
-                if ( $( this ).hasClass( "m-tabs__selectorItem__selected") )
-                    return false;
                 $( this ).removeClass( "m-tabs__selectorItem__hovered" );
             });
         },
@@ -1857,6 +1855,10 @@ DR_EXPLAIN.tabController = (function(){
 
         doSetScrollTopByUrlEncoder: function() {
             _class.doSetScrollTopByUrlEncoder();
+        },
+
+        tabsCount: function() {
+            return _class.DREXPLAIN_MAKE_TAB_COUNT;
         },
 
         isMenuTabShown: function() {
@@ -2518,7 +2520,7 @@ DR_EXPLAIN.workZoneSizer = (function(){
         recalculateVisibleTabLongestTreeItemWidth: function() {
             var $visibleTab = this.dom.getVisibleItemWrapperInner();
             if ($visibleTab) {
-                var $tree = $visibleTab.children( "div" );
+                var $tree = $visibleTab.find( "div.b-tree" );
                 var $treeTable = $tree.children( "table" );
 
                 $treeTable.css( "width", "auto" );
@@ -2722,7 +2724,7 @@ DR_EXPLAIN.workZoneSizer_FrameMode = (function(){
                 that.recalculate();
             });
 
-            this.dom.tabs.index.$wrapperItemInner.on( "scroll.contextMenu", function() {
+            this.dom.tabs.index.$wrapperItemInnerViewport.on( "scroll.contextMenu", function() {
                 that.recalculateIndexContextMenu();
             });
         },
@@ -2917,6 +2919,10 @@ DR_EXPLAIN.workZoneSizer_FrameMode = (function(){
                 - this.getFooterHeight()
                 ;
 
+            var newArticlePreWrapperHeight = newArticleHeight
+                - this.dom.getCssNumericValue(this.dom.$articlePreWrapper, "paddingTop")
+                ;
+
             var newArticleInnerWrapperHeight = $( window ).height()
                 - ( this.dom.$articleWrapper.offset() ).top
                 - this.dom.getCssNumericValue( this.dom.$articleWrapper, "paddingTop" )
@@ -2928,8 +2934,8 @@ DR_EXPLAIN.workZoneSizer_FrameMode = (function(){
                 - 0
                 ;
 
-            var newArticleWrapperHeight = newArticleHeight
-                - this.dom.$articleHeader.outerHeight( true )
+            var newArticleWrapperHeight = newArticlePreWrapperHeight
+                - ( 0 < this.dom.$articleHeader.length ? this.dom.$articleHeader.outerHeight( true ) : 0 )
                 - this.dom.getCssNumericValue( this.dom.$articleWrapper, "borderTopWidth" )
                 - this.dom.getCssNumericValue( this.dom.$articleWrapper, "borderBottomWidth" )
             ;
@@ -2943,7 +2949,7 @@ DR_EXPLAIN.workZoneSizer_FrameMode = (function(){
             this.dom.$articleWrapper.css( "height", newArticleWrapperHeight + "px" );*/
 
             this.addDomNodeToRecalculate( this.dom.$article, newArticleHeight );
-            this.addDomNodeToRecalculate( this.dom.$articlePreWrapper, newArticleHeight );
+            this.addDomNodeToRecalculate( this.dom.$articlePreWrapper, newArticlePreWrapperHeight );
             this.addDomNodeToRecalculate( this.dom.$articleWrapper, newArticleWrapperHeight );
 
             //console.log( 'article newArticleHeight', newArticleHeight, 'newArticleInnerWrapperHeight', newArticleInnerWrapperHeight );
@@ -3179,7 +3185,7 @@ DR_EXPLAIN.navTree_Menu = (function(){
     urlEncoder: null,
     dom: null,
     navTreeView: null,
-
+    navArr: null,
     nodeVisibleStatusArr: [],
 
 
@@ -3191,8 +3197,8 @@ DR_EXPLAIN.navTree_Menu = (function(){
         this.doSetDataManager();
         this.doSetNodeVisibleStatusArrByUrlEncoder();
 
-        var navArr = this.populateTable( this.dataManager.getRootNodesArray(), true);
-        var navTreeItemsCollection = this.getNavCollection( navArr, null );
+        this.navArr = this.populateTable( this.dataManager.getRootNodesArray(), true, null );
+        var navTreeItemsCollection = this.getNavCollection( this.navArr, null );
         this.navTreeView = navTreeView = new NavTree__View({ collection: navTreeItemsCollection, $navTree: this.$navTree });
 
         var flatCollection = new NavTree__ItemsNodes_Collection( this.navTreeView.models );
@@ -3203,8 +3209,140 @@ DR_EXPLAIN.navTree_Menu = (function(){
         );
     },
 
+    renderNode: function(containerElement, node, model, depth)
+    {
+        var li = containerElement.appendChild(document.createElement("li"));
+        li.className = "b-tree_item";
+        if (node.isThroughSelected)
+        {
+            li.className += " m-tree__item__throughSelected";
+            if (depth == 1)
+                li.className += " m-tree__item__throughSelectedRoot";
+        }
+        var div = li.appendChild(document.createElement("div"));
+        div.className = "b-tree__itemContent";
+        if (node.isSelected)
+            div.className += " m-tree__itemContent__selected";
+        div.title = node.title;
+
+        var emptySpacerCount = depth;
+        if (node.childs != null)
+            --emptySpacerCount;
+        for (var i = 0; i < emptySpacerCount; ++i)
+            div.appendChild(document.createElement("span")).className = "b-tree__spacer";
+              
+        if (node.childs != null)
+        {
+            var bVisible = model.get("isVisible");
+            //Create expander
+            var spacer = div.appendChild(document.createElement("span"));
+            spacer.className = "b-tree__spacer";
+            var expanderSpan = spacer.appendChild(document.createElement("span"));
+            expanderSpan.className = bVisible ? "b-tree__i_expander_doClose" : "b-tree__i_expander_doOpen";
+            
+            var expanderImg = expanderSpan.appendChild(document.createElement("span"));
+            expanderImg.className = bVisible ? "expander_img b-tree__i_expander_doClose_inner" : "expander_img b-tree__i_expander_doOpen_inner";
+            
+            //Add folder icon
+            spacer = div.appendChild(document.createElement("span"));
+            spacer.className = "b-tree__spacer";
+            var folderSpan = spacer.appendChild(document.createElement("span"));
+            folderSpan.className = bVisible ? "b-tree__i_folder_opened" : "b-tree__i_folder_closed";
+            var folderSpanInner = folderSpan.appendChild(document.createElement("span"));
+            folderSpanInner.className = bVisible ? "b-tree__i_folder_opened_inner" : "b-tree__i_folder_closed_inner";
+            
+            //Create ul for inner elements
+            var ul = li.appendChild(document.createElement("ul"));
+            ul.className = "b-tree__items";
+            for (var i = 0; i < node.childs.length; ++i)
+                this.renderNode(ul, node.childs[i], model.attributes.childs.models[i], depth + 1);
+            node.toggleClasses = function() {
+                $(expanderSpan).toggleClass( "b-tree__i_expander_doClose b-tree__i_expander_doOpen" );
+                $(expanderImg).toggleClass( "b-tree__i_expander_doClose_inner b-tree__i_expander_doOpen_inner" );
+
+                $(folderSpan).toggleClass( "b-tree__i_folder_opened b-tree__i_folder_closed" );
+                $(folderSpanInner).toggleClass( "b-tree__i_folder_opened_inner b-tree__i_folder_closed_inner" );
+            };
+            node.showExpander = function(e) {
+                $(ul).show();
+                node.toggleClasses();
+                model.set({ "isVisible": 1 });
+                $(expanderSpan).unbind("click");
+                $(expanderSpan).click(function(e) {
+                    node.hideExpander();
+                });
+            };
+            node.hideExpander = function(e) {
+                $(ul).hide();
+                node.toggleClasses();
+                model.set({ "isVisible": 0 });
+                $(expanderSpan).unbind("click");
+                $(expanderSpan).click(function(e) {
+                    node.showExpander();
+                });
+            };
+
+            $(expanderSpan).click(function(e) {
+                if (bVisible)
+                    node.hideExpander();
+                else
+                    node.showExpander();
+            });
+            if (!bVisible)
+            {
+                ul.style.display = "none";
+                model.set({ "isVisible": 0 });
+            }
+        }
+        else
+        {
+            //Add article icon
+            var spacer = div.appendChild(document.createElement("span"));
+            spacer.className = "b-tree__spacer";
+            var articleSpan = spacer.appendChild(document.createElement("span"));
+            articleSpan.className = "b-tree__i_article";
+            var articleInnerSpan = articleSpan.appendChild(document.createElement("span"));
+            articleInnerSpan.className = "b-tree__i_article_inner";
+        }        
+        var itemTextSpan = div.appendChild(document.createElement("span"));
+        
+        if (node.isSelected)
+        {
+            itemTextSpan.className = "b-tree__itemText m-tree__itemText__selected";
+            itemTextSpan.appendChild(document.createTextNode(node.title));
+        }
+        else
+        {
+            itemTextSpan.className = "b-tree__itemText";
+            var link = itemTextSpan.appendChild(document.createElement("a"));
+            link.className = "b-tree__itemLink";
+            link.href = node.link;
+            link.appendChild(document.createTextNode(node.title));
+        }
+    },
+
     show: function() {
-        this.navTreeView.render();
+        var $navTree = this.navTreeView.$navTree.find( ".b-tree" );
+        $navTree.empty();
+        var table = document.createElement("table");
+        table.className = "b-tree__layout";
+        table.cellSpacing = 0;
+        var tr = document.createElement("tr");
+        var td = document.createElement("td");
+        td.className = "b-tree__layoutSide";
+
+        var ul = document.createElement("ul");
+        ul.className = "b-tree__items";
+        if (this.navArr !== null)
+        {
+            for (var i = 0; i < this.navArr.length; ++i)
+                this.renderNode(ul, this.navArr[i], this.navTreeView.collection.models[i], 1);
+        }
+
+        td.appendChild(ul);
+        tr.appendChild(td);
+        table.appendChild(tr);
+        $navTree[0].appendChild(table);
     },
 
     doSetDom: function() {
@@ -3323,7 +3461,8 @@ DR_EXPLAIN.navTree_Menu = (function(){
 
     onNodeVisibleChange: function( model, newValue ) {
         this.nodeVisibleStatusArr[ model.get( "nodeIndex" ) ] = newValue;
-        $( document ).trigger( "nodeVisibleChanged" );
+        if (!DR_EXPLAIN.disableTriggers)
+          $( document ).trigger( "nodeVisibleChanged" );
 
     },
 
@@ -3348,7 +3487,7 @@ DR_EXPLAIN.navTree_Menu = (function(){
         //console.log( 'validateOpenState:', VarTOpnd );
     },
 
-    populateTable: function( nodeArr, isVisible ) {
+    populateTable: function( nodeArr, isVisible, parent ) {
 
         if ( nodeArr.length === 0 ) {
             return null;
@@ -3361,14 +3500,24 @@ DR_EXPLAIN.navTree_Menu = (function(){
             var isOpened = this.nodeVisibleStatusArr[ node.node_index ];
             var isNodeVisible = !!(isVisible && isOpened);
 
-            itemArr.push({
+            var item = {
                 'title': node.title,
                 'link': node.link,
                 'nodeIndex': node.node_index,
-                'childs': this.populateTable( node.children(), isNodeVisible ),
                 'isVisible': isNodeVisible,
-                'isSelected': ( node.link === this.dataManager.getPageFilename() )
-            });
+                'isSelected': (node.link === this.dataManager.getPageFilename()),
+                'isThroughSelected': false,
+                'childs': []
+            };
+
+            item['isThroughSelected'] = item['isSelected'];
+
+            item['childs'] = this.populateTable(node.children(), isNodeVisible, item);
+
+            if (item['isThroughSelected'] && parent !== null)
+                parent['isThroughSelected'] = true;
+
+            itemArr.push(item);
         }
         return itemArr;
     },
@@ -3564,10 +3713,31 @@ DR_EXPLAIN.navTree_Search = (function(){
             var itemArr = [];
 
             for ( var index = 0; index < searchResultsArr.length; index++ ) {
-                var currNode = searchResultsArr[ index ];
+                var currNode = searchResultsArr[index];
+                var title = currNode[0];
+                if (currNode.length > 2)
+                {
+                    var path = [];
+                    for (var i = 0; i < currNode[2].length; ++i)
+                    {
+                        if (currNode[2][i] === -1)
+                            continue;
+                        var node = this.dataManager.createNodeClassByIndex(currNode[2][i]);
+                        if (node.title === undefined)
+                            continue;
+                        path.push(node.title);
+                    }
+                    if (path.length > 0)
+                    {
+                        var mark = this.dom.isRtl() ? '\u200f' : '\u200e';
+                        var unmark = '\u200e';
+                        var arrow = this.dom.isRtl() ? '\u2190' : '\u2192';
+                        title += unmark + ' (' + mark + path.join(unmark + ' ' + arrow + ' ' + mark) + unmark + ')';
+                    }
+                }
                 itemArr.push({
-                    'title':  currNode[ 0 ],
-                    'link':  currNode[ 1 ],
+                    'title': title,
+                    'link': currNode[1],
                     'childs': null,
                     'isSelected': (  currNode[ 1 ] === this.dataManager.getPageFilename() )
                 });
@@ -3596,7 +3766,11 @@ DR_EXPLAIN.navTree_Search = (function(){
 
 /*js/app.js*/
 function initTabs() {
-    var app = DR_EXPLAIN;
+	var app = DR_EXPLAIN;
+
+    if (app.tabController.tabsCount() == 0)
+        return;
+
     app.navTree_Menu.init();
     app.navTree_Index.init();
     app.navTree_Search.init();
@@ -3608,6 +3782,7 @@ function initTabs() {
 }
 
 function onDocumentReady(app) {
+    DR_EXPLAIN.disableTriggers = true;
     app.dataManager.init();
 
     if (app.dataManager.fitHeightToWindow()) {
@@ -3663,11 +3838,14 @@ function onDocumentReady(app) {
         var $hc = $("#hiddenContent");
         $hc.detach();
         $hc.removeClass("hiddenContent");
+        $hc.removeClass("loading");
         $hc.appendTo("#description_on_page_placeholder");
         $("iframe").each(function() {
             $(this).prop("src", $(this).prop("real_src"));
         });
     }
+    
+    DR_EXPLAIN.disableTriggers = false;
 
     app.searchManager.doBindEvents();
     app.searchManager.doSearchIfQueryStringNotEmpty();
@@ -3675,7 +3853,22 @@ function onDocumentReady(app) {
     app.workZoneSizer.doBindEvents();
     app.workZoneSizer.recalculateAll();
 
+    app.dom.$articleWrapper.overlayScrollbars().update();
+    app.dom.tabs.menu.$wrapperItemInner.overlayScrollbars().update();
+    app.dom.tabs.index.$wrapperItemInner.overlayScrollbars().update();
+    app.dom.tabs.search.$wrapperItemInner.overlayScrollbars().update();
+
     app.tabController.doSetScrollTopByUrlEncoder();
+
+    var hash = window.location.hash;
+    if (hash != "" && hash != "#")
+    {
+        if (hash[0] != "#") // just in case
+            hash = "#" + hash;
+        window.location.replace(hash);
+    }
+
+    $("#pageLayout").removeClass("loading");
 }
 
 $(document).ready(function() {

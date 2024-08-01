@@ -1,0 +1,21 @@
+{
+	"1": ["Home", "index.html", []],
+	"2": ["Install", "install.html", []],
+	"3": ["1. User interface", "user_interface.html", []],
+	"4": ["1.1. Menu bar", "menu_bar.html", [2]],
+	"5": ["1.2. Program settings", "1_2__program_settings.html", [2]],
+	"6": ["1.3. Chart buttons", "1_3__chart_buttons.html", [2]],
+	"7": ["1.4. Preprocessing", "1_4__preprocessing.html", [2]],
+	"8": ["1.5. Fitting", "1_5__fitting.html", [2]],
+	"9": ["1.6. Datasets", "1_6__datasets.html", [2]],
+	"10": ["1.7. ML Stat analysis", "1_7__ml_stat_analysis.html", [2]],
+	"11": ["1.8. Predict", "1_8__predict.html", [2]],
+	"12": ["2. Step-by-step instructions for a sample project", "step_by_step_instructions_for_a_sample_project.html", []],
+	"13": ["2.1. Uploading files and creating a project", "2_1__uploading_files_and_creating_a_project.html", [3]],
+	"14": ["2.2. Preprocessing", "2_2__preprocessing.html", [3]],
+	"15": ["2.3. Fitting", "2_3__fitting.html", [3]],
+	"16": ["2.4. Dataset", "2_4__dataset.html", [3]],
+	"17": ["2.5. Classifiers fit", "2_5__classifiers_fit.html", [3]],
+	"18": ["2.6. Checking the work of classifiers and creating a production project", "2_6__checking_the_work_of_classifiers_and_creating_a_production_project.html", [3]],
+	"19": ["Functionality of the program", "functionality_of_the_program.html", []]
+}

@@ -12,7 +12,6 @@ visualization in the MainWindow.
 from asyncio import get_event_loop
 from logging import error
 from os import environ
-
 import numpy as np
 import pandas as pd
 import psutil
@@ -210,7 +209,7 @@ class ML(QObject):
         del self.data[cl_type]
         db_files = mw.project.get_db_files()
         for f in db_files:
-            if cl_type in f:
+            if cl_type in f.name:
                 f.unlink()
 
     def _init_dataset_type_cb(self) -> None:
@@ -433,7 +432,10 @@ class ML(QObject):
         study = get_study(classificator_type)
         if len(study.trials) > 0:
             text += '\n' + '--Best parameters--' + '\n'
-            text += str(study.best_params) + '\n'
+            best_params = study.best_params
+            if classificator_type == 'XGBoost':
+                best_params.update(get_study('XGBoost_1').best_params)
+            text += str(best_params) + '\n'
         mw.ui.stat_report_text_edit.setText(text)
         headers, rows = fit_data['c_r_parsed']
         insert_table_to_text_edit(mw.ui.stat_report_text_edit.textCursor(), headers, rows)
@@ -515,6 +517,8 @@ class ML(QObject):
             best_params = study[0].best_params
         cfg = get_config("texty")["fit_model"]
         mw.progress.open_progress(cfg, 0)
+        if cl_type == 'XGBoost':
+            best_params.update(get_study('XGBoost_1').best_params)
         kwargs = {'best_params': best_params, 'x_train': x_train, 'y_train': y_train,
                   'rnd': rnd_state}
         result = await mw.progress.run_in_executor('fit_model', classificator_funcs()[cl_type],

@@ -640,7 +640,6 @@ def params_func_legend(cur_range_clustered_x0_sd: np.ndarray, n_array: np.ndarra
     params = Parameters()
     init_params, max_dx, min_hwhm, func, peak_shape_params_limits, param_names, gamma_factor \
         = static_params
-    debug(f'process params_func_legend(): {cur_range_clustered_x0_sd}')
     for x0, sd in cur_range_clustered_x0_sd:
         sd = max(.01, sd)
         legend = legend_from_float(x0)

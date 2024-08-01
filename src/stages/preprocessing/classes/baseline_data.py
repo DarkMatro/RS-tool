@@ -796,7 +796,7 @@ class CommandBaseline(UndoCommand):
         """
         self.stage.data.clear()
         self.stage.baseline_data.clear()
-        self.stage.data.update(self.old_data)
+        self.stage.data.update(self.bl_corrected_data_old)
         self.stage.baseline_data.update(self.bl_data_old)
         self.stage.current_method = self.method_name['old']
         self.mw.ui.baselined_dataset_table_view.model().set_dataframe(self.bl_df['old'])

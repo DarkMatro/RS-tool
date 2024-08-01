@@ -135,7 +135,6 @@ class InputTable(QObject):
         """
         Update dec_table.
         """
-        print('input_table_rows_changed')
         self.mw.decide_vertical_scroll_bar_visible()
         self.mw.ui.dec_table.model().clear_dataframe()
         self.mw.ui.dec_table.model().concat_deconv_table(

@@ -45,7 +45,7 @@ def start_program() -> None:
     cfg = get_config()
     cfg_env = cfg["environ"]
     read_preferences()
-    bckgrnd_theme = environ["theme"]
+    bckgrnd_theme = environ["theme_bckgrnd"]
     theme_color = environ["theme_color"]
     invert = "Light" in bckgrnd_theme and "Dark" not in bckgrnd_theme
     theme_colors = get_theme_colors(bckgrnd_theme, theme_color, invert)
@@ -78,12 +78,12 @@ def start_program() -> None:
     splash.show_message("Initializing finished.")
     splash.finish(frame)
     # Open help manual for first launch.
+    path = get_config()['help']['demo_project_path']
     if (
-            Path("examples/demo_project.zip").exists()
+            Path(path).exists()
             and len(frame.project.recent_list) == 0
-            and MessageBox("Open demo project?", "", frame, {"Yes", "Cancel"}).exec() == 1
     ):
-        frame.project.open_demo_project()
+        frame.project.open_project(path)
         action_help()
     with loop:
         loop.run_forever()

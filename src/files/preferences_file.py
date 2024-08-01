@@ -55,5 +55,5 @@ def _standard_settings() -> dict:
     """
     Setting to create new preferences file if it's missing.
     """
-    return {'theme': 'Dark', 'theme_color': 'Amber', 'recent_limit': '10', 'undo_limit': '20',
+    return {'theme_bckgrnd': 'Dark', 'theme_color': 'Amber', 'recent_limit': '10', 'undo_limit': '20',
             'plot_font_size': '10', 'axis_label_font_size': '14'}

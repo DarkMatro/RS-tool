@@ -15,7 +15,6 @@ import numpy as np
 import optuna
 import pandas as pd
 from optuna.pruners import SuccessiveHalvingPruner
-from optuna_integration import XGBoostPruningCallback
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -113,7 +112,7 @@ def optuna_opt_xgboost(x_train, y_train, rnd, n_jobs):
     study2 = get_study('XGBoost')
     study2.optimize(lambda trial: objective_xgb(trial, x_train, y_train, rnd,
                                                 scale_pos_weight, n_est, lr),
-                    n_trials=n_jobs * 5,
+                    n_trials=n_jobs * 10,
                     show_progress_bar=True, n_jobs=n_jobs, gc_after_trial=True)
     return study2
 
@@ -134,8 +133,6 @@ def get_study(cl_type: str) -> optuna.study:
     """
     kwargs = {'storage': f"sqlite:///{cl_type}.db", 'study_name': cl_type,
               'direction': "maximize", 'load_if_exists': True, 'pruner': get_pruner(cl_type)}
-    if cl_type == 'XGBoost':
-        kwargs.pop('pruner')
     study = optuna.create_study(**kwargs)
     return study
 
@@ -223,7 +220,7 @@ def objective_lr(trial: optuna.trial.Trial, x: pd.DataFrame, y: pd.Series, rnd: 
     params['l1_ratio'] = trial.suggest_float("l1_ratio", 0., 1.) \
         if params['penalty'] == 'elasticnet' else None
 
-    cv = StratifiedKFold(n_splits=3, shuffle=True)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=rnd)
     cv_predicts = np.empty(3)
     for idx, (train_idx, val_idx) in enumerate(cv.split(x, y)):
         x_train_cv, x_val_cv = x.iloc[train_idx], x.iloc[val_idx]
@@ -269,9 +266,9 @@ def objective_svc(trial: optuna.trial.Trial, x: pd.DataFrame, y: pd.Series, rnd:
     """
     params = {
         "C": trial.suggest_float("C", 1e-5, 1e4, log=True),
-        "tol": trial.suggest_float("C", 1e-8, 1e-4, log=True),
+        "tol": trial.suggest_float("tol", 1e-8, 1e-4, log=True),
     }
-    cv = StratifiedKFold(n_splits=3, shuffle=True)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=rnd)
     cv_predicts = np.empty(3)
     for idx, (train_idx, val_idx) in enumerate(cv.split(x, y)):
         x_train_cv, x_val_cv = x.iloc[train_idx], x.iloc[val_idx]
@@ -319,7 +316,7 @@ def objective_dt(trial: optuna.trial.Trial, x: pd.DataFrame, y: pd.Series, rnd: 
         "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 11),
         "max_features": trial.suggest_categorical("max_features", ['sqrt', 'log2']),
     }
-    cv = StratifiedKFold(n_splits=3, shuffle=True)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=rnd)
     cv_predicts = np.empty(3)
     for idx, (train_idx, val_idx) in enumerate(cv.split(x, y)):
         x_train_cv, x_val_cv = x.iloc[train_idx], x.iloc[val_idx]
@@ -366,7 +363,7 @@ def objective_rf(trial: optuna.trial.Trial, x: pd.DataFrame, y: pd.Series, rnd: 
         "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 11),
         "max_features": trial.suggest_categorical("max_features", ['sqrt', 'log2']),
     }
-    cv = StratifiedKFold(n_splits=3, shuffle=True)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=rnd)
     cv_predicts = np.empty(3)
     for idx, (train_idx, val_idx) in enumerate(cv.split(x, y)):
         x_train_cv, x_val_cv = x.iloc[train_idx], x.iloc[val_idx]
@@ -414,21 +411,17 @@ def objective_xgb_step1(
         "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.05),
     }
 
-    cv = StratifiedKFold(n_splits=3, shuffle=True)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=rnd)
     cv_predicts = np.empty(3)
     for idx, (train_idx, val_idx) in enumerate(cv.split(x, y)):
         x_train_cv, x_val_cv = x.iloc[train_idx], x.iloc[val_idx]
         y_train_cv, y_val_cv = y[train_idx], y[val_idx]
-        pruning_callback = XGBoostPruningCallback(
-            trial, "validation_0-auc"
-        )
         model = XGBClassifier(
             eval_metric="auc",
-            early_stopping_rounds=20,
+            early_stopping_rounds=50,
             random_state=rnd,
             scale_pos_weight=scale_pos_weight,
             device="cpu",
-            callbacks=[pruning_callback],
             **xgb_params,
         )
         model.fit(
@@ -442,6 +435,10 @@ def objective_xgb_step1(
         cv_predicts[idx] = roc_auc_score(
             y_val_cv, y_score if len(y_score.shape) == 1 or not binary else y_score[:, 1],
             multi_class='ovr', average='micro')
+        # Report the intermediate score for pruning
+        trial.report(cv_predicts[idx], idx)
+        if trial.should_prune():
+            raise optuna.TrialPruned()
     av_auc = np.mean(cv_predicts)
     return av_auc
 
@@ -467,8 +464,6 @@ def objective_xgb(
        mean ROC_AUC
     """
     xgb_params = {
-        "n_estimators": trial.suggest_categorical("n_estimators", [n_estimators]),
-        "learning_rate": trial.suggest_categorical("learning_rate", [learning_rate]),
         "max_depth": trial.suggest_int("max_depth", 6, 16),
         "gamma": trial.suggest_int("gamma", 0, 15),
         "min_child_weight": trial.suggest_int("min_child_weight", 4, 16),
@@ -481,21 +476,19 @@ def objective_xgb(
         "max_delta_step": trial.suggest_float("max_delta_step", 0.0, 10.0),
     }
 
-    cv = StratifiedKFold(n_splits=3, shuffle=True)
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=rnd)
     cv_predicts = np.empty(3)
     for idx, (train_idx, val_idx) in enumerate(cv.split(x, y)):
         x_train_cv, x_val_cv = x.iloc[train_idx], x.iloc[val_idx]
         y_train_cv, y_val_cv = y[train_idx], y[val_idx]
-        pruning_callback = XGBoostPruningCallback(
-            trial, "validation_0-auc"
-        )
         model = XGBClassifier(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
             eval_metric="auc",
-            early_stopping_rounds=20,
+            early_stopping_rounds=50,
             random_state=rnd,
             scale_pos_weight=scale_pos_weight,
             device="cpu",
-            callbacks=[pruning_callback],
             **xgb_params,
         )
         model.fit(
@@ -509,5 +502,9 @@ def objective_xgb(
         cv_predicts[idx] = roc_auc_score(
             y_val_cv, y_score if len(y_score.shape) == 1 or not binary else y_score[:, 1],
             multi_class='ovr', average='micro')
+        # Report the intermediate score for pruning
+        trial.report(cv_predicts[idx], idx)
+        if trial.should_prune():
+            raise optuna.TrialPruned()
     av_auc = np.mean(cv_predicts)
     return av_auc

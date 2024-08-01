@@ -8,6 +8,7 @@ classes:
 
 from collections import deque
 from collections import defaultdict
+from logging import info
 
 
 class IndexedDeque:
@@ -127,7 +128,10 @@ class ObservableDict:
         Args:
             key: The key to delete.
         """
-        del self._data[key]
+        try:
+            del self._data[key]
+        except KeyError:
+            info(f"key {key} missing in data.")
         self._trigger_callbacks()
 
     def __contains__(self, key):

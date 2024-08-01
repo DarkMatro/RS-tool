@@ -1,0 +1,23 @@
+[
+	{ "s": "HALF", "p": [8, 7] },
+	{ "s": "HALF-WIDTH", "p": [8] },
+	{ "s": "HAMMING", "p": [19] },
+	{ "s": "HANNING", "p": [19] },
+	{ "s": "HAS", "p": [14] },
+	{ "s": "HAVE", "p": [15, 14, 12, 8] },
+	{ "s": "HEADER", "p": [15] },
+	{ "s": "HELP", "p": [8, 4] },
+	{ "s": "HERE", "p": [10, 9] },
+	{ "s": "HIDE", "p": [6] },
+	{ "s": "HIGH", "p": [19] },
+	{ "s": "HIGH-FREQUENCY", "p": [19] },
+	{ "s": "HIGHER", "p": [14] },
+	{ "s": "HOME", "p": [1] },
+	{ "s": "HOMOLOGY", "p": [19] },
+	{ "s": "HOPPING", "p": [19] },
+	{ "s": "HOTELLING", "p": [9] },
+	{ "s": "HOURS", "p": [8] },
+	{ "s": "HOW", "p": [12] },
+	{ "s": "HWHM", "p": [15, 8] },
+	{ "s": "HYPERPARAMETERS", "p": [17, 10, 4] }
+]

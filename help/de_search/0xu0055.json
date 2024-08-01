@@ -1,0 +1,21 @@
+[
+	{ "s": "U", "p": [9] },
+	{ "s": "ULTIMATELY", "p": [8] },
+	{ "s": "UNAVAILABLE", "p": [14] },
+	{ "s": "UNCHANGEABLE", "p": [9] },
+	{ "s": "UNCHECK", "p": [10] },
+	{ "s": "UNCHECKED", "p": [17] },
+	{ "s": "UNDO", "p": [5, 4] },
+	{ "s": "UNINFORMATIVE", "p": [16, 9] },
+	{ "s": "UNIVARIATE", "p": [16, 9] },
+	{ "s": "UNNECESSARY", "p": [9] },
+	{ "s": "UPDATE", "p": [16, 4, 14] },
+	{ "s": "UPDATES", "p": [14] },
+	{ "s": "UPDATING", "p": [10] },
+	{ "s": "UPLOADING", "p": [13] },
+	{ "s": "UPPER", "p": [3] },
+	{ "s": "USE", "p": [14, 8, 18, 15, 12] },
+	{ "s": "USED", "p": [19, 10, 8, 18, 16, 3] },
+	{ "s": "USER", "p": [3] },
+	{ "s": "USING", "p": [19, 16, 12, 10, 9] }
+]

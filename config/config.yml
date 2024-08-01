@@ -17,7 +17,7 @@ environ:
   OPENBLAS_NUM_THREADS: '1'
 
 help:
-  path: help\index.htm
+  path: help\index.html
   demo_project_path: "examples/demo_project.zip"
 
 recent:
