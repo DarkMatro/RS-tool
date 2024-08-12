@@ -184,7 +184,9 @@ class BaselineData(PreprocessingStage):
               'bl_method_comboBox': self.ui.method_comboBox.currentText(),
               'cost_func_comboBox': self.ui.cost_func_comboBox.currentText(),
               'current_method': self.current_method,
-              'active': self.active}
+              'active': self.active,
+              'rebuild': self.ui.rebuild_y_check_box.isChecked()
+              }
         for k, field in self.fields.items():
             dt[k] = field.value()
         if not production_export:
@@ -207,6 +209,8 @@ class BaselineData(PreprocessingStage):
         self.ui.cost_func_comboBox.setCurrentText(db['cost_func_comboBox'])
         self.current_method = db['current_method']
         self.activate(db['active'])
+        if 'rebuild' in db:
+            self.ui.rebuild_y_check_box.setChecked(db['rebuild'])
         for k, field in self.fields.items():
             field.setValue(db[k])
 

@@ -441,6 +441,7 @@ async def centers_of_clusters(x0: list[list], hwhm: float) -> list[list]:
         various_estimations = await gather(*current_futures)
     various_centers_of_clusters = [np.sort(i[:, 0]) for i in various_estimations]
     shapes = [i.size for i in various_centers_of_clusters]
+    info(f'shapes: {shapes}')
     most_frequent_shape = np.argmax(np.bincount(shapes))
     various_centers_of_clusters_right_shape = [i for i in various_centers_of_clusters
                                                if i.size == most_frequent_shape]

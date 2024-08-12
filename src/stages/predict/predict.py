@@ -208,7 +208,7 @@ class Predict(QObject):
         mw.progress.open_progress(cfg, len(clfs))
         x, _, _, _, filenames = ml.dataset_for_ml()
         kwargs = {'x': x}
-        models = [(v['model'], k) for k, v in ml.data.items()]
+        models = [(v['model'], k) for k, v in ml.data.items() if k != 'PCA']
         result = await mw.progress.run_in_executor('predict', clf_predict, models, **kwargs)
         if mw.progress.close_progress(cfg):
             return

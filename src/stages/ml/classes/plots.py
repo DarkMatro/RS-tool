@@ -242,10 +242,10 @@ class Plots(QObject):
                                              color=color, edgecolor='black', s=60)
             plot_widget.canvas.gca().scatter(x_fp[:, 0], x_fp[:, 1], marker="x", s=60, color=color,
                                              edgecolor='black')
-        plot_widget.canvas.gca().set_xlabel(dr_method + f'-1 ({evr[0] * 100:.2f})' if evr[0] != .0
+        plot_widget.canvas.gca().set_xlabel(dr_method + f'-1 ({evr[0] * 100:.2f} %)' if evr[0] != .0
                                             else dr_method + '-1',
                                             fontsize=int(environ['axis_label_font_size']))
-        plot_widget.canvas.gca().set_ylabel(dr_method + f'-2 ({evr[1] * 100:.2f})' if evr[1] != .0
+        plot_widget.canvas.gca().set_ylabel(dr_method + f'-2 ({evr[1] * 100:.2f} %)' if evr[1] != .0
                                             else dr_method + '-2',
                                             fontsize=int(environ['axis_label_font_size']))
         try:
@@ -918,8 +918,8 @@ class Plots(QObject):
                 cls, 'Style')['color'].name()
             ax.scatter(x_i[:, 0], x_i[:, 1], marker=mrkr, color=color,
                        edgecolor='black', s=60, label=target_names[i])
-        ax.set_xlabel(f'PC-1 ({evr[0] * 100:.2f})', fontsize=int(environ['plot_font_size']))
-        ax.set_ylabel(f'PC-2 ({evr[1] * 100:.2f})', fontsize=int(environ['plot_font_size']))
+        ax.set_xlabel(f'PC-1 ({evr[0] * 100:.2f}%)', fontsize=int(environ['plot_font_size']))
+        ax.set_ylabel(f'PC-2 ({evr[1] * 100:.2f}%)', fontsize=int(environ['plot_font_size']))
         ax.legend(loc="best", prop={'size': int(environ['plot_font_size']) - 2})
         try:
             plot_widget.canvas.figure.tight_layout()
@@ -954,8 +954,8 @@ class Plots(QObject):
         ax.scatter(loadings['PC1'], loadings['PC2'], color=environ['primaryColor'], s=60)
         for i, txt in enumerate(features_names):
             ax.annotate(txt, (loadings['PC1'][i], loadings['PC2'][i]))
-        ax.set_xlabel(f'PC-1 ({evr[0] * 100:.2f})', fontsize=int(environ['plot_font_size']))
-        ax.set_ylabel(f'PC-2 ({evr[1] * 100:.2f})', fontsize=int(environ['plot_font_size']))
+        ax.set_xlabel(f'PC-1 ({evr[0] * 100:.2f} %)', fontsize=int(environ['plot_font_size']))
+        ax.set_ylabel(f'PC-2 ({evr[1] * 100:.2f} %)', fontsize=int(environ['plot_font_size']))
         ax.set_title("PCA Loadings")
         try:
             plot_widget.canvas.figure.tight_layout()

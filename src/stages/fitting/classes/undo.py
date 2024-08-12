@@ -419,7 +419,10 @@ class CommandAfterGuess(UndoCommand):
         self.stage.set_rows_visibility()
         self.stage.remove_all_lines_from_plot()
         self.stage.data.report_result[''] = self.report_result_old
-        self.stage.data.show_current_report_result()
+        try:
+            self.stage.data.show_current_report_result()
+        except AttributeError:
+            pass
         if self.sigma3_old is not None:
             self.stage.data.sigma3[''] = self.sigma3_old[0], self.sigma3_old[1], self.sigma3_old[2]
         else:

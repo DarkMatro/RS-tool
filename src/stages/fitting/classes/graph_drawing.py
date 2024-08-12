@@ -548,6 +548,8 @@ class GraphDrawing(QObject):
             error_bar_params['w'].extend([stderr['x0'], stderr['dx']])
         if not create_error_bars:
             return
+        if not stderr['a'] or not stderr['x0']:
+            return
         eb = ErrorBarItem(x=np.array(error_bar_params['x']), y=np.array(error_bar_params['y']),
                           height=2 * np.array(error_bar_params['h']),
                           width=2 * np.array(error_bar_params['w']), x_beam=1, y_beam=.005,
