@@ -1,7 +1,5 @@
 # Raman spectroscopy tool (RS-tool)
 
-![splash](https://github.com/user-attachments/assets/e42bdd44-82d6-4129-93fd-d134153d8566)
-
 Implementation of a full cycle of biomedical machine learning classification problem.
 The program is designed for a realtime full cycle of processing Raman spectra: preprocessing, decomposition of spectra, creation of classifier models for further work with new measured spectra.
 New original ExModPoly (Extended ModPoly algorithm for baseline correction) and decomposition methods available.
