@@ -79,6 +79,7 @@ class Attrs:
     latest_file_path: str
     action_undo: QAction
     action_redo: QAction
+    selected_groups: list[int] # store idx of selected groups for average spectra
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                            plot_text_color=QColor(environ["plotText"]),
                            window_maximized=True,
                            latest_file_path=getenv("APPDATA") + "/RS-tool",
-                           action_undo=QAction(), action_redo=QAction())
+                           action_undo=QAction(), action_redo=QAction(), selected_groups=[])
         self.context = Context(self)
         self.progress = Progress(self)
         self.project = Project(self)
@@ -162,10 +163,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             form.set_backend_instance(b)
             b.set_ui(w)
             self.ui.drag_widget.add_item(form)
-        self.ui.drag_widget.doubleClickedWidget.connect(self._widget_selected)
+        self.ui.drag_widget.doubleClickedWidget.connect(self.widget_selected)
         self.ui.chain_layout.addWidget(self.ui.drag_widget)
 
-    def _widget_selected(self, w: DragWidget) -> None:
+    def widget_selected(self, w: DragWidget) -> None:
         """
         Handle selection of a widget.
 
@@ -851,6 +852,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.ui.all_control_button.setChecked(False)
             tasks = [create_task(self.update_plots_for_single())]
             await wait(tasks)
+            self.attrs.selected_groups = []
         else:
             self.ui.by_one_control_button.setChecked(True)
 
@@ -950,6 +952,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.ui.all_control_button.setChecked(False)
             tasks = [create_task(
                 self.context.preprocessing.stages.input_data.despike_history_remove_plot())]
+            self.attrs.selected_groups = []
             await wait(tasks)
             await self.update_plots_for_group(None)
         else:
@@ -969,6 +972,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         v = list(result[0].strip().split(","))
         self.context.preprocessing.stages.input_data.despike_history_remove_plot()
         groups = [int(x) for x in v]
+        self.attrs.selected_groups = groups
         self.update_plots_for_group(groups)
 
     @asyncSlot()
@@ -1033,6 +1037,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 create_task(self._update_plot_all()),
             ]
             await wait(tasks)
+            self.attrs.selected_groups = []
         else:
             self.ui.all_control_button.setChecked(True)
 
@@ -1072,14 +1077,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             case 0:
                 self.ui.input_table.verticalScrollBar().setValue(event)
             case 2:
-                idx = self.ui.stackedWidget_mainpages.currentIndex()
+                idx = self.ui.data_tables_tab_widget.currentIndex()
                 if idx == 0:
                     self.ui.smoothed_dataset_table_view.verticalScrollBar().setValue(event)
                 elif idx == 1:
                     self.ui.baselined_dataset_table_view.verticalScrollBar().setValue(event)
                 elif idx == 2:
                     self.ui.deconvoluted_dataset_table_view.verticalScrollBar().setValue(event)
-                else:
+                elif idx == 3:
                     self.ui.ignore_dataset_table_view.verticalScrollBar().setValue(event)
             case 4:
                 self.ui.predict_table_view.verticalScrollBar().setValue(event)
@@ -1188,7 +1193,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     tv = self.ui.baselined_dataset_table_view
                 elif idx == 2:
                     tv = self.ui.deconvoluted_dataset_table_view
-                else:
+                elif idx == 3:
                     tv = self.ui.ignore_dataset_table_view
             case 4:
                 tv = self.ui.predict_table_view

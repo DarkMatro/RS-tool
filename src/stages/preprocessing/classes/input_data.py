@@ -454,7 +454,6 @@ class InputData(PreprocessingStage):
         """
         Remove old history before despike plot item and arrows.
         """
-        print('despike_history_remove_plot')
         mw = get_parent(self.parent, "MainWindow")
         plot_item = mw.ui.preproc_plot_widget.getPlotItem()
         if self.despiked_one_curve:

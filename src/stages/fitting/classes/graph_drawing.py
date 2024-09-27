@@ -767,6 +767,8 @@ class GraphDrawing(QObject):
             Index of the curve to fill.
         """
         mw = get_parent(self.parent, "MainWindow")
+        if self.curve_select.timer_fill is not None:
+            self.curve_select.timer_fill.stop()
         self.curve_select.rad = 0.
         self.curve_select.curve_idx = idx
         self.curve_select.timer_fill = QTimer(mw)
@@ -811,6 +813,7 @@ class GraphDrawing(QObject):
         row = mw.ui.deconv_lines_table.model().row_by_index(idx)
         mw.ui.deconv_lines_table.selectRow(row)
         self.parent.set_rows_visibility()
+
         self.start_fill_timer(idx)
 
     def deselect_selected_line(self) -> None:

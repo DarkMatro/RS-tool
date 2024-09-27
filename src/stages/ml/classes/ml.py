@@ -347,7 +347,10 @@ class ML(QObject):
         mw.ui.current_dep_feature1_comboBox.addItems(features_names)
         mw.ui.current_dep_feature2_comboBox.addItems(features_names)
         mw.ui.coloring_feature_comboBox.addItems(features_names)
-        mw.ui.current_dep_feature2_comboBox.setCurrentText(features_names[1])
+        if features_names:
+            mw.ui.current_dep_feature2_comboBox.setCurrentText(features_names[1]
+                                                               if len(features_names) > 1
+                                                               else features_names[0])
         mw.ui.current_group_shap_comboBox.clear()
         uniq_classes = np.unique(q_res["Class"].values)
         classes = []
@@ -625,7 +628,7 @@ class ML(QObject):
         if mw.ui.classes_lineEdit.text() != '':
             classes = [int(i) for i in list(mw.ui.classes_lineEdit.text().strip().split(','))]
             if len(classes) > 1:
-                df = model.dataframe.query('Class == @input_list', classes)
+                df = model.dataframe.query('Class in @classes')
         if selected_dataset == 'Decomposed':
             ignored_features = mw.ui.ignore_dataset_table_view.model().ignored_features
             df = df.drop(ignored_features, axis=1)
@@ -686,7 +689,7 @@ class ML(QObject):
         mw = get_parent(self.parent, "MainWindow")
         plot_widgets = [
             mw.ui.decision_score_plot_widget, mw.ui.decision_boundary_plot_widget,
-            mw.ui.violin_describe_plot_widget, mw.ui.bootstrap_plot_widget,
+            mw.ui.violin_describe_plot_widget,
             mw.ui.boxplot_describe_plot_widget, mw.ui.dm_plot_widget,
             mw.ui.roc_plot_widget, mw.ui.pr_plot_widget, mw.ui.perm_imp_test_plot_widget,
             mw.ui.perm_imp_train_plot_widget, mw.ui.partial_depend_plot_widget,
@@ -820,8 +823,7 @@ class ML(QObject):
                    mw.ui.perm_imp_train_plot_widget, mw.ui.perm_imp_test_plot_widget,
                    mw.ui.partial_depend_plot_widget, mw.ui.tree_plot_widget,
                    mw.ui.features_plot_widget, mw.ui.calibration_plot_widget,
-                   mw.ui.det_curve_plot_widget, mw.ui.learning_plot_widget,
-                   mw.ui.bootstrap_plot_widget):
+                   mw.ui.det_curve_plot_widget, mw.ui.learning_plot_widget):
             initial_stat_plot(pw)
         self.initial_pca_plots()
         self.initial_force_single_plot()

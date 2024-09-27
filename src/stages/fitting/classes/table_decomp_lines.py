@@ -299,11 +299,10 @@ class TableDecompLines:
         """
         Clears all lines from the decomposition lines table and the associated plot.
         """
-        if self.parent.graph_drawing.curve_select.timer_fill is None:
-            return
-        self.parent.graph_drawing.curve_select.timer_fill.stop()
-        self.parent.graph_drawing.curve_select.timer_fill = None
-        self.parent.graph_drawing.curve_select.curve_idx = None
+        if self.parent.graph_drawing.curve_select.timer_fill is not None:
+            self.parent.graph_drawing.curve_select.timer_fill.stop()
+            self.parent.graph_drawing.curve_select.timer_fill = None
+            self.parent.graph_drawing.curve_select.curve_idx = None
         context = get_parent(self.parent, "Context")
         command = CommandClearAllDeconvLines(None, context, text="Remove all lines")
         context.undo_stack.push(command)
@@ -454,13 +453,15 @@ class CommandUpdateDeconvCurveStyle(UndoCommand):
         """
         Executes the redo operation for updating the curve style.
         """
-        self.parent.decomposition.update_curve_style(self._idx, self._style)
+        data_items = self.mw.ui.deconv_plot_widget.getPlotItem().listDataItems()
+        update_curve_style(self._idx, self._style, data_items)
 
     def undo_special(self):
         """
         Executes the undo operation for reverting the curve style update.
         """
-        self.parent.decomposition.update_curve_style(self._idx, self._old_style)
+        data_items = self.mw.ui.deconv_plot_widget.getPlotItem().listDataItems()
+        update_curve_style(self._idx, self._old_style, data_items)
 
     def stop_special(self) -> None:
         """

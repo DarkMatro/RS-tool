@@ -15,5 +15,3 @@ fitting_methods:
   Truncated Newton: 'tnc'
   trust-region for constrained optimization: 'trust-constr'
   Sequential Linear Squares Programming: 'slsqp'
-  Simplicial Homology Global Optimization: 'shgo'
-  Dual Annealing optimization: 'dual_annealing'

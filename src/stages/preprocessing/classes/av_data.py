@@ -249,7 +249,11 @@ class AvData(PreprocessingStage):
         n_boot = self.ui.average_n_boot_spin_box.value()
         fig, ax = plt.subplots()
         av_df = self.create_averaged_df(prev_stage.data)
+        group_names = av_df['Label'].unique()
         colors = context.group_table.table_widget.model().groups_colors
+        groups_df = context.group_table.table_widget.model().dataframe
+        idxs = [i for i, v in enumerate(groups_df['Group name'].values) if v in group_names]
+        colors = [col for i, col in enumerate(colors) if i in idxs]
         palette = sns.color_palette(colors)
         sns.lineplot(data=av_df, x='Raman shift, cm\N{superscript minus}\N{superscript one}',
                      y='Intensity, rel. un.', hue='Label', size='Label', style='Label',
@@ -321,8 +325,8 @@ class AvData(PreprocessingStage):
             columns=['Label', 'Raman shift, cm\N{superscript minus}\N{superscript one}',
                      'Intensity, rel. un.'])
         n_groups = context.group_table.table_widget.model().rowCount()
-        for i in range(n_groups):
-            group_id = i + 1
+        group_ids = mw.attrs.selected_groups if mw.attrs.selected_groups else list(range(1, n_groups + 1))
+        for group_id in group_ids:
             filenames = mw.ui.input_table.model().names_of_group(group_id)
             n_spectrum = len(filenames)
             if n_spectrum == 0:

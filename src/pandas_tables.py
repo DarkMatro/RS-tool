@@ -3390,11 +3390,11 @@ class PandasModelIgnoreDataset(PandasModel):
         """
         return [k for k, v in self._checked.items() if not v]
 
-    def features_by_order(self) -> list[str]:
+    def features_by_order(self, by: str = 'Score', asc: bool = False) -> list[str]:
         """
         Returns sorted by Score activated features.
         """
-        df_sort = self._dataframe.sort_values(by='Score', ascending=False)
+        df_sort = self._dataframe.sort_values(by=by, ascending=asc)
         active_features = self._active_features
         return df_sort['Feature'][df_sort['Feature'].isin(active_features)] \
             if active_features else df_sort['Feature']

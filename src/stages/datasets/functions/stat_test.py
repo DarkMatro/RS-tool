@@ -11,7 +11,6 @@ visualization of bootstrap results using KDE plots.
 import numpy as np
 import pandas as pd
 from scipy.stats import shapiro, f, mannwhitneyu
-from seaborn import kdeplot
 from sklearn.decomposition import PCA
 
 
@@ -114,7 +113,7 @@ def hotelling_t2_with_pca(df1, df2, n_components=None, alpha=0.05):
     return t2, p_value, p_value < alpha
 
 
-def permutation_test(df1, df2, num_permutations=1000, alpha=0.05):
+def permutation_test(df1, df2, num_permutations=10000, alpha=0.05):
     """
     Perform a permutation test to compare two multivariate samples.
 
@@ -198,91 +197,3 @@ def mann_whitney_u_test(df1, df2, alpha=0.05):
     different = results['P-value'].astype(float).min() < alpha
 
     return results, different
-
-
-def bootstrap_resample_multivariate(df1, df2, n_iterations=1000):
-    """
-    Perform multivariate bootstrap resampling on two datasets.
-
-    Parameters:
-    df1 : pandas DataFrame
-        The first sample data.
-    df2 : pandas DataFrame
-        The second sample data.
-    n_iterations : int, optional
-        Number of bootstrap iterations.
-
-    Returns:
-    np.ndarray
-        An array of bootstrap statistics (Frobenius norm of mean differences).
-    """
-    boot_stats = np.empty(n_iterations)
-    for i in range(n_iterations):
-        # Resample with replacement
-        sample1 = df1.sample(n=len(df1), replace=True).values
-        sample2 = df2.sample(n=len(df2), replace=True).values
-
-        # Compute mean vectors
-        mean1 = np.mean(sample1, axis=0)
-        mean2 = np.mean(sample2, axis=0)
-
-        # Compute the Frobenius norm of the difference in mean vectors
-        boot_stats[i] = np.linalg.norm(mean1 - mean2)
-
-    return boot_stats
-
-
-def multivariate_bootstrap_comparison(df1, df2, plot_widget, n_iterations=1000, alpha=0.05):
-    """
-    Perform multivariate bootstrap comparison and plot the results.
-
-    Parameters:
-    df1 : pandas DataFrame
-        The first sample data.
-    df2 : pandas DataFrame
-        The second sample data.
-    n_iterations : int, optional
-        Number of bootstrap iterations.
-    alpha : float, optional
-        Significance level for the confidence interval.
-
-    Returns:
-    mean_diff_stat : float
-        The observed test statistic (Frobenius norm of mean difference).
-    p_value : float
-        The p-value of the test.
-    """
-    # Compute the observed test statistic
-    mean1 = df1.mean().values
-    mean2 = df2.mean().values
-    mean_diff_stat = np.linalg.norm(mean1 - mean2)
-
-    # Perform bootstrap resampling
-    boot_stats = bootstrap_resample_multivariate(df1, df2, n_iterations)
-
-    # Compute confidence intervals
-    lower_bound = np.percentile(boot_stats, 100 * (alpha / 2))
-    upper_bound = np.percentile(boot_stats, 100 * (1 - alpha / 2))
-
-    # Compute p-value
-    p_value = np.mean(boot_stats >= mean_diff_stat)
-
-    # Plot the bootstrap distribution and confidence intervals
-    ax = plot_widget.canvas.gca()
-    ax.cla()
-    ax = kdeplot(boot_stats, fill=True, ax=ax)
-    ax.set_title('Bootstrap Distribution of Test Statistic')
-    ax.vlines(mean_diff_stat, ymin=0, ymax=ax.get_ylim()[1], color='r', linestyle='--',
-              label=f'Observed Statistic: {mean_diff_stat:.5f}')
-    ax.vlines(lower_bound, ymin=0, ymax=ax.get_ylim()[1], color='g', linestyle='--',
-              label=f'CI Lower Bound: {lower_bound:.5f}')
-    ax.vlines(upper_bound, ymin=0, ymax=ax.get_ylim()[1], color='b', linestyle='--',
-              label=f'CI Upper Bound: {upper_bound:.5f}')
-    ax.set_xlabel('Frobenius Norm of Mean Difference')
-    ax.set_ylabel('Frequency')
-    ax.legend()
-
-    plot_widget.canvas.draw()
-    plot_widget.canvas.figure.tight_layout()
-
-    return mean_diff_stat, p_value, p_value < alpha

@@ -26,7 +26,8 @@ from sklearn.calibration import CalibrationDisplay
 from sklearn.inspection import PartialDependenceDisplay, permutation_importance, \
     DecisionBoundaryDisplay
 from sklearn.metrics import DetCurveDisplay, PrecisionRecallDisplay, RocCurveDisplay, \
-    precision_recall_curve, average_precision_score, roc_curve, auc, ConfusionMatrixDisplay
+    precision_recall_curve, average_precision_score, roc_curve, auc, ConfusionMatrixDisplay, \
+    make_scorer, f1_score
 from sklearn.model_selection import LearningCurveDisplay
 from sklearn.preprocessing import label_binarize
 from sklearn.tree import plot_tree
@@ -525,10 +526,9 @@ class Plots(QObject):
         model = self.data[cl_type]['model']
         x = self.data[cl_type]['x_test'] if test else self.data[cl_type]['x_train']
         y = self.data[cl_type]['y_test'] if test else self.data[cl_type]['y_train']
-        binary = len(model.classes_) == 2
-        scoring = 'f1' if binary else 'f1_micro'
-        with parallel_backend('multiprocessing', n_jobs=-1):
-            result = permutation_importance(model, x, y, scoring=scoring,
+        f1_scorer = make_scorer(f1_score, pos_label=np.unique(y)[0], average='micro')
+        with parallel_backend('multiprocessing'):
+            result = permutation_importance(model, x, y, scoring=f1_scorer,
                                             n_jobs=-1,
                                             random_state=mw.ui.random_state_sb.value())
         sorted_importance_idx = result.importances_mean.argsort()

@@ -90,6 +90,7 @@ def get_metrics(y_true: np.ndarray | pd.Series, y_pred: np.ndarray, y_score: np.
         A DataFrame containing the computed metrics.
     """
     binary = len(np.unique(y_true)) == 2
+    pos_label = np.unique(y_true)[0]
     average_func = 'binary' if binary else 'micro'
     df_metrics = pd.DataFrame()
     df_metrics['model'] = [name]
@@ -97,9 +98,10 @@ def get_metrics(y_true: np.ndarray | pd.Series, y_pred: np.ndarray, y_score: np.
     df_metrics['ROC_AUC'] = roc_auc_score(
         y_true, y_score if len(y_score.shape) == 1 or not binary else y_score[:, 1],
         multi_class='ovr', average='micro')
-    df_metrics['Precision'] = precision_score(y_true, y_pred, average=average_func)
-    df_metrics['Recall'] = recall_score(y_true, y_pred, average=average_func)
-    df_metrics['F1'] = f1_score(y_true, y_pred, average=average_func)
+    df_metrics['Precision'] = precision_score(y_true, y_pred, average=average_func,
+                                              pos_label=pos_label)
+    df_metrics['Recall'] = recall_score(y_true, y_pred, average=average_func, pos_label=pos_label)
+    df_metrics['F1'] = f1_score(y_true, y_pred, average=average_func, pos_label=pos_label)
     df_metrics['Logloss'] = log_loss(y_true, y_score)
     return df_metrics
 

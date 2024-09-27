@@ -1525,8 +1525,8 @@ border: 1px;}</string>
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>348</width>
-                        <height>230</height>
+                        <width>253</width>
+                        <height>197</height>
                        </rect>
                       </property>
                       <attribute name="label">
@@ -3244,14 +3244,6 @@ border: 1px;}</string>
                            <property name="orientation">
                             <enum>Qt::Vertical</enum>
                            </property>
-                           <widget class="MplWidget" name="bootstrap_plot_widget" native="true">
-                            <property name="sizePolicy">
-                             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-                              <horstretch>0</horstretch>
-                              <verstretch>0</verstretch>
-                             </sizepolicy>
-                            </property>
-                           </widget>
                            <widget class="QTextEdit" name="stat_test_text_edit"/>
                           </widget>
                          </item>
@@ -3467,8 +3459,8 @@ border: 1px;}</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>1159</width>
-                           <height>742</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -3828,8 +3820,8 @@ border: 1px;}</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>1159</width>
-                           <height>742</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -3983,8 +3975,8 @@ border: 1px;}</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>1159</width>
-                           <height>742</height>
+                           <width>98</width>
+                           <height>28</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -4425,8 +4417,8 @@ border: 1px;}</string>
                           <rect>
                            <x>0</x>
                            <y>0</y>
-                           <width>1159</width>
-                           <height>770</height>
+                           <width>98</width>
+                           <height>71</height>
                           </rect>
                          </property>
                          <attribute name="label">
@@ -4461,7 +4453,7 @@ border: 1px;}</string>
                               <rect>
                                <x>0</x>
                                <y>0</y>
-                               <width>1140</width>
+                               <width>98</width>
                                <height>1980</height>
                               </rect>
                              </property>

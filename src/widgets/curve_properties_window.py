@@ -58,7 +58,7 @@ class CurvePropertiesWindow(QWidget):
         self._style = style
         self.parent = parent
         self._idx = idx
-        self.setFixedSize(240, 300)
+        self.setFixedSize(240, 340)
         self._ui_form = ui_curve_properties.Ui_Dialog()
         self._ui_form.setupUi(self)
         self._init_style_cb()

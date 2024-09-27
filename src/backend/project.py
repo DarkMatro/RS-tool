@@ -226,7 +226,8 @@ class Project:
         self.parent.ui.input_table.model().clear_dataframe()
         self.parent.ui.dec_table.model().clear_dataframe()
         self.parent.context.reset()
-
+        self.parent.context.preprocessing.update_plot_item(
+            self.parent.ui.drag_widget.get_current_widget_name())
         self.parent.ui.by_one_control_button.setChecked(False)
         self.parent.ui.by_group_control_button.setChecked(False)
         self.parent.ui.all_control_button.setChecked(True)

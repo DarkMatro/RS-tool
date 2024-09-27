@@ -27,8 +27,7 @@ from src.pandas_tables import PandasModelSmoothedDataset, PandasModelBaselinedDa
     PandasModelDeconvolutedDataset, PandasModelIgnoreDataset, PandasModelDescribeDataset
 from src.stages.datasets.classes.undo import CommandDeleteDatasetRow
 from src.stages.datasets.functions.stat_test import check_normality, \
-    hotelling_t2_with_pca, permutation_test, mann_whitney_u_test, \
-    multivariate_bootstrap_comparison
+    hotelling_t2_with_pca, permutation_test, mann_whitney_u_test
 
 
 class Datasets(QObject):
@@ -69,8 +68,6 @@ class Datasets(QObject):
         mw.ui.violin_describe_plot_widget.canvas.draw()
         mw.ui.boxplot_describe_plot_widget.canvas.gca().cla()
         mw.ui.boxplot_describe_plot_widget.canvas.draw()
-        mw.ui.bootstrap_plot_widget.canvas.gca().cla()
-        mw.ui.bootstrap_plot_widget.canvas.draw()
         mw.ui.stat_test_text_edit.setText('')
 
     def _reset_field(self, event: QMouseEvent, field_id: str) -> None:
@@ -404,6 +401,10 @@ class Datasets(QObject):
         # Build dataframe
         df = mw.ui.deconvoluted_dataset_table_view.model().dataframe
         ignored_features = mw.ui.ignore_dataset_table_view.model().ignored_features
+        if mw.ui.classes_lineEdit.text() != '':
+            classes = [int(i) for i in list(mw.ui.classes_lineEdit.text().strip().split(','))]
+            if len(classes) > 1:
+                df = df.query('Class in @classes')
         df = df.drop(ignored_features, axis=1)
         n_rows = df.shape[0]
         col_features, col_value, col_classes, col_filenames = [], [], [], []
@@ -441,7 +442,7 @@ class Datasets(QObject):
         ax = plot_widget.canvas.gca()
         ax.cla()
         palette = color_palette(self.parent.group_table.table_widget.model().groups_colors)
-        order = mw.ui.ignore_dataset_table_view.model().features_by_order()
+        order = mw.ui.ignore_dataset_table_view.model().features_by_order('Feature', True)
         if violin:
             ax = violinplot(data=df, x='Feature', y='Value', hue='Class', order=order,
                             split=True, inner="quart", fill=False, palette=palette, ax=ax)
@@ -501,11 +502,6 @@ class Datasets(QObject):
             text += ("Mann-Whitney U Test Results:" + '\n' + res[0].to_string() + '\n'
                      + f"Are the samples significantly different in any feature? "
                        f"{'Yes' if res[1] else 'No'}" + '\n' + '\n')
-        res = multivariate_bootstrap_comparison(
-            df_0, df_1, mw.ui.bootstrap_plot_widget)
-        text += ("Multivariate bootstrap comparison:" + '\n' f"Observed Test Statistic: {res[0]}"
-                 + '\n' + f"P-value: {res[1]}" + '\n'
-                 + f"Are Samples Different? {'Yes' if res[2] else 'No'}" + '\n' + '\n')
         mw.ui.stat_test_text_edit.setText(text)
 
     @asyncSlot()
