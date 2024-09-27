@@ -27,12 +27,16 @@ New original ExModPoly (Extended ModPoly algorithm for baseline correction) and 
 - Possibility of using the program for classification of new measured spectra according to trained models.
 - Automatic generation of all necessary graphs for articles and the ability to save them in various formats.
 - Intuitive graphical interface.
-- 
+
+# Citation
+Decomposition Method for Raman Spectra of Dentine. DOI: 10.18287/JBPE24.10.030303. https://jbpe.ssau.ru/index.php/JBPE/article/view/9074
+
 ![image](https://github.com/user-attachments/assets/f988dd8c-1b69-41e4-b73b-ee8ea9cdb260)
 ![image](https://github.com/user-attachments/assets/f43bdd02-21f9-483f-8d9a-55b4fe0d5098)
 ![image](https://github.com/user-attachments/assets/dd512e53-4859-4f99-8128-3295dd7ebf3e)
 ![image](https://github.com/user-attachments/assets/f41f8a1b-8eff-47f2-87f9-20b658c3eb04)
 ![image](https://github.com/user-attachments/assets/919b86eb-d011-4b50-881d-e9bdc80030fe)
+
 
 
 
